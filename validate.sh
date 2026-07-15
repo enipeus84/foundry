@@ -6,7 +6,7 @@
 set -euo pipefail
 if [ ! -d .venv ]; then python3 -m venv .venv; fi
 source .venv/bin/activate
-pip install -e ".[dev]" -q
+pip install -e ".[dev,web]" -q
 if [ -n "${ANTHROPIC_API_KEY:-}" ]; then pip install anthropic -q; fi
 if [ -n "${OPENAI_API_KEY:-}" ]; then pip install openai -q; fi
 python -m pytest tests -q
