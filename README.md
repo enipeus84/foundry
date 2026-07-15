@@ -35,7 +35,34 @@ compatibility and deterministic replay.
 pip install .                  # core, stdlib only
 pip install ".[models]"        # + Anthropic and OpenAI adapters
 pip install ".[dev]"           # + pytest
+pip install ".[web]"           # + FastAPI status/web layer
 ```
+
+## Web interface
+
+A minimal deployment shell over the substrate. The core package keeps
+zero runtime dependencies; `foundry/__init__.py` never imports the web
+layer, and a test enforces that.
+
+Run locally:
+
+```bash
+pip install -e ".[web]"
+uvicorn foundry.web:app --host 0.0.0.0 --port 8000
+# http://localhost:8000/        status page
+# http://localhost:8000/health  {"status": "ok", ...}
+```
+
+Deploy on Render (Blueprint — uses `render.yaml`):
+
+1. Push this repository to GitHub.
+2. In the Render dashboard: **New → Blueprint**, select the repo.
+3. Render reads `render.yaml`: build `pip install -e ".[web]"`,
+   start `uvicorn foundry.web:app --host 0.0.0.0 --port $PORT`,
+   health check on `/health`. Accept and deploy.
+
+Or as a plain Web Service (no blueprint): **New → Web Service**, select
+the repo, set the build and start commands to the two lines above.
 
 ## Sixty-second tour
 

@@ -1,0 +1,11 @@
+# Render deployment for the Foundry status/web layer.
+# The web interface is a shell over the substrate; the core package
+# keeps zero runtime dependencies. Only the [web] extra is installed.
+services:
+  - type: web
+    name: foundry
+    runtime: python
+    plan: free
+    buildCommand: pip install -e ".[web]"
+    startCommand: uvicorn foundry.web:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
