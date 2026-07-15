@@ -1,0 +1,8 @@
+__pycache__/
+*.egg-info/
+.venv/
+.pytest_cache/
+foundry_data/
+v1_data/
+v1_transcript.md
+*_data/

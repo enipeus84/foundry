@@ -1,0 +1,5 @@
+# Foundry core has ZERO runtime dependencies (stdlib only).
+# This file exists for the optional real-model adapters and tests.
+anthropic>=0.40
+openai>=1.50
+pytest>=8.0
