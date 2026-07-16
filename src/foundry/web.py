@@ -8,20 +8,26 @@ extra:
     uvicorn foundry.web:app --host 0.0.0.0 --port 8000
 
 Endpoints:
-    GET /health   JSON operational status
-    GET /         HTML status page
+    GET /health          JSON operational status (public, for Render)
+    GET /                HTML status page (requires session)
+    GET /login           "Continue with Google" page
+    GET /auth/google     starts Supabase Google OAuth (PKCE)
+    GET /auth/callback   completes OAuth, sets session, redirects to /
+    GET|POST /logout     clears the session
 """
 
 from __future__ import annotations
 
 import ast
+import time
 from functools import lru_cache
 from pathlib import Path
 
-from fastapi import FastAPI
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, Request
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
 from foundry import __version__
+from foundry import webauth
 
 TAGLINE = "Durable organisational intelligence across AI models"
 
@@ -98,7 +104,103 @@ _REPO_URL = "https://github.com/enipeus84/foundry"
 
 
 @app.get("/", response_class=HTMLResponse)
-def status_page() -> str:
+def status_page(request: Request):
+    cfg = webauth.load_config()
+    email = webauth.session_email(
+        request.cookies.get(webauth.SESSION_COOKIE), cfg)
+    if email is None or email != cfg.allowed_email or not cfg.allowed_email:
+        return RedirectResponse("/login", status_code=303)
     n = _test_count()
     tests = f"{n} passing" if n is not None else "suite not shipped with this install"
-    return _PAGE.format(version=__version__, tagline=TAGLINE, tests=tests, repo=_REPO_URL)
+    return HTMLResponse(_PAGE.format(
+        version=__version__, tagline=TAGLINE, tests=tests, repo=_REPO_URL))
+
+
+# --- authentication ----------------------------------------------------------
+
+_LOGIN_PAGE = """<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Foundry — sign in</title>
+<style>
+  body {{ font-family: Georgia, serif; background: #faf9f6; color: #1a1a1a;
+         max-width: 24rem; margin: 6rem auto; padding: 0 1.5rem; text-align: center; }}
+  h1 {{ font-size: 1.4rem; }}
+  a.button {{ display: inline-block; margin-top: 1.5rem; padding: 0.7rem 1.4rem;
+              border: 1px solid #1a1a1a; border-radius: 4px; text-decoration: none;
+              color: #1a1a1a; background: #fff; }}
+  a.button:hover {{ background: #f0efe9; }}
+  p.note {{ color: #777; font-size: 0.85rem; margin-top: 2rem; }}
+</style></head>
+<body>
+<h1>Foundry V{version}</h1>
+<a class="button" href="/auth/google">Continue with Google</a>
+<p class="note">{note}</p>
+</body></html>
+"""
+
+
+def _cookie(resp: Response, name: str, value: str, max_age: int,
+            secure: bool) -> None:
+    resp.set_cookie(name, value, max_age=max_age, httponly=True,
+                    samesite="lax", secure=secure, path="/")
+
+
+@app.get("/login", response_class=HTMLResponse)
+def login():
+    cfg = webauth.load_config()
+    note = ("Access restricted to the authorised account."
+            if cfg.configured else
+            "Authentication is not configured on this deployment.")
+    return HTMLResponse(_LOGIN_PAGE.format(version=__version__, note=note))
+
+
+@app.get("/auth/google")
+def auth_google():
+    cfg = webauth.load_config()
+    if not cfg.configured:
+        return RedirectResponse("/login", status_code=303)
+    verifier, challenge = webauth.pkce_pair()
+    resp = RedirectResponse(webauth.authorize_url(cfg, challenge),
+                            status_code=303)
+    # Verifier travels signed so it can't be tampered with in transit.
+    _cookie(resp, webauth.VERIFIER_COOKIE,
+            webauth.sign({"v": verifier,
+                          "exp": int(time.time()) + webauth.VERIFIER_TTL},
+                         cfg.session_secret),
+            webauth.VERIFIER_TTL, cfg.secure_cookies)
+    return resp
+
+
+@app.get("/auth/callback")
+def auth_callback(request: Request, code: str | None = None):
+    cfg = webauth.load_config()
+    if not cfg.configured or code is None:
+        return RedirectResponse("/login", status_code=303)
+    packed = webauth.verify(
+        request.cookies.get(webauth.VERIFIER_COOKIE, ""), cfg.session_secret)
+    if not packed:
+        return RedirectResponse("/login", status_code=303)
+    email = webauth.exchange_code(cfg, code, packed["v"])
+    resp: Response
+    if email is None or email != cfg.allowed_email:
+        # Authenticated with Google, but not the permitted account.
+        resp = HTMLResponse(_LOGIN_PAGE.format(
+            version=__version__,
+            note="This Google account is not authorised for this Foundry."),
+            status_code=403)
+    else:
+        resp = RedirectResponse("/", status_code=303)
+        _cookie(resp, webauth.SESSION_COOKIE,
+                webauth.session_token(email, cfg),
+                webauth.SESSION_TTL, cfg.secure_cookies)
+    resp.delete_cookie(webauth.VERIFIER_COOKIE, path="/")
+    return resp
+
+
+@app.get("/logout")
+@app.post("/logout")
+def logout():
+    resp = RedirectResponse("/login", status_code=303)
+    resp.delete_cookie(webauth.SESSION_COOKIE, path="/")
+    return resp
