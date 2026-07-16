@@ -64,6 +64,27 @@ Deploy on Render (Blueprint — uses `render.yaml`):
 Or as a plain Web Service (no blueprint): **New → Web Service**, select
 the repo, set the build and start commands to the two lines above.
 
+### Authentication
+
+The status page requires Google sign-in via Supabase; `/health` stays
+public for Render health checks. Sessions are stateless HMAC-signed
+cookies (HttpOnly, SameSite=Lax, Secure when `APP_BASE_URL` is https).
+The layer fails closed: without configuration, nobody gets in.
+
+Environment variables (set in the Render dashboard, never in source):
+
+```
+SUPABASE_URL              https://<project>.supabase.co
+SUPABASE_PUBLISHABLE_KEY  the project's publishable (anon) key
+FOUNDRY_ALLOWED_EMAIL     the single permitted Google account
+SESSION_SECRET            openssl rand -hex 32
+APP_BASE_URL              the deployed URL, e.g. https://foundry.onrender.com
+```
+
+In Supabase: enable the Google provider (Authentication → Providers),
+and add `<APP_BASE_URL>/auth/callback` to the allowed redirect URLs
+(Authentication → URL Configuration).
+
 ## Sixty-second tour
 
 ```python

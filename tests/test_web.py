@@ -7,13 +7,29 @@ fastapi = pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient  # noqa: E402
 
 from foundry import __version__  # noqa: E402
+from foundry import webauth  # noqa: E402
 from foundry.web import app, _test_count  # noqa: E402
 
-client = TestClient(app)
+
+@pytest.fixture(autouse=True)
+def auth_env(monkeypatch):
+    """The status page now requires a session; mint one for these tests."""
+    monkeypatch.setenv("SUPABASE_URL", "https://example.supabase.co")
+    monkeypatch.setenv("SUPABASE_PUBLISHABLE_KEY", "test-publishable-key")
+    monkeypatch.setenv("FOUNDRY_ALLOWED_EMAIL", "cparkerbrads@gmail.com")
+    monkeypatch.setenv("SESSION_SECRET", "unit-test-secret-0123456789abcdef")
+    monkeypatch.setenv("APP_BASE_URL", "http://testserver")
+
+
+def client() -> TestClient:
+    c = TestClient(app)
+    c.cookies.set(webauth.SESSION_COOKIE, webauth.session_token(
+        "cparkerbrads@gmail.com", webauth.load_config()))
+    return c
 
 
 def test_health_returns_ok_json():
-    r = client.get("/health")
+    r = TestClient(app).get("/health")
     assert r.status_code == 200
     body = r.json()
     assert body["status"] == "ok"
@@ -22,7 +38,7 @@ def test_health_returns_ok_json():
 
 
 def test_status_page_renders():
-    r = client.get("/")
+    r = client().get("/")
     assert r.status_code == 200
     assert r.headers["content-type"].startswith("text/html")
     html = r.text
@@ -37,7 +53,7 @@ def test_status_page_renders():
 def test_status_page_reports_real_test_count():
     n = _test_count()
     assert n is not None and n >= 1
-    assert f"{n} passing" in client.get("/").text
+    assert f"{n} passing" in client().get("/").text
 
 
 def test_core_import_does_not_require_fastapi():
