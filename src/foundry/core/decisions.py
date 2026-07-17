@@ -85,9 +85,14 @@ def inform_decision(log: EventLog, decision_id: str, claim_or_scenario_id: str,
                            claim_or_scenario_id, vocab.STRUCTURAL_RELATIONSHIP, actor=actor)
 
 
-def model_decision(log: EventLog, decision_id: str, model_id: str, actor: str = "user") -> dict:
+def model_decision(log: EventLog, decision_id: str, modelled_by_id: str, actor: str = "user") -> dict:
+    """The `modelled_by` relation (000 §9): `modelled_by_id` is a
+    domain-specific *quantifying mechanism* (Finance's Scenario is one
+    instance) — never a ModelAdapter or any other AI model. Named to
+    match the spec's own relation, not `model_id`, to avoid exactly
+    that misreading."""
     return grammar.relate(log, PREFIX, "decision", decision_id, "modelled_by",
-                           model_id, vocab.STRUCTURAL_RELATIONSHIP, actor=actor)
+                           modelled_by_id, vocab.STRUCTURAL_RELATIONSHIP, actor=actor)
 
 
 def revise_decision(log: EventLog, new_decision_id: str, superseded_decision_id: str,
@@ -188,7 +193,7 @@ class DecisionProjection:
     # -------------------------------------------------------- internals
 
     def _apply_decision(self, e: dict) -> None:
-        verb = e["kind"].rsplit(".", 1)[-1]
+        verb = grammar.verb(e["kind"])
         p = e["payload"]
         did = p["entity_id"]
         if verb == "declared":
@@ -212,7 +217,7 @@ class DecisionProjection:
                 d.history.append(e["id"])
 
     def _apply_outcome(self, e: dict) -> None:
-        verb = e["kind"].rsplit(".", 1)[-1]
+        verb = grammar.verb(e["kind"])
         p = e["payload"]
         oid = p["entity_id"]
         if verb == "declared":

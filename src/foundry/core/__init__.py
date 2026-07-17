@@ -18,15 +18,15 @@ deletable, rebuildable, and never authoritative on its own.
     from foundry.core.flight_deck import compose_flight_deck
 
 Submodules:
-    grammar.py            the shared five-verb event grammar (000 §6)
-    vocab.py               controlled vocabularies (000 §7)
-    scope.py               subjects & drill-down resolution (000 §10)
+    grammar.py              the shared five-verb event grammar (000 §6)
+    vocab.py                controlled vocabularies (000 §7)
+    scope.py                subjects & drill-down resolution (000 §10)
     entities.py             Party, Employer, Mission (000 §8)
     evidence.py             Claim tagging + the Core Evidence Index (000 §11)
-    decisions.py             Decision lifecycle (000 §12)
-    metrics.py               MetricRequest/Result, Metric Registry (000 §13)
-    mission_evaluation.py    domain calculates / Core evaluates / AI explains
-    flight_deck.py           Flight Deck composition (000 §14)
+    decisions.py            Decision lifecycle (000 §12)
+    metrics.py              MetricRequest/Result, Metric Registry (000 §13)
+    mission_evaluation.py   domain calculates / Core evaluates / AI explains
+    flight_deck.py          Flight Deck composition (000 §14)
 """
 
 from .entities import Employer, EntityProjection, Mission, Party

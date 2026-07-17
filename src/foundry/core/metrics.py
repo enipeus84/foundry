@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Protocol
 
 from . import vocab
 from .scope import Subject
@@ -83,10 +83,13 @@ def unsupported(request: MetricRequest, reason: str) -> MetricResult:
     )
 
 
-@runtime_checkable
 class MetricProvider(Protocol):
     """The interface a domain implements conceptually — no base class,
-    no plugin framework (000 §13.4)."""
+    no plugin framework (000 §13.4). Structural typing only: nothing
+    in this package does `isinstance(x, MetricProvider)`, so this is
+    intentionally not `@runtime_checkable` — that decorator exists for
+    exactly that use, and adding it without a caller that needs it
+    would be complexity with no payoff."""
 
     def owned_metric_ids(self) -> frozenset[str]:
         """Which metric identifiers this provider owns."""
@@ -123,6 +126,9 @@ class MetricRegistry:
         return frozenset(self._providers)
 
     def provider_for(self, metric_id: str) -> MetricProvider | None:
+        """Introspection only (e.g. "who owns this metric?" without
+        dispatching a full request) — never used internally by
+        `dispatch()`, which looks the provider up itself."""
         return self._providers.get(metric_id)
 
     def dispatch(self, request: MetricRequest) -> MetricResult:

@@ -117,6 +117,10 @@ def declare_employer(log: EventLog, name: str, industry: str | None = None,
 
 
 def close_employer(log: EventLog, employer_id: str, reason: str, actor: str = "user") -> dict:
+    """No `status_vocabulary` here, unlike `achieve_mission`/
+    `abandon_mission`: `"defunct"` is Employer's one terminal state
+    (000 §8's entity table), not one of `000` §7's controlled
+    vocabularies — there is nothing to validate `status` against."""
     return grammar.close(log, PREFIX, "employer", employer_id, reason, actor=actor, status="defunct")
 
 
@@ -192,7 +196,7 @@ class EntityProjection:
     # -------------------------------------------------------- internals
 
     def _apply_party(self, e: dict) -> None:
-        verb = e["kind"].rsplit(".", 1)[-1]
+        verb = grammar.verb(e["kind"])
         p = e["payload"]
         pid = p["entity_id"]
         if verb == "declared":
@@ -220,7 +224,7 @@ class EntityProjection:
                 party.history.append(e["id"])
 
     def _apply_employer(self, e: dict) -> None:
-        verb = e["kind"].rsplit(".", 1)[-1]
+        verb = grammar.verb(e["kind"])
         p = e["payload"]
         eid = p["entity_id"]
         if verb == "declared":
@@ -234,7 +238,7 @@ class EntityProjection:
                 employer.history.append(e["id"])
 
     def _apply_mission(self, e: dict) -> None:
-        verb = e["kind"].rsplit(".", 1)[-1]
+        verb = grammar.verb(e["kind"])
         p = e["payload"]
         mid = p["entity_id"]
         if verb == "declared":

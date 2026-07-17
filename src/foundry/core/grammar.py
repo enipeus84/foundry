@@ -43,8 +43,7 @@ def update(log: EventLog, prefix: str, type_: str, entity_id: str,
 
 def close(log: EventLog, prefix: str, type_: str, entity_id: str, reason: str,
           actor: str = "user", status: str | None = None,
-          status_vocabulary: vocab.ExtensibleVocabulary | None = None,
-          **extra: Any) -> dict:
+          status_vocabulary: vocab.ExtensibleVocabulary | None = None) -> dict:
     """`<prefix>.<type>.closed` — a terminal lifecycle state. Not used
     for corrections. `status` lets a caller record *which* terminal
     state was reached (e.g. Mission's `achieved` vs `abandoned`) without
@@ -59,7 +58,7 @@ def close(log: EventLog, prefix: str, type_: str, entity_id: str, reason: str,
         raise VocabularyError(
             f"{status!r} is not a valid {status_vocabulary.name} value "
             f"(known: {sorted(status_vocabulary.values)})")
-    payload = {"entity_id": entity_id, "reason": reason, **extra}
+    payload = {"entity_id": entity_id, "reason": reason}
     if status is not None:
         payload["status"] = status
     return log.append(f"{prefix}.{type_}.closed", payload, actor=actor)
@@ -83,3 +82,9 @@ def relate(log: EventLog, prefix: str, type_: str, entity_id: str,
 
 def new_id() -> str:
     return str(uuid.uuid4())
+
+
+def verb(kind: str) -> str:
+    """The last segment of an event kind — `"core.mission.closed"` ->
+    `"closed"`. Every projection's `_apply_*` dispatches on this."""
+    return kind.rsplit(".", 1)[-1]
