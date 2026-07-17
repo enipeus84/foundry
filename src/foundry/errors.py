@@ -22,3 +22,15 @@ class EventNotFoundError(FoundryError):
 
 class IntegrityError(FoundryError):
     """The event log's hash chain is broken: the substrate was altered."""
+
+
+class VocabularyError(FoundryError):
+    """A relation, tag_type, or value falls outside its governed
+    controlled vocabulary (000-core-domain-model.md §5, principle 2/4).
+    Raised at write time so an invalid value never reaches the
+    append-only log — once written, it cannot be un-written."""
+
+
+class DuplicateMetricError(FoundryError):
+    """A metric_id is already registered to a different provider
+    (000-core-domain-model.md §13.5: duplicate ownership fails closed)."""

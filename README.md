@@ -118,9 +118,15 @@ src/foundry/
   ingestors.py    real documents & conversation exports -> events
   errors.py       three exceptions; each demands a different response
   cli.py          minimal CLI (`foundry ingest|derive|ask|why|verify`)
-tests/            34 tests; each is an architectural claim
+  core/           domain-agnostic layer every product domain depends on
+                  (docs/specifications/000-core-domain-model.md):
+                  Party/Employer/Mission, the Decision lifecycle, the
+                  Core Evidence Index, the Metric Provider contract,
+                  Flight Deck composition. No Finance, no other domain.
+tests/            each test is an architectural claim
 scripts/validate.py   validation harness & transcript generator
-docs/             architecture, roadmap, historical assessments
+docs/             architecture, roadmap, historical assessments,
+                  specifications (docs/specifications/)
 examples/         copy-paste-ready usage
 ```
 
