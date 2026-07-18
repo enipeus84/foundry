@@ -176,17 +176,26 @@ def test_flight_deck_never_appends_an_event(kernel):
 
 def test_core_module_imports_no_finance_package():
     """Core remains independent of Finance: no module under
-    foundry.core imports (or could import) a foundry.finance package,
-    which does not exist yet — this test will start failing loudly, by
-    ImportError, the moment that stops being true by accident."""
+    foundry.core imports `foundry.finance` in its own source — checked
+    by static inspection (the same technique test_core_metrics.py uses
+    for "no model adapter import"), not by asserting `foundry.finance`
+    is absent from `sys.modules` process-wide. That process-global form
+    held only while RFC-002 didn't exist yet; now that
+    tests/test_finance_*.py legitimately import `foundry.finance`
+    elsewhere in the same pytest run, the only invariant left to check
+    is the one that actually matters: no *core* module's own source
+    names it."""
+    import ast
     import importlib
+    import inspect
     import pkgutil
 
     import foundry.core as core_pkg
 
     for _, name, _ in pkgutil.iter_modules(core_pkg.__path__, prefix="foundry.core."):
         module = importlib.import_module(name)
-        assert "finance" not in repr(module.__dict__.get("__loader__", "")), name
-    # And the package itself has no dependency edge to a finance module:
-    import sys
-    assert not any(m.startswith("foundry.finance") for m in sys.modules)
+        tree = ast.parse(inspect.getsource(module))
+        imported = {alias.name for node in ast.walk(tree) if isinstance(node, ast.Import)
+                    for alias in node.names} | \
+            {node.module for node in ast.walk(tree) if isinstance(node, ast.ImportFrom) and node.module}
+        assert not any(m.startswith("foundry.finance") for m in imported), name
