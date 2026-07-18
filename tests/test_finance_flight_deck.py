@@ -23,7 +23,7 @@ from foundry.finance.fixtures import build_parker_brads_household
 from foundry.finance.metrics import FinanceMetricProvider
 
 
-def _wire_up(kernel, household):
+def _wire_up(kernel):
     core_entities = EntityProjection(kernel.log)
     finance_entities = FinanceEntityProjection(kernel.log)
     evidence_index = EvidenceIndex(kernel.log)
@@ -34,7 +34,7 @@ def _wire_up(kernel, household):
 
 def test_flight_deck_tile_carries_a_real_net_worth_value_from_the_household(kernel):
     household = build_parker_brads_household(kernel.log)
-    core_entities, finance_entities, evidence_index, registry = _wire_up(kernel, household)
+    core_entities, finance_entities, evidence_index, registry = _wire_up(kernel)
 
     # The independently-computed value, straight from the provider —
     # the tile below must match it exactly, having gone through
@@ -62,7 +62,7 @@ def test_flight_deck_composes_two_finance_tiles_in_one_call(kernel):
     Runway, each populated through the identical core tile contract —
     no finance-specific field (001 §24, criterion 4)."""
     household = build_parker_brads_household(kernel.log)
-    core_entities, _finance_entities, evidence_index, registry = _wire_up(kernel, household)
+    core_entities, _finance_entities, evidence_index, registry = _wire_up(kernel)
 
     tiles = compose_flight_deck(
         [
@@ -83,7 +83,7 @@ def test_mission_status_evaluated_against_a_real_finance_metric(kernel):
     calculates net worth, Core evaluates the Mission's RAG status
     against it — no finance-specific mission logic exists."""
     household = build_parker_brads_household(kernel.log)
-    core_entities, finance_entities, evidence_index, registry = _wire_up(kernel, household)
+    core_entities, finance_entities, evidence_index, registry = _wire_up(kernel)
 
     current_net_worth = FinanceMetricProvider(finance_entities, core_entities).owned_metric_ids()
     assert "finance.net_worth" in current_net_worth
@@ -103,7 +103,7 @@ def test_flight_deck_never_appends_an_event_even_with_a_real_domain(kernel):
     """000 §14: the Flight Deck is a consumer, never a producer —
     holds even when the domain behind it is real, not a mock."""
     household = build_parker_brads_household(kernel.log)
-    core_entities, _finance_entities, evidence_index, registry = _wire_up(kernel, household)
+    core_entities, _finance_entities, evidence_index, registry = _wire_up(kernel)
 
     before = len(list(kernel.log.events()))
     compose_flight_deck(

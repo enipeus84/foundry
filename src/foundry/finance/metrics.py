@@ -258,7 +258,7 @@ class FinanceMetricProvider:
 
         total, category_total, refs, limitations = self._position_totals(
             set(person_ids), request.as_of,
-            in_numerator=lambda pos: pos.asset_category == category)
+            in_numerator=lambda pos, _owner_ids: pos.asset_category == category)
         if total <= 0:
             return self._unavailable(request, "no positions observed yet")
         return self._available(request, category_total / total, "ratio", refs, limitations)
@@ -287,8 +287,7 @@ class FinanceMetricProvider:
             return pos.issuer in {employer_of[p] for p in owner_ids if p in employer_of}
 
         total, employer_total, refs, limitations = self._position_totals(
-            set(person_ids), request.as_of, in_numerator=issued_by_an_owners_employer,
-            numerator_needs_owners=True)
+            set(person_ids), request.as_of, in_numerator=issued_by_an_owners_employer)
         if total <= 0:
             return self._unavailable(request, "no positions observed yet")
         return self._available(request, employer_total / total, "ratio", refs, limitations)
@@ -494,12 +493,12 @@ class FinanceMetricProvider:
                 refs.append(conv_ref)
         return total, refs, limitations
 
-    def _position_totals(self, person_ids: set[str], as_of: float, in_numerator,
-                          numerator_needs_owners: bool = False):
+    def _position_totals(self, person_ids: set[str], as_of: float, in_numerator):
         """`(total, numerator_total, refs, limitations)` over every
         active Position in every owned account, each counted once
         (union by account id, then by position id). Positions valued
-        only after `as_of` are excluded and named."""
+        only after `as_of` are excluded and named. `in_numerator` is a
+        predicate `(position, owner_ids_of_its_account) -> bool`."""
         owned_accounts = self._owned_entities(person_ids, self.finance.accounts,
                                                vocab.VALUE_OWNERSHIP_RELATIONS)
         total, numerator, refs, limitations = 0.0, 0.0, [], []
@@ -511,9 +510,7 @@ class FinanceMetricProvider:
                     continue
                 total += pos.market_value
                 refs.extend(pos.provenance)
-                matches = (in_numerator(pos, owner_ids) if numerator_needs_owners
-                           else in_numerator(pos))
-                if matches:
+                if in_numerator(pos, owner_ids):
                     numerator += pos.market_value
         return total, numerator, refs, limitations
 

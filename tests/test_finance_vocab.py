@@ -4,7 +4,6 @@ extensions to Core's (001 §6)."""
 import pytest
 
 from foundry.core import vocab as core_vocab
-from foundry.errors import VocabularyError
 from foundry.finance import vocab
 
 

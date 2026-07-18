@@ -40,6 +40,7 @@ from typing import Any
 from foundry.eventlog import EventLog
 
 from foundry.core import grammar
+from foundry.core import vocab as core_vocab
 from . import vocab
 from ..errors import VocabularyError
 
@@ -437,10 +438,9 @@ def fulfil(log: EventLog, transaction_id: str, series_id: str, actor: str = "use
     """A Transaction relates to the Recurring Series it satisfies —
     Finance's additive `fulfils` value on `structural_relationship`
     (001 §6). Uses Core's own `grammar.relate()` unmodified: `fulfils`
-    lives in `foundry.core.vocab.STRUCTURAL_RELATIONSHIP` once
-    `finance.vocab` has been imported (its module-level `.extend()`
-    call)."""
-    from foundry.core import vocab as core_vocab
+    lives in `foundry.core.vocab.STRUCTURAL_RELATIONSHIP` because this
+    module imports `finance.vocab`, whose module-level `.extend()` call
+    registers it."""
     return grammar.relate(log, PREFIX, "transaction", transaction_id, "fulfils", series_id,
                            core_vocab.STRUCTURAL_RELATIONSHIP, actor=actor)
 
@@ -468,7 +468,6 @@ def tax_resident_in(log: EventLog, party_id: str, jurisdiction_id: str, actor: s
     Finance's additive value on Core's `party_relationship`. Written
     against the *Party's* own `core.party.*` stream (001 §3: no
     parallel finance-prefixed shadow of a Core entity's relations)."""
-    from foundry.core import vocab as core_vocab
     return grammar.relate(log, "core", "party", party_id, "tax_resident_in", jurisdiction_id,
                            core_vocab.PARTY_RELATIONSHIP, actor=actor)
 
