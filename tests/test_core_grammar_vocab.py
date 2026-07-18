@@ -52,20 +52,31 @@ def test_vocabulary_extension_is_additive_only():
     assert "a" in v and "c" in v
 
 
-def test_extending_a_core_vocabulary_shape_does_not_remove_base_values():
-    """Exercises the exact extension a domain will perform (Finance
-    adding `tax_resident_in` to `party_relationship`), against a
-    throwaway copy of the real vocabulary's base values — never the
-    shared global singleton itself, which must stay untouched for every
-    other test in the process (see vocab.py's module docstring)."""
+def test_extending_a_copy_never_touches_the_shared_global_vocabulary():
+    """Exercises the shape of extension a domain performs at its own
+    import time (Finance adds `tax_resident_in` to `party_relationship`
+    — see foundry.finance.vocab), against a throwaway copy of the real
+    vocabulary's base values, proving `.extend()` mutates only the
+    object it's called on.
+
+    Uses a value no real domain claims, deliberately: by the time this
+    suite runs, `foundry.finance` may already have been imported by
+    another test in the same process and legitimately extended the
+    *real* shared singleton with `tax_resident_in` — the correct,
+    intended effect of the "register on import" pattern vocab.py's own
+    docstring prescribes, not something this test polices. What this
+    test polices is narrower and still holds regardless: a copy's
+    `.extend()` call can never leak into the shared global."""
     core_party_relationship_shape = vocab.ExtensibleVocabulary(
         "party_relationship", set(vocab.PARTY_RELATIONSHIP.values))
     before = core_party_relationship_shape.values
 
-    core_party_relationship_shape.extend("tax_resident_in")
+    core_party_relationship_shape.extend("some_other_domains_relation")
 
     assert before <= core_party_relationship_shape.values
-    assert "tax_resident_in" in core_party_relationship_shape
+    assert "some_other_domains_relation" in core_party_relationship_shape
     assert "member_of" in core_party_relationship_shape  # unchanged
-    # And the real, shared global vocabulary was never touched:
-    assert "tax_resident_in" not in vocab.PARTY_RELATIONSHIP
+    # The copy and the real global are different objects — extending
+    # the copy can never leak into the shared singleton:
+    assert "some_other_domains_relation" not in vocab.PARTY_RELATIONSHIP
+    assert core_party_relationship_shape is not vocab.PARTY_RELATIONSHIP
