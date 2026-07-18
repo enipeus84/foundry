@@ -1,5 +1,63 @@
 # Changelog
 
+## [v1.3-finance-core] — 2026-07-18
+
+RFC-002 Part 1: Foundry Finance Domain. The first real product domain
+built on Core — it consumes Party, Employer, Mission, the event
+grammar, the Evidence Index, the Decision lifecycle, and the Metric
+Registry from `foundry.core` and duplicates none of them. Stops
+deliberately before the Financial Projection model (001 §16).
+
+### Added
+- `foundry.finance`: eleven deterministic entities (Account, Asset,
+  Obligation, Transaction, Valuation, Position, Recurring Series,
+  Tax Jurisdiction Configuration, Exchange Rate, Tax Position,
+  Capital Gain Event), each written through the shared five-verb
+  grammar with vocabulary validation before anything reaches the
+  append-only log, and folded by `FinanceEntityProjection` — a
+  rebuildable sibling to `Canon` that folds only `finance.*` events.
+- Nine Finance-owned controlled vocabularies, plus the two additive
+  Core extensions (`party_relationship` gains `tax_resident_in`,
+  `structural_relationship` gains `fulfils`).
+- Ownership model (001 §8): `owner`/`co_owner`/`beneficial_owner`
+  confer counted value, `custodian`/`beneficiary` deliberately don't,
+  `owes` is the counted liability relation and `guarantees` (contingent)
+  is not; optional `share` percentages, range-checked at write time.
+- The first five registered metrics — `finance.net_worth`,
+  `finance.liquidity_runway`, `finance.cash_flow`,
+  `finance.asset_allocation`, `finance.employer_concentration` —
+  dispatched exclusively through the Core Metric Registry.
+  Household totals are union-by-entity-id and reconcile exactly with
+  share-attributed individual values, for stocks and flows alike.
+  Every dated observation respects `as_of`; cross-currency
+  aggregation cites the specific Exchange Rate event used;
+  projection-shaped requests (`horizon`/`assumption_set_id`/
+  `scenario_id`) fail closed as `unsupported` rather than being
+  silently answered with Baseline numbers.
+- The synthetic Parker-Brads household fixture and
+  `examples/finance_demo.py`, proving real Flight Deck tiles composed
+  by Core from live Finance metrics with no import edge in either
+  direction.
+- 81 new tests (91 → 172 passing), including regressions from an
+  adversarial review pass that caught six material defects before
+  merge (as_of leakage, silent-Baseline scenario answers,
+  joint-account flow double-counting, a correction-path vocabulary
+  bypass, refund-inflated liquidity burn, projection name loss).
+- GitHub Actions CI (`.github/workflows/test.yml`): the full suite on
+  Python 3.10–3.13 — the repository's first CI, closing the gap of
+  local-only validation on an unsupported interpreter.
+- `docs/rfc-002-implementation-report.md`: judgment calls, adversarial
+  findings, and residual limitations, recorded next to the code.
+
+### Design notes
+- Zero changes to `eventlog.py`, `canon.py`, `kernel.py`, or anything
+  under `src/foundry/core/`. Two Core canary tests were updated to
+  check their real invariant (static import inspection) now that a
+  real domain exists — the exact eventuality their docstrings named.
+- Deferred to Part 2: Assumption Set, Scenario, the Financial
+  Projection engine, tax calculation beyond the declared entities,
+  AI-assisted analysis, and any visual Flight Deck.
+
 ## [v1.2-core] — 2026-07-17
 
 RFC-001: Foundry Core Domain. The first product layer above the V1.0
