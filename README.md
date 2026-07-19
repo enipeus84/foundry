@@ -85,6 +85,64 @@ In Supabase: enable the Google provider (Authentication → Providers),
 and add `<APP_BASE_URL>/auth/callback` to the allowed redirect URLs
 (Authentication → URL Configuration).
 
+### Demo mode
+
+A temporary capability for evaluating Mission Control's UI on a real
+deployment before any personal data exists (RFC-003.3) — **not** a
+database, **not** real-data import, **not** persistent storage. It
+reuses the exact synthetic Morgan household `examples/
+seed_synthetic_household.py` seeds locally (`foundry.demo_data.build`),
+run once at process startup instead of by hand.
+
+```
+FOUNDRY_DEMO_DATA=true
+FOUNDRY_DATA_PATH=/tmp/foundry/events.jsonl
+```
+
+Set both in the Render dashboard (or your deployment's own env-var
+config) to enable it. The value must be **exactly** `true` —
+lowercase, unpadded; `TRUE`, `1`, `yes`, or anything else preserves
+the current behaviour bit-for-bit (no file is even created at
+startup), so a truthy-looking typo can never switch a deployment
+into demo mode. **Never enable this on an environment meant to hold
+real data** — only where wiping the dataset is always acceptable.
+
+Behaviour, checked at every process start:
+
+- `FOUNDRY_DEMO_DATA` is not exactly `true` → nothing happens,
+  unchanged from before this capability existed.
+- `FOUNDRY_DEMO_DATA=true` and the file at `FOUNDRY_DATA_PATH` is
+  missing or zero-byte → seeded once with the synthetic household.
+  The dataset is built in a same-directory temp file, hash-chain
+  verified, then atomically renamed into place — the log is never
+  observable half-written, a crash mid-seed leaves the target
+  untouched, and a sibling `.lock` file serialises simultaneous
+  starts (multi-worker deployments) so exactly one process seeds.
+- `FOUNDRY_DEMO_DATA=true` and the file has *any* existing content —
+  real events, a previous seed, even something malformed → left
+  completely alone, byte-for-byte, logged as skipped (with a
+  critical-level warning if the content doesn't verify as an event
+  log — preserved as evidence, never "repaired"). There is no HTTP
+  route that can trigger seeding — it only runs at startup,
+  in-process.
+- An unwritable `FOUNDRY_DATA_PATH`, or one that points at a
+  directory, fails the process at startup (fail closed) rather than
+  coming up silently without the data it was asked to seed.
+
+Every seeded log permanently carries a first-class marker Claim
+(actor `synthetic_demo`, statement beginning `SYNTHETIC DEMO DATA`)
+so the file itself — greppable, replayable — can never be mistaken
+for a real household later, whatever happens to this documentation.
+
+**Render's default filesystem is ephemeral.** A path like
+`/tmp/foundry/events.jsonl` (or anywhere outside a persistent disk)
+does not survive a redeploy or restart — demo mode will simply
+re-seed a fresh household next time the process starts, which is the
+intended, disposable behaviour for UI evaluation. This capability
+does not add a persistent disk or a database; if you need the
+dataset to survive restarts, that's a separate piece of work, not
+this one.
+
 ## Sixty-second tour
 
 ```python
@@ -116,6 +174,8 @@ src/foundry/
                   update link resolve
   models.py       model adapters (two mocks, Anthropic, OpenAI)
   ingestors.py    real documents & conversation exports -> events
+  demo_data.py    synthetic Morgan household builder + demo-mode
+                  startup hook (FOUNDRY_DEMO_DATA) — not real data
   errors.py       three exceptions; each demands a different response
   cli.py          minimal CLI (`foundry ingest|derive|ask|why|verify`)
   core/           domain-agnostic layer every product domain depends on

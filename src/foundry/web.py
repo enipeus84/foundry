@@ -30,11 +30,22 @@ Configuration:
     FOUNDRY_DATA_PATH    path to the events.jsonl to serve
                          (default: foundry_data/events.jsonl —
                          seed one with examples/seed_mission_control.py)
+    FOUNDRY_DEMO_DATA    exactly the string "true" (lowercase, no
+                         padding) to auto-seed FOUNDRY_DATA_PATH with
+                         the synthetic Morgan household (RFC-003.3) if,
+                         and only if, it is missing or zero-byte —
+                         never touches a file with existing content.
+                         Absent or any other value ("TRUE", "1", "yes",
+                         ...) preserves current behaviour exactly: no
+                         seeding, no file touched at startup. A
+                         temporary demo-evaluation capability, not
+                         real-data onboarding — see `foundry.demo_data`.
     + the auth variables documented in webauth.py
 """
 
 from __future__ import annotations
 
+import logging
 import os
 import time
 
@@ -47,14 +58,69 @@ from foundry.canon import Canon
 from foundry.core.entities import EntityProjection
 from foundry.core.evidence import EvidenceIndex
 from foundry.core.metrics import MetricRegistry
+from foundry.demo_data import ensure_demo_data
 from foundry.eventlog import EventLog
 from foundry.finance.entities import FinanceEntityProjection
 from foundry.finance.metrics import FinanceMetricProvider
 from foundry.mission_control import Console, router as mission_control_router
 
+logger = logging.getLogger("foundry.web")
+
 app = FastAPI(title="Foundry", version=__version__, docs_url=None, redoc_url=None)
 
 DEFAULT_DATA_PATH = "foundry_data/events.jsonl"
+
+
+def _maybe_seed_demo_data() -> None:
+    """RFC-003.3: an env-gated, idempotent startup hook — not an HTTP
+    route, so nothing on the public surface can trigger seeding.
+    Reads `FOUNDRY_DEMO_DATA`/`FOUNDRY_DATA_PATH` fresh on every call
+    (rather than caching at import time) so tests can exercise it
+    directly under `monkeypatch` without reloading this module.
+
+    Deliberately does not catch what `ensure_demo_data` raises: a
+    misconfigured or unwritable `FOUNDRY_DATA_PATH` should fail the
+    process loudly at startup — fail closed — rather than come up
+    silently without the demo data it was asked for.
+
+    Runs at module import rather than in a FastAPI lifespan hook,
+    deliberately: uvicorn imports this module once per worker process
+    *before* serving anything, a lifespan hook would run once per
+    worker anyway (no concurrency benefit), and `ensure_demo_data`'s
+    own lock + atomic-rename discipline is what actually makes
+    simultaneous multi-worker starts safe — not the choice of hook."""
+    if os.environ.get("FOUNDRY_DEMO_DATA") != "true":
+        # Exactly "true", nothing else: "TRUE", "1", "yes", "enabled",
+        # or a padded value must never switch a deployment into demo
+        # mode by accident. Anything but the literal opt-in preserves
+        # pre-RFC-003.3 behaviour bit-for-bit (no file even created).
+        return
+
+    # Under plain `uvicorn foundry.web:app` (the Render start command),
+    # only uvicorn's own loggers have handlers — an app logger's INFO
+    # records reach a handler-less root and vanish (the last-resort
+    # handler shows WARNING+ only). The seeded/skipped audit line must
+    # be visible in deployment logs, so if nobody has configured
+    # logging, give the demo-data logger one stderr handler of its
+    # own. Never touches global logging config, and defers to any real
+    # configuration the deployment already made.
+    demo_logger = logging.getLogger("foundry.demo_data")
+    if not logging.getLogger().handlers and not demo_logger.handlers:
+        handler = logging.StreamHandler()
+        handler.setFormatter(logging.Formatter("%(levelname)s:     %(message)s"))
+        demo_logger.addHandler(handler)
+        demo_logger.setLevel(logging.INFO)
+
+    path = os.environ.get("FOUNDRY_DATA_PATH", DEFAULT_DATA_PATH)
+    try:
+        ensure_demo_data(path)  # logs "seeded" vs "skipped" itself
+    except OSError:
+        logger.critical("demo data: FOUNDRY_DEMO_DATA=true but %s could not be "
+                         "read or created — refusing to start", path)
+        raise
+
+
+_maybe_seed_demo_data()
 
 
 def _build_console() -> Console:
