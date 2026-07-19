@@ -1,5 +1,58 @@
 # Changelog
 
+## [v1.4.1-demo-mode] — 2026-07-19
+
+RFC-003.2 + RFC-003.3: deployable synthetic demo mode. A deployed
+instance can now show a fully populated Mission Control before any
+personal data exists — an env-gated, disposable evaluation dataset,
+not persistence and not onboarding.
+
+### Added
+- `foundry.demo_data`: the synthetic Morgan household — ~24 months of
+  unevenly spaced history (salary rise, annual bonuses, tax refund,
+  unexpected repair, holidays, joint ownership, shared mortgage paying
+  down, house appreciation, vehicle depreciation, a USD asset with
+  Exchange Rate events, market decline and recovery) plus one complete
+  Mission → Decision → Execution → Outcome → Review → Learning
+  lifecycle, written entirely through Core's and Finance's public
+  write APIs. All five KPI cards render AVAILABLE; the mission
+  evaluates GREEN. Every seeded log permanently carries an in-band
+  marker Claim (actor `synthetic_demo`, statement beginning
+  "SYNTHETIC DEMO DATA") so the file itself can never be mistaken for
+  a real household.
+- `FOUNDRY_DEMO_DATA=true` (exactly that string — no truthy
+  lookalikes) seeds `FOUNDRY_DATA_PATH` at startup if, and only if,
+  the file is missing or zero-byte. Seeding is atomic (same-directory
+  temp build, hash-chain verification, `os.replace`), serialized
+  across concurrent starts by an O_EXCL lock file, startup-only (no
+  HTTP route), and evidence-preserving: existing content of any kind
+  — real events, malformed bytes, whitespace — is never parsed to
+  decide emptiness, never modified, never "repaired". Unwritable or
+  directory paths fail startup closed.
+- `examples/seed_synthetic_household.py`: thin CLI wrapper over the
+  same builder. `render.yaml` gains dashboard-controlled
+  `FOUNDRY_DEMO_DATA`/`FOUNDRY_DATA_PATH` (off by default); README
+  documents the settings and Render's ephemeral-filesystem behaviour.
+- 50 new tests (209 → 259, zero skips): dataset realism and lineage,
+  replay determinism, all-KPIs-available, and the demo-mode safety
+  matrix — strict opt-in, crash-mid-seed atomicity, a two-process
+  concurrency race, evidence preservation, fail-closed paths, no
+  public trigger, git hygiene.
+
+### Fixed (found by the RFC-003.3A adversarial review)
+- A crash mid-seed left a valid-looking half dataset that every later
+  start then accepted and skipped — seeding now publishes atomically
+  or not at all.
+- Two simultaneous starts (multi-worker uvicorn) interleaved two
+  datasets into one file and corrupted the hash chain — now
+  serialized by the lock, proven with racing OS processes.
+- The emptiness check json-parsed unknown existing data (malformed
+  logs crashed startup; whitespace-only files would have been
+  appended into) — emptiness is now decided by file size alone.
+- Seeded/skipped audit lines were invisible under uvicorn's default
+  logging — the composition root now attaches one scoped stderr
+  handler when nothing else has configured logging.
+
 ## [v1.4-mission-control] — 2026-07-18
 
 RFC-003: Mission Control v0.1 — the first real product surface. A
