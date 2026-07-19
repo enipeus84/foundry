@@ -27,7 +27,7 @@ def test_fixture_builds_a_household_of_four_with_two_owning_members(kernel):
     assert members == {household.chris_id, household.fiona_id, household.hamish_id, household.harriet_id}
 
 
-def test_all_five_metrics_return_available_for_the_household(kernel):
+def test_every_registered_metric_returns_available_for_the_household(kernel):
     """The fixture exists to give every registered metric live data —
     a household this fully populated should never fall back to
     unsupported/unavailable for its own top-level scope."""
@@ -41,12 +41,16 @@ def test_all_five_metrics_return_available_for_the_household(kernel):
                                                     parameters={"asset_category": "private_equity"}))
     concentration = provider.calculate(MetricRequest("finance.employer_concentration",
                                                        Subject("party", household.chris_id), household.as_of))
+    debt_ratio = provider.calculate(MetricRequest("finance.debt_ratio", scope, household.as_of))
+    cash = provider.calculate(MetricRequest("finance.cash_available", scope, household.as_of))
 
-    for result in (net_worth, runway, cash_flow, allocation, concentration):
+    for result in (net_worth, runway, cash_flow, allocation, concentration, debt_ratio, cash):
         assert result.status == "available", result.limitations
 
     assert net_worth.value > 0
     assert 0.0 < concentration.value < 1.0  # Chris's Anchor stock is concentrated, not his whole portfolio
+    assert 0.0 < debt_ratio.value < 1.0     # mortgaged, not underwater
+    assert 0.0 < cash.value < net_worth.value
 
 
 def test_household_net_worth_equals_sum_of_member_attributions(kernel):

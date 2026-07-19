@@ -1,6 +1,6 @@
 """
-FinanceMetricProvider — the first five registered Facts
-(001-finance-domain-model.md §13).
+FinanceMetricProvider — Finance's registered Facts
+(001-finance-domain-model.md §13; the set is open and extensible).
 
     finance.net_worth              household-unioned / individually
                                     attributed net worth (001 §9)
@@ -12,6 +12,14 @@ FinanceMetricProvider — the first five registered Facts
                                     asset_category (via parameters)
     finance.employer_concentration Position value issued by a scope's
                                     current employer(s), against total
+    finance.debt_ratio             owed obligations over gross holdings
+                                    (accounts + assets), added for
+                                    RFC-003's Mission Control KPIs
+    finance.cash_available         strictly-liquid account balances —
+                                    immediately spendable money, a
+                                    deliberately narrower cut than the
+                                    liquidity-runway numerator (which
+                                    also admits near-liquid holdings)
 
 Every calculation is a pure function over `FinanceEntityProjection` (own
 state) and a caller-supplied `foundry.core.entities.EntityProjection`
@@ -89,6 +97,8 @@ METRIC_IDS = frozenset({
     "finance.cash_flow",
     "finance.asset_allocation",
     "finance.employer_concentration",
+    "finance.debt_ratio",
+    "finance.cash_available",
 })
 
 # A V1 product judgement (see module docstring), not a 001 formula.
@@ -121,6 +131,8 @@ class FinanceMetricProvider:
             "finance.cash_flow": self._cash_flow,
             "finance.asset_allocation": self._asset_allocation,
             "finance.employer_concentration": self._employer_concentration,
+            "finance.debt_ratio": self._debt_ratio,
+            "finance.cash_available": self._cash_available,
         }.get(request.metric_id)
         if handler is None:
             return self._unsupported(request, "not owned by FinanceMetricProvider")
@@ -291,6 +303,66 @@ class FinanceMetricProvider:
         if total <= 0:
             return self._unavailable(request, "no positions observed yet")
         return self._available(request, employer_total / total, "ratio", refs, limitations)
+
+    def _debt_ratio(self, request: MetricRequest) -> MetricResult:
+        """Owed obligations over gross holdings (accounts + assets),
+        both sides valued and attributed exactly as `finance.net_worth`
+        values them — the same union/share rules, the same `as_of` and
+        currency discipline. Unavailable, never a guess, when no
+        positive gross holdings have been observed (a ratio over zero
+        or negative gross is meaningless)."""
+        person_ids = self._scope_persons(request.scope)
+        if person_ids is None:
+            return self._unsupported(request, "finance.debt_ratio requires a party scope")
+        if not person_ids:
+            return self._unavailable(request, "party resolves to no members")
+
+        target = self._target_currency(set(person_ids) | {request.scope.id})
+        attribute_to = self._attribute_to(request.scope)
+        if attribute_to is None:
+            accounts, r1, l1 = self._store_total(self.finance.accounts, set(person_ids), target, request.as_of)
+            assets, r2, l2 = self._store_total(self.finance.assets, set(person_ids), target, request.as_of)
+            debt, r3, l3 = self._store_total(self.finance.obligations, set(person_ids), target,
+                                              request.as_of, relations=vocab.LIABILITY_RELATIONS)
+        else:
+            accounts, r1, l1 = self._attributed_value(attribute_to, self.finance.accounts, target, request.as_of)
+            assets, r2, l2 = self._attributed_value(attribute_to, self.finance.assets, target, request.as_of)
+            debt, r3, l3 = self._attributed_value(attribute_to, self.finance.obligations, target,
+                                                    request.as_of, relations=vocab.LIABILITY_RELATIONS)
+
+        gross = accounts + assets
+        refs, limitations = r1 + r2 + r3, l1 + l2 + l3
+        if gross <= 0:
+            return self._unavailable(request, "no positive gross holdings observed yet",
+                                      extra_limitations=limitations)
+        return self._available(request, debt / gross, "ratio", refs, limitations)
+
+    def _cash_available(self, request: MetricRequest) -> MetricResult:
+        """Balances of strictly `liquid`-classified accounts —
+        immediately spendable money, denominated in the reporting
+        currency. Deliberately narrower than the liquidity-runway
+        numerator: no `near_liquid` holdings, no assets."""
+        person_ids = self._scope_persons(request.scope)
+        if person_ids is None:
+            return self._unsupported(request, "finance.cash_available requires a party scope")
+        if not person_ids:
+            return self._unavailable(request, "party resolves to no members")
+
+        target = self._target_currency(set(person_ids) | {request.scope.id})
+        attribute_to = self._attribute_to(request.scope)
+        strictly_liquid = frozenset({"liquid"})
+        if attribute_to is None:
+            cash, refs, limitations = self._store_total(
+                self.finance.accounts, set(person_ids), target, request.as_of,
+                filter_liquidity=strictly_liquid)
+        else:
+            cash, refs, limitations = self._attributed_value(
+                attribute_to, self.finance.accounts, target, request.as_of,
+                filter_liquidity=strictly_liquid)
+        if not refs:
+            return self._unavailable(request, "no liquid-classified accounts observed yet",
+                                      extra_limitations=limitations)
+        return self._available(request, cash, target, refs, limitations)
 
     # ---------------------------------------------------------------- scope
 
@@ -524,8 +596,12 @@ class FinanceMetricProvider:
         if currency == target:
             return amount, None
         direct, inverse = f"{currency}/{target}", f"{target}/{currency}"
+        # rate > 0 guards replay against a non-positive rate that reached
+        # the append-only log through some other writer: it can never be
+        # applied (a zero inverse rate would divide by zero), only skipped.
         candidates = [r for r in self.finance.exchange_rates.values()
-                      if r.currency_pair in (direct, inverse) and r.as_of <= as_of]
+                      if r.currency_pair in (direct, inverse)
+                      and r.as_of <= as_of and r.rate > 0]
         if not candidates:
             return None, None
         latest = max(candidates, key=lambda r: r.as_of)
