@@ -23,6 +23,8 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install
-        run: pip install -e ".[dev]"
+        # dev + web so the Mission Control and auth suites actually run
+        # here rather than importorskip-ping out.
+        run: pip install -e ".[dev,web]"
       - name: Test
         run: python -m pytest tests -q

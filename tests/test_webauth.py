@@ -15,12 +15,15 @@ ALLOWED = "cparkerbrads@gmail.com"
 
 
 @pytest.fixture(autouse=True)
-def auth_env(monkeypatch):
+def auth_env(monkeypatch, tmp_path):
     monkeypatch.setenv("SUPABASE_URL", "https://example.supabase.co")
     monkeypatch.setenv("SUPABASE_PUBLISHABLE_KEY", "test-publishable-key")
     monkeypatch.setenv("FOUNDRY_ALLOWED_EMAIL", ALLOWED)
     monkeypatch.setenv("SESSION_SECRET", "unit-test-secret-0123456789abcdef")
     monkeypatch.setenv("APP_BASE_URL", "http://testserver")
+    # An isolated event log per test: rendering "/" must never touch a
+    # real data path from the test suite.
+    monkeypatch.setenv("FOUNDRY_DATA_PATH", str(tmp_path / "events.jsonl"))
 
 
 def client() -> TestClient:
@@ -65,7 +68,7 @@ def test_allowed_user_can_access_root():
     c.cookies.set(webauth.SESSION_COOKIE, _session_cookie(ALLOWED))
     r = c.get("/")
     assert r.status_code == 200
-    assert "System operational" in r.text
+    assert "MISSION CONTROL" in r.text
 
 
 def test_non_allowed_user_is_rejected_at_callback(monkeypatch):

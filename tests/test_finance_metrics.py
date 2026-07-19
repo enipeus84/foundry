@@ -210,6 +210,36 @@ def test_asset_valued_only_after_as_of_is_excluded_and_named(kernel):
     assert any("valued only after as_of" in l for l in result.limitations)
 
 
+def test_declare_exchange_rate_rejects_non_positive_rate(kernel):
+    """A zero or negative rate can never be applied (a zero inverse
+    rate would divide by zero) — rejected before the append."""
+    with pytest.raises(ValueError):
+        fin.declare_exchange_rate(kernel.log, "EUR/GBP", 0.0, NOW)
+    with pytest.raises(ValueError):
+        fin.declare_exchange_rate(kernel.log, "EUR/GBP", -1.2, NOW)
+    assert list(kernel.log.events()) == []
+
+
+def test_zero_rate_already_in_the_log_is_skipped_never_a_crash(kernel):
+    """The append-only log may contain a bad rate from another writer;
+    replay must skip it (excluding the item, naming the limitation),
+    never divide by zero when it's matched as an inverse pair."""
+    household, chris, fiona = _household_of_two(kernel.log)
+    villa = fin.declare_asset(kernel.log, "property", "EUR")
+    fin.link_ownership(kernel.log, "asset", villa.id, "owner", chris.id)
+    fin.declare_valuation(kernel.log, villa.id, 100_000.0, "EUR", NOW - 10)
+    # Bypass the write-time guard, as a foreign writer could:
+    kernel.log.append("finance.exchange_rate.declared",
+                       {"entity_id": "bad-rate", "currency_pair": "GBP/EUR",
+                        "rate": 0.0, "as_of": NOW - 5})
+
+    registry = _registry(kernel.log)
+    result = registry.dispatch(MetricRequest(
+        metric_id="finance.net_worth", scope=Subject("party", household.id), as_of=NOW))
+    assert result.status == "unavailable"  # nothing else owned; villa excluded
+    assert any("no exchange rate" in l for l in result.limitations)
+
+
 def test_exchange_rate_dated_after_as_of_never_applies_retroactively(kernel):
     household, chris, fiona = _household_of_two(kernel.log)
     villa = fin.declare_asset(kernel.log, "property", "EUR")
@@ -563,13 +593,121 @@ def test_employer_concentration_unavailable_without_declared_employer(kernel):
     assert result.status == "unavailable"
 
 
+# ------------------------------------------------------------------ debt ratio
+
+def test_debt_ratio_household_and_individual(kernel):
+    """owed obligations / (accounts + assets), same union/share rules
+    as net worth — so a 50/50 mortgage against a 50/50 house yields the
+    identical ratio at household and member scope."""
+    household, chris, fiona = _household_of_two(kernel.log)
+    home = fin.declare_asset(kernel.log, "property", "GBP")
+    fin.link_ownership(kernel.log, "asset", home.id, "co_owner", chris.id, share=50.0)
+    fin.link_ownership(kernel.log, "asset", home.id, "co_owner", fiona.id, share=50.0)
+    fin.declare_valuation(kernel.log, home.id, 400_000.0, "GBP", NOW)
+    mortgage = fin.declare_obligation(kernel.log, "mortgage", "GBP", amount=100_000.0)
+    fin.link_ownership(kernel.log, "obligation", mortgage.id, "owes", chris.id, share=50.0)
+    fin.link_ownership(kernel.log, "obligation", mortgage.id, "owes", fiona.id, share=50.0)
+
+    registry = _registry(kernel.log)
+    household_result = registry.dispatch(MetricRequest(
+        metric_id="finance.debt_ratio", scope=Subject("party", household.id), as_of=NOW))
+    chris_result = registry.dispatch(MetricRequest(
+        metric_id="finance.debt_ratio", scope=Subject("party", chris.id), as_of=NOW))
+    assert household_result.value == pytest.approx(0.25)
+    assert household_result.unit_or_currency == "ratio"
+    assert chris_result.value == pytest.approx(0.25)  # 50k / 200k
+
+
+def test_debt_ratio_unavailable_without_positive_gross_holdings(kernel):
+    """Debt with nothing on the asset side is not a ratio — it is
+    unavailable, never a fabricated or infinite number."""
+    chris = declare_party(kernel.log, "person")
+    loan = fin.declare_obligation(kernel.log, "personal_loan", "GBP", amount=5_000.0)
+    fin.link_ownership(kernel.log, "obligation", loan.id, "owes", chris.id)
+
+    registry = _registry(kernel.log)
+    result = registry.dispatch(MetricRequest(
+        metric_id="finance.debt_ratio", scope=Subject("party", chris.id), as_of=NOW))
+    assert result.status == "unavailable"
+    assert result.value is None
+
+
+def test_debt_ratio_zero_when_debt_free(kernel):
+    chris = declare_party(kernel.log, "person")
+    account = fin.declare_account(kernel.log, "checking", "GBP")
+    fin.link_ownership(kernel.log, "account", account.id, "owner", chris.id)
+    fin.declare_transaction(kernel.log, account.id, 1000.0, "GBP", "income", NOW)
+
+    registry = _registry(kernel.log)
+    result = registry.dispatch(MetricRequest(
+        metric_id="finance.debt_ratio", scope=Subject("party", chris.id), as_of=NOW))
+    assert result.status == "available"
+    assert result.value == 0.0  # a real zero: holdings observed, no debt — not "unavailable"
+
+
+# --------------------------------------------------------------- cash available
+
+def test_cash_available_counts_only_strictly_liquid_accounts(kernel):
+    """Narrower than the liquidity-runway numerator: near_liquid
+    accounts and (valued) assets are excluded — this is immediately
+    spendable money only."""
+    household, chris, fiona = _household_of_two(kernel.log)
+    checking = fin.declare_account(kernel.log, "checking", "GBP", liquidity_classification="liquid")
+    fin.link_ownership(kernel.log, "account", checking.id, "owner", chris.id)
+    fin.declare_transaction(kernel.log, checking.id, 2_500.0, "GBP", "income", NOW)
+
+    isa = fin.declare_account(kernel.log, "brokerage", "GBP", liquidity_classification="near_liquid")
+    fin.link_ownership(kernel.log, "account", isa.id, "owner", chris.id)
+    fin.declare_position(kernel.log, isa.id, "Fund", quantity=1, unit_price=10_000.0, currency="GBP",
+                          cost_basis=9_000.0, valuation_date=NOW, market_value=10_000.0,
+                          asset_category="private_equity")
+
+    registry = _registry(kernel.log)
+    result = registry.dispatch(MetricRequest(
+        metric_id="finance.cash_available", scope=Subject("party", household.id), as_of=NOW))
+    assert result.value == 2_500.0  # the £10k near-liquid ISA never counts
+    assert result.unit_or_currency == "GBP"
+
+
+def test_cash_available_share_attribution_reconciles(kernel):
+    household, chris, fiona = _household_of_two(kernel.log)
+    joint = fin.declare_account(kernel.log, "checking", "GBP", liquidity_classification="liquid")
+    fin.link_ownership(kernel.log, "account", joint.id, "co_owner", chris.id, share=50.0)
+    fin.link_ownership(kernel.log, "account", joint.id, "co_owner", fiona.id, share=50.0)
+    fin.declare_transaction(kernel.log, joint.id, 1_000.0, "GBP", "income", NOW)
+
+    registry = _registry(kernel.log)
+    household_result = registry.dispatch(MetricRequest(
+        metric_id="finance.cash_available", scope=Subject("party", household.id), as_of=NOW))
+    chris_result = registry.dispatch(MetricRequest(
+        metric_id="finance.cash_available", scope=Subject("party", chris.id), as_of=NOW))
+    fiona_result = registry.dispatch(MetricRequest(
+        metric_id="finance.cash_available", scope=Subject("party", fiona.id), as_of=NOW))
+    assert household_result.value == 1_000.0
+    assert chris_result.value + fiona_result.value == household_result.value
+
+
+def test_cash_available_unavailable_without_liquid_accounts(kernel):
+    chris = declare_party(kernel.log, "person")
+    account = fin.declare_account(kernel.log, "savings", "GBP")  # no liquidity classification
+    fin.link_ownership(kernel.log, "account", account.id, "owner", chris.id)
+    fin.declare_transaction(kernel.log, account.id, 500.0, "GBP", "income", NOW)
+
+    registry = _registry(kernel.log)
+    result = registry.dispatch(MetricRequest(
+        metric_id="finance.cash_available", scope=Subject("party", chris.id), as_of=NOW))
+    assert result.status == "unavailable"
+    assert result.value is None
+
+
 # ------------------------------------------------------------------ registry
 
-def test_all_five_metrics_registered(kernel):
+def test_all_registered_metric_ids(kernel):
     provider = _provider(kernel.log)
     assert provider.owned_metric_ids() == {
         "finance.net_worth", "finance.liquidity_runway", "finance.cash_flow",
         "finance.asset_allocation", "finance.employer_concentration",
+        "finance.debt_ratio", "finance.cash_available",
     }
 
 

@@ -1,119 +1,100 @@
 """
-Minimal web interface. A deployment shell over the substrate, not part
-of it: `foundry/__init__.py` does not import this module, so the core
-keeps its zero-runtime-dependency invariant. FastAPI is an optional
-extra:
+The web application — Mission Control's composition root. A deployment
+shell over the substrate, not part of it: `foundry/__init__.py` does
+not import this module, so the core keeps its zero-runtime-dependency
+invariant. FastAPI is an optional extra:
 
     pip install -e ".[web]"
     uvicorn foundry.web:app --host 0.0.0.0 --port 8000
 
 Endpoints:
-    GET /health          JSON operational status (public, for Render)
-    GET /                HTML status page (requires session)
-    GET /login           "Continue with Google" page
-    GET /auth/google     starts Supabase Google OAuth (PKCE)
-    GET /auth/callback   completes OAuth, sets session, redirects to /
-    GET|POST /logout     clears the session
+    GET /health           JSON operational status (public, for Render)
+    GET /                 Mission Control home (requires session)
+    GET /metrics/{id}     KPI drill-down (requires session)
+    GET /finance|/decisions|/missions|/settings   placeholders
+    GET /login            "Continue with Google" page
+    GET /auth/google      starts Supabase Google OAuth (PKCE)
+    GET /auth/callback    completes OAuth, sets session, redirects to /
+    GET|POST /logout      clears the session
+
+**This module is the one place Finance meets Core** (RFC-003's rule:
+Mission Control never imports a domain's calculation code — so the
+composition root does the wiring instead, exactly as
+examples/finance_demo.py does for the CLI). `_build_console()` reads
+the event log named by FOUNDRY_DATA_PATH, folds the projections, and
+registers the Finance provider with a fresh Metric Registry. Mission
+Control receives the finished `Console` and composes; it cannot reach
+Finance any other way.
+
+Configuration:
+    FOUNDRY_DATA_PATH    path to the events.jsonl to serve
+                         (default: foundry_data/events.jsonl —
+                         seed one with examples/seed_mission_control.py)
+    + the auth variables documented in webauth.py
 """
 
 from __future__ import annotations
 
-import ast
+import os
 import time
-from functools import lru_cache
-from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
 from foundry import __version__
 from foundry import webauth
-
-TAGLINE = "Durable organisational intelligence across AI models"
+from foundry.canon import Canon
+from foundry.core.entities import EntityProjection
+from foundry.core.evidence import EvidenceIndex
+from foundry.core.metrics import MetricRegistry
+from foundry.eventlog import EventLog
+from foundry.finance.entities import FinanceEntityProjection
+from foundry.finance.metrics import FinanceMetricProvider
+from foundry.mission_control import Console, router as mission_control_router
 
 app = FastAPI(title="Foundry", version=__version__, docs_url=None, redoc_url=None)
 
+DEFAULT_DATA_PATH = "foundry_data/events.jsonl"
 
-@lru_cache(maxsize=1)
-def _test_count() -> int | None:
-    """Count test functions in the repository's tests/ directory.
 
-    Stdlib-only (ast), so the deployed service never needs pytest.
-    Returns None when the tests directory isn't shipped alongside the
-    package (e.g. a wheel install) — the page then reports it honestly
-    rather than inventing a number.
-    """
-    # web.py -> foundry -> src -> repo root
-    tests_dir = Path(__file__).resolve().parents[2] / "tests"
-    if not tests_dir.is_dir():
-        return None
-    count = 0
-    for path in sorted(tests_dir.glob("test_*.py")):
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-        for node in ast.walk(tree):
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                if node.name.startswith("test_"):
-                    count += 1
-    return count
+def _build_console() -> Console:
+    """Fresh projections over the configured log, with the Finance
+    provider registered — rebuilt per request so the page always
+    reflects the log as it is now. Replay of these logs is milliseconds;
+    incremental maintenance is an optimisation for a later RFC."""
+    log = EventLog(os.environ.get("FOUNDRY_DATA_PATH", DEFAULT_DATA_PATH))
+    core_entities = EntityProjection(log)
+    registry = MetricRegistry()
+    registry.register(FinanceMetricProvider(FinanceEntityProjection(log), core_entities))
+    return Console(log=log, registry=registry, entities=core_entities,
+                   evidence=EvidenceIndex(log), canon=Canon(log))
+
+
+app.state.console_factory = _build_console
+app.include_router(mission_control_router)
+
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    """Public-internet hardening for a zero-JS, inline-styled surface:
+    the CSP permits exactly what the pages use and nothing else.
+    /health stays cacheable for the platform's health checker; every
+    authenticated page is no-store."""
+    resp = await call_next(request)
+    resp.headers["X-Content-Type-Options"] = "nosniff"
+    resp.headers["X-Frame-Options"] = "DENY"
+    resp.headers["Referrer-Policy"] = "no-referrer"
+    resp.headers["Content-Security-Policy"] = (
+        "default-src 'none'; style-src 'unsafe-inline'; "
+        "base-uri 'none'; form-action 'self'")
+    if request.url.path != "/health":
+        resp.headers["Cache-Control"] = "no-store"
+    return resp
 
 
 @app.get("/health")
 def health() -> dict:
     return {"status": "ok", "service": "foundry", "version": __version__}
-
-
-_PAGE = """<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Foundry V{version}</title>
-<style>
-  body {{ font-family: Georgia, 'Times New Roman', serif; background: #faf9f6;
-         color: #1a1a1a; max-width: 40rem; margin: 4rem auto; padding: 0 1.5rem;
-         line-height: 1.6; }}
-  h1 {{ font-size: 1.6rem; margin-bottom: 0.2rem; }}
-  .tagline {{ color: #555; font-style: italic; margin-top: 0; }}
-  .status {{ margin: 2rem 0; padding: 1rem 1.25rem; border-left: 3px solid #2e7d32;
-             background: #f1f6f1; }}
-  .status strong {{ color: #2e7d32; }}
-  dl {{ display: grid; grid-template-columns: max-content auto; gap: 0.3rem 1.5rem; }}
-  dt {{ color: #555; }}
-  dd {{ margin: 0; }}
-  a {{ color: #1a4a8a; }}
-  footer {{ margin-top: 3rem; font-size: 0.85rem; color: #777; }}
-</style>
-</head>
-<body>
-<h1>Foundry V{version}</h1>
-<p class="tagline">{tagline}</p>
-<div class="status"><strong>System operational</strong></div>
-<dl>
-  <dt>Version</dt><dd>{version}</dd>
-  <dt>Tests</dt><dd>{tests}</dd>
-  <dt>Architecture</dt><dd><a href="{repo}/blob/main/docs/architecture.md">docs/architecture.md</a></dd>
-  <dt>Runbook</dt><dd><a href="{repo}/blob/main/docs/RUNBOOK_V1.md">docs/RUNBOOK_V1.md</a></dd>
-  <dt>Roadmap</dt><dd><a href="{repo}/blob/main/docs/roadmap.md">docs/roadmap.md</a></dd>
-</dl>
-<footer>The substrate is sacred; every layer above it is replaceable.</footer>
-</body>
-</html>
-"""
-
-_REPO_URL = "https://github.com/enipeus84/foundry"
-
-
-@app.get("/", response_class=HTMLResponse)
-def status_page(request: Request):
-    cfg = webauth.load_config()
-    email = webauth.session_email(
-        request.cookies.get(webauth.SESSION_COOKIE), cfg)
-    if email is None or email != cfg.allowed_email or not cfg.allowed_email:
-        return RedirectResponse("/login", status_code=303)
-    n = _test_count()
-    tests = f"{n} passing" if n is not None else "suite not shipped with this install"
-    return HTMLResponse(_PAGE.format(
-        version=__version__, tagline=TAGLINE, tests=tests, repo=_REPO_URL))
 
 
 # --- authentication ----------------------------------------------------------
@@ -123,17 +104,21 @@ _LOGIN_PAGE = """<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Foundry — sign in</title>
 <style>
-  body {{ font-family: Georgia, serif; background: #faf9f6; color: #1a1a1a;
-         max-width: 24rem; margin: 6rem auto; padding: 0 1.5rem; text-align: center; }}
-  h1 {{ font-size: 1.4rem; }}
-  a.button {{ display: inline-block; margin-top: 1.5rem; padding: 0.7rem 1.4rem;
-              border: 1px solid #1a1a1a; border-radius: 4px; text-decoration: none;
-              color: #1a1a1a; background: #fff; }}
-  a.button:hover {{ background: #f0efe9; }}
-  p.note {{ color: #777; font-size: 0.85rem; margin-top: 2rem; }}
+  body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+         background: #0b0e12; color: #e6edf3; max-width: 24rem; margin: 6rem auto;
+         padding: 0 1.5rem; text-align: center; }}
+  .mark {{ font-size: 1.6rem; }}
+  h1 {{ font-size: .8rem; letter-spacing: .24em; color: #7d8894; font-weight: 600;
+        margin-top: .8rem; }}
+  a.button {{ display: inline-block; margin-top: 2rem; padding: 0.7rem 1.4rem;
+              border: 1px solid #2b3440; border-radius: 6px; text-decoration: none;
+              color: #e6edf3; background: #10141a; }}
+  a.button:hover {{ border-color: #4d5661; }}
+  p.note {{ color: #4d5661; font-size: 0.85rem; margin-top: 2rem; }}
 </style></head>
 <body>
-<h1>Foundry V{version}</h1>
+<div class="mark">◈</div>
+<h1>FOUNDRY · MISSION CONTROL</h1>
 <a class="button" href="/auth/google">Continue with Google</a>
 <p class="note">{note}</p>
 </body></html>
@@ -152,7 +137,7 @@ def login():
     note = ("Access restricted to the authorised account."
             if cfg.configured else
             "Authentication is not configured on this deployment.")
-    return HTMLResponse(_LOGIN_PAGE.format(version=__version__, note=note))
+    return HTMLResponse(_LOGIN_PAGE.format(note=note))
 
 
 @app.get("/auth/google")
@@ -186,7 +171,6 @@ def auth_callback(request: Request, code: str | None = None):
     if email is None or email != cfg.allowed_email:
         # Authenticated with Google, but not the permitted account.
         resp = HTMLResponse(_LOGIN_PAGE.format(
-            version=__version__,
             note="This Google account is not authorised for this Foundry."),
             status_code=403)
     else:

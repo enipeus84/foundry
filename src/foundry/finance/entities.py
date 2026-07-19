@@ -477,7 +477,12 @@ def tax_resident_in(log: EventLog, party_id: str, jurisdiction_id: str, actor: s
 def declare_exchange_rate(log: EventLog, currency_pair: str, rate: float, as_of: float,
                            actor: str = "user") -> ExchangeRate:
     """V1 uses `.declared` only (001 §11) — a revised rate is a new,
-    separately dated observation, not a mutation of an old one."""
+    separately dated observation, not a mutation of an old one. A
+    non-positive rate is rejected before the append: it could never be
+    applied (an inverse conversion would divide by zero) and must not
+    reach the unwritable log."""
+    if rate <= 0:
+        raise ValueError(f"exchange rate must be positive, got {rate!r}")
     rate_id = grammar.new_id()
     e = grammar.declare(log, PREFIX, "exchange_rate", rate_id, {
         "currency_pair": currency_pair, "rate": rate, "as_of": as_of,

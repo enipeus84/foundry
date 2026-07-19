@@ -49,7 +49,7 @@ Run locally:
 ```bash
 pip install -e ".[web]"
 uvicorn foundry.web:app --host 0.0.0.0 --port 8000
-# http://localhost:8000/        status page
+# http://localhost:8000/        Mission Control (requires session)
 # http://localhost:8000/health  {"status": "ok", ...}
 ```
 
@@ -66,7 +66,7 @@ the repo, set the build and start commands to the two lines above.
 
 ### Authentication
 
-The status page requires Google sign-in via Supabase; `/health` stays
+Mission Control requires Google sign-in via Supabase; `/health` stays
 public for Render health checks. Sessions are stateless HMAC-signed
 cookies (HttpOnly, SameSite=Lax, Secure when `APP_BASE_URL` is https).
 The layer fails closed: without configuration, nobody gets in.

@@ -27,10 +27,11 @@ Submodules:
                    Position, Recurring Series, Tax Jurisdiction,
                    Exchange Rate, Tax Position, Capital Gain Event
                    (001 §7) and their FinanceEntityProjection
-    metrics.py     The first five registered Facts (001 §13):
+    metrics.py     The registered Facts (001 §13, an open set):
                    finance.net_worth, finance.liquidity_runway,
                    finance.cash_flow, finance.asset_allocation,
-                   finance.employer_concentration
+                   finance.employer_concentration, finance.debt_ratio,
+                   finance.cash_available
     fixtures.py    The synthetic Parker-Brads household, used by tests
                    and examples/finance_demo.py to validate the pipeline
 """
