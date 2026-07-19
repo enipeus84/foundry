@@ -20,3 +20,10 @@ services:
         generateValue: true
       - key: APP_BASE_URL
         sync: false
+      # Demo mode (RFC-003.3) — off by default; not hard-coded to true
+      # so a production environment must opt in explicitly. See the
+      # README's "Demo mode" section before enabling.
+      - key: FOUNDRY_DEMO_DATA
+        sync: false
+      - key: FOUNDRY_DATA_PATH
+        sync: false
