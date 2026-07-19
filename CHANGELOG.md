@@ -1,5 +1,50 @@
 # Changelog
 
+## [v1.4-mission-control] — 2026-07-18
+
+RFC-003: Mission Control v0.1 — the first real product surface. A
+read-only, server-rendered, zero-JavaScript console over Core's
+contracts: Finance calculates, Core evaluates, Mission Control
+composes (enforced by an AST import-boundary test).
+
+### Added
+- `foundry.mission_control`: opening screen (Mission Status banner,
+  five live KPI cards, Mission Brief, System Health footer with live
+  hash-chain and replay-parity checks), per-metric drill-down with
+  household/member attribution and the full raw MetricResult, and a
+  collapsed left nav with placeholder pages. Dark-first, typography
+  over chrome, no new dependencies.
+- Two new deterministic Finance metrics so every KPI card is
+  registry-backed: `finance.debt_ratio`, `finance.cash_available`
+  (7 registered in total).
+- `web.py` as the composition root (FOUNDRY_DATA_PATH event log,
+  provider registration, router mount) plus public-internet security
+  headers: strict CSP, X-Frame-Options DENY, nosniff, no-referrer,
+  no-store on authenticated pages.
+- `examples/seed_mission_control.py`: fixture + Mission +
+  recommendation Claim — the console renders only real replayed state.
+- 37 new tests (172 → 209, zero skips), including the five RFC-required
+  proofs: Core-only imports, registry-only dispatch (observed by a
+  spy), graceful missing metrics, authentication on every surface, and
+  byte-identical deterministic rendering. CI now installs [dev,web] so
+  the web suites run on Python 3.10–3.13.
+
+### Fixed (found by the adversarial review pass)
+- ZeroDivisionError when a zero exchange rate in the log matched as an
+  inverse pair: skipped at read time with a named limitation, and
+  rejected at write time.
+- The mission banner conflated "NOT EVALUABLE" with "NO ACTIVE
+  MISSION" — two different facts, now displayed distinctly.
+- Footer honesty: KERNEL carries the event count; CORE reports what
+  Core actually holds (parties/missions).
+
+### Design notes
+- Rendering is deterministic because `as_of` is the latest event's
+  timestamp, never the wall clock; rendering any page appends nothing
+  to the log (tested byte-for-byte).
+- Deferred to RFC-004+: projections, scenarios, charts, the four
+  placeholder surfaces, and `compose_tile` parameters forwarding.
+
 ## [v1.3-finance-core] — 2026-07-18
 
 RFC-002 Part 1: Foundry Finance Domain. The first real product domain
