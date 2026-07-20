@@ -280,9 +280,9 @@ def test_seeded_log_carries_a_permanent_synthetic_marker(tmp_path):
     assert b"SYNTHETIC DEMO DATA" in path.read_bytes()
 
 
-def test_synthetic_marker_does_not_pollute_next_decision(monkeypatch, tmp_path):
+def test_synthetic_marker_does_not_pollute_flight_director(monkeypatch, tmp_path):
     """The marker is tagged `observation`, so the Flight Deck's
-    NEXT DECISION slot (recommendations only) must still surface the
+    Flight Director panel (recommendations only) must still surface the
     real recommendation, not the marker."""
     path = tmp_path / "events.jsonl"
     monkeypatch.setenv("FOUNDRY_DATA_PATH", str(path))

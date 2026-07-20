@@ -22,9 +22,16 @@ request: projections are cheap folds, and a page rendered twice from
 the same log is byte-identical (the determinism test), because `as_of`
 is the latest event's timestamp, not the wall clock.
 
-Design (RFC-003): calm, sparse, high-signal, dark-first, typography
-over chrome. Server-rendered HTML, zero JavaScript, zero new
-dependencies.
+Design (RFC-003, restyled by RFC-004): calm, sparse, high-signal,
+dark-first, typography over chrome. Server-rendered HTML, zero
+JavaScript, zero new dependencies. RFC-004's Flight Deck language —
+Earthrise hero (an inline SVG rendition, no external asset), NOMINAL /
+WATCH / OFF COURSE, Apollo Mission cards, the Flight Director, Recent
+Course Corrections — is presentation only: every number still arrives
+through the Metric Registry and the Flight Deck tile contract, every
+insight through the Evidence Index, and the page stays deterministic
+for a given log (the sunrise phase derives from `as_of`, never the
+wall clock).
 """
 
 from __future__ import annotations
@@ -68,21 +75,49 @@ class Console:
     canon: Canon
 
 
-# The five opening-screen KPIs (RFC-003). Metric identifiers are the
-# registry's public contract (000 §13.1) — strings, not imports.
-KPI_CARDS: tuple[tuple[str, str, str], ...] = (
-    ("NET WORTH", "finance.net_worth", "currency"),
-    ("LIQUIDITY RUNWAY", "finance.liquidity_runway", "months"),
-    ("EMPLOYER CONCENTRATION", "finance.employer_concentration", "percent"),
-    ("DEBT RATIO", "finance.debt_ratio", "percent"),
-    ("CASH AVAILABLE", "finance.cash_available", "currency"),
+# The four opening-screen KPIs (RFC-004: exactly four). Metric
+# identifiers are the registry's public contract (000 §13.1) — strings,
+# not imports. Every other metric remains one click deeper at
+# /metrics/{id}. The fourth element is a measurement-period qualifier
+# (RFC-004B, Information Honesty): finance.cash_flow with no horizon
+# is net flow over every observed transaction, and the card must say
+# so rather than let the reader assume a monthly figure.
+KPI_CARDS: tuple[tuple[str, str, str, str], ...] = (
+    ("NET WORTH", "finance.net_worth", "currency", ""),
+    ("LIQUIDITY", "finance.cash_available", "currency", ""),
+    ("NET CASH FLOW", "finance.cash_flow", "currency", "SINCE FIRST OBSERVATION"),
+    ("RUNWAY", "finance.liquidity_runway", "months", ""),
 )
 
+# Drill-down pages for metrics no longer on the opening screen keep
+# their labels and formats here.
+_METRIC_PRESENTATION: dict[str, tuple[str, str]] = {
+    "finance.net_worth": ("NET WORTH", "currency"),
+    "finance.cash_available": ("LIQUIDITY", "currency"),
+    "finance.cash_flow": ("NET CASH FLOW", "currency"),
+    "finance.liquidity_runway": ("RUNWAY", "months"),
+    "finance.employer_concentration": ("EMPLOYER CONCENTRATION", "percent"),
+    "finance.debt_ratio": ("DEBT RATIO", "percent"),
+}
+
+# NASA flight-status vocabulary (Design Constitution): Core's RAG
+# evaluation rendered as flight language, never recomputed here.
 _RAG_TO_BANNER = {
-    "on_track": ("GREEN", "green"),
-    "achieved": ("GREEN", "green"),
-    "at_risk": ("AMBER", "amber"),
-    "off_track": ("RED", "red"),
+    "on_track": ("NOMINAL", "green"),
+    "achieved": ("NOMINAL", "green"),
+    "at_risk": ("WATCH", "amber"),
+    "off_track": ("OFF COURSE", "red"),
+}
+
+# Worst-status-wins ordering for aggregating several active Missions
+# into the single FLIGHT PLAN word.
+_RAG_SEVERITY = {"off_track": 0, "at_risk": 1, "on_track": 2, "achieved": 3}
+
+_VERDICT_GLYPH = {
+    "achieved": ("✓", "green"),
+    "partially_achieved": ("✓", "amber"),
+    "not_achieved": ("✕", "red"),
+    "inconclusive": ("·", "none"),
 }
 
 
@@ -127,9 +162,11 @@ def _household_scope(console: Console) -> Subject | None:
     return Subject("party", households[-1].id) if households else None
 
 
-def _current_mission(console: Console) -> Mission | None:
-    active = [m for m in console.entities.missions.values() if m.status == "active"]
-    return active[-1] if active else None
+def _active_missions(console: Console) -> list[Mission]:
+    """Every active Mission, in declaration order — each becomes one
+    Apollo Mission card. Aggregation into the single FLIGHT PLAN word
+    is worst-status-wins, done at render time from Core's evaluations."""
+    return [m for m in console.entities.missions.values() if m.status == "active"]
 
 
 _CURRENCY_SYMBOL = {"GBP": "£", "USD": "$", "EUR": "€"}
@@ -150,6 +187,24 @@ def _format_value(value: float | None, unit: str | None, kind: str) -> str:
 
 def _iso(ts: float) -> str:
     return time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime(ts)) if ts else "—"
+
+
+def _short_date(ts: float) -> str:
+    return time.strftime("%Y-%m-%d", time.gmtime(ts)) if ts else "—"
+
+
+def _sun_phase(as_of: float) -> str:
+    """The Earthrise hero's sunrise progression (Design Constitution).
+    Derived from `as_of` — the data's own clock — never the wall clock,
+    so two renders of the same log stay byte-identical."""
+    hour = time.gmtime(as_of).tm_hour
+    if 5 <= hour < 9:
+        return "dawn"
+    if 9 <= hour < 17:
+        return "day"
+    if 17 <= hour < 21:
+        return "dusk"
+    return "night"
 
 
 @lru_cache(maxsize=1)
@@ -233,13 +288,13 @@ _SHELL = """<!doctype html>
 <title>{title} · Foundry Mission Control</title>
 <style>
   :root {{
-    --bg: #0b0e12; --panel: #10141a; --line: #1d242d; --line-strong: #2b3440;
-    --text: #e6edf3; --muted: #7d8894; --faint: #4d5661;
+    --bg: #0a0d12; --panel: #10141b; --line: #1c232d; --line-strong: #2b3441;
+    --text: #e8edf3; --muted: #8b98a5; --faint: #75818f;
     --green: #3fb950; --amber: #d29922; --red: #f85149;
   }}
   * {{ box-sizing: border-box; margin: 0; padding: 0; }}
   body {{
-    background: var(--bg); color: var(--text); min-height: 100vh; display: flex;
+    background: var(--bg); color: var(--text); min-height: 100vh;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     font-size: 15px; line-height: 1.5;
     -webkit-font-smoothing: antialiased;
@@ -247,67 +302,197 @@ _SHELL = """<!doctype html>
   a {{ color: inherit; text-decoration: none; }}
   .mono {{ font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }}
   .num  {{ font-variant-numeric: tabular-nums; }}
+  :focus-visible {{ outline: 2px solid var(--text); outline-offset: 2px; border-radius: 2px; }}
 
-  nav {{
-    width: 60px; border-right: 1px solid var(--line); padding: 20px 0;
-    display: flex; flex-direction: column; align-items: center; gap: 6px;
-    position: sticky; top: 0; height: 100vh; flex-shrink: 0;
+  .skip {{
+    position: absolute; left: -9999px; top: 8px; z-index: 90; padding: 8px 14px;
+    background: var(--panel); border: 1px solid var(--line-strong); border-radius: 6px;
+    font-size: 12px; letter-spacing: .08em;
   }}
-  nav .mark {{ color: var(--text); font-size: 15px; margin-bottom: 22px; }}
-  nav a {{
-    width: 38px; height: 38px; display: flex; align-items: center; justify-content: center;
-    color: var(--faint); font-size: 12px; letter-spacing: .04em; border-radius: 6px;
+  .skip:focus {{ left: 8px; }}
+
+  /* ------------------------------------------------ hidden navigation.
+     Desktop: revealed on hover or via the MENU control. Mobile: a
+     slide-over drawer. Keyboard: focus keeps the drawer open
+     (:focus-within), so every link stays reachable without a pointer.
+     Pure CSS — no script, no CSP change. */
+  .nav-zone {{ position: fixed; top: 0; left: 0; z-index: 50; }}
+  #nav-toggle {{
+    position: fixed; top: 18px; left: 18px; width: 1px; height: 1px;
+    opacity: 0; z-index: 51;
+  }}
+  .menu-btn {{
+    position: fixed; top: 14px; left: 16px; z-index: 52; cursor: pointer;
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 9px 14px; border: 1px solid var(--line); border-radius: 8px;
+    background: var(--panel); color: var(--muted);
+    font-size: 11px; font-weight: 600; letter-spacing: .18em;
+  }}
+  .menu-btn:hover {{ color: var(--text); border-color: var(--line-strong); }}
+  #nav-toggle:focus-visible ~ .menu-btn {{ outline: 2px solid var(--text); outline-offset: 2px; }}
+  .drawer {{
+    position: fixed; top: 0; bottom: 0; left: 0; width: 250px; z-index: 51;
+    background: var(--panel); border-right: 1px solid var(--line-strong);
+    padding: 70px 14px 20px; display: flex; flex-direction: column; gap: 2px;
+    transform: translateX(-102%); visibility: hidden;
+    transition: transform .22s ease, visibility .22s;
+  }}
+  #nav-toggle:checked ~ .drawer,
+  .drawer:focus-within {{ transform: none; visibility: visible; }}
+  @media (hover: hover) and (min-width: 900px) {{
+    .nav-zone:hover .drawer {{ transform: none; visibility: visible; }}
+  }}
+  .drawer .mark {{
+    font-size: 12px; font-weight: 600; letter-spacing: .22em; color: var(--muted);
+    padding: 0 12px 16px;
+  }}
+  .drawer a {{
+    padding: 10px 12px; border-radius: 6px; color: var(--muted);
+    font-size: 12px; font-weight: 600; letter-spacing: .16em;
     border: 1px solid transparent;
   }}
-  nav a:hover {{ color: var(--muted); border-color: var(--line); }}
-  nav a.active {{ color: var(--text); border-color: var(--line-strong); background: var(--panel); }}
-
-  main {{ flex: 1; max-width: 1060px; padding: 44px 56px 72px; }}
+  .drawer a:hover {{ color: var(--text); border-color: var(--line); }}
+  .drawer a.active {{ color: var(--text); background: var(--bg); border-color: var(--line-strong); }}
+  @media (prefers-reduced-motion: reduce) {{
+    .drawer {{ transition: none; }}
+  }}
 
   header.top {{
-    display: flex; justify-content: space-between; align-items: baseline;
-    margin-bottom: 44px;
+    display: flex; justify-content: space-between; align-items: center; gap: 16px;
+    max-width: 1160px; margin: 0 auto; padding: 22px 24px 0 108px; min-height: 56px;
   }}
   h1.crumb {{ font-size: 11px; font-weight: 600; letter-spacing: .22em; color: var(--muted); }}
-  .meta {{ font-size: 11px; letter-spacing: .06em; color: var(--faint); }}
+  .meta {{ font-size: 11px; letter-spacing: .06em; color: var(--faint); text-align: right; }}
   .meta a:hover {{ color: var(--muted); }}
 
-  section {{ margin-bottom: 52px; }}
-  h2 {{
-    font-size: 11px; font-weight: 600; letter-spacing: .22em; color: var(--muted);
-    border-bottom: 1px solid var(--line); padding-bottom: 10px; margin-bottom: 22px;
+  main {{ max-width: 1160px; margin: 0 auto; padding: 22px 24px 64px; }}
+  @media (max-width: 760px) {{
+    header.top {{ padding-left: 132px; justify-content: flex-end; }}
+    /* The brand crumb stays for screen readers; visually the MENU
+       control and drawer carry the identity on small screens. */
+    h1.crumb {{
+      position: absolute; width: 1px; height: 1px; overflow: hidden;
+      clip-path: inset(50%); white-space: nowrap;
+    }}
+    .meta {{ font-size: 10px; }}
+    .hero-content {{ padding: 26px 24px 24px; }}
   }}
 
-  .dot {{ display: inline-block; width: 9px; height: 9px; border-radius: 50%;
-          margin-right: 12px; vertical-align: 2px; }}
-  .dot.green {{ background: var(--green); box-shadow: 0 0 12px rgba(63,185,80,.5); }}
-  .dot.amber {{ background: var(--amber); box-shadow: 0 0 12px rgba(210,153,34,.5); }}
-  .dot.red   {{ background: var(--red);   box-shadow: 0 0 12px rgba(248,81,73,.5); }}
-  .dot.none  {{ background: var(--faint); }}
+  section {{ margin-bottom: 44px; }}
+  h2 {{
+    font-size: 11px; font-weight: 600; letter-spacing: .22em; color: var(--muted);
+    border-bottom: 1px solid var(--line); padding-bottom: 10px; margin-bottom: 20px;
+  }}
+
+  /* -------------------------------------------------- Earthrise hero. */
+  .hero {{
+    position: relative; border: 1px solid var(--line); border-radius: 12px;
+    overflow: hidden; margin-bottom: 28px; background: #04070c;
+  }}
+  .hero svg.earthrise {{ position: absolute; inset: 0; width: 100%; height: 100%; }}
+  .hero .scrim {{
+    position: absolute; inset: 0;
+    background: linear-gradient(90deg, rgba(3,6,11,.88) 0%, rgba(3,6,11,.55) 55%, rgba(3,6,11,.08) 100%);
+  }}
+  .hero-content {{ position: relative; padding: 34px 40px 30px; max-width: 640px; }}
+  .eyebrow {{ font-size: 11px; font-weight: 600; letter-spacing: .26em; color: var(--muted); }}
+  .flight-word {{
+    font-size: clamp(34px, 5vw, 52px); font-weight: 650; letter-spacing: .05em;
+    line-height: 1.15; margin: 6px 0 10px;
+  }}
+  .flight-word.green {{ color: var(--green); }}
+  .flight-word.amber {{ color: var(--amber); }}
+  .flight-word.red   {{ color: var(--red); }}
+  .flight-word.none  {{ color: var(--muted); }}
+  .hero .why {{ color: #b7c2cc; font-size: 14px; max-width: 52ch; }}
+  .hero-stats {{ display: flex; flex-wrap: wrap; gap: 10px 36px; margin-top: 22px; }}
+  .hero-stats .stat .k {{ font-size: 10px; font-weight: 600; letter-spacing: .2em; color: var(--muted); }}
+  .hero-stats .stat .v {{ font-size: 15px; font-weight: 600; letter-spacing: .06em; margin-top: 2px; }}
+  .hero-stats .v.green {{ color: var(--green); }}
+  .hero-stats .v.amber {{ color: var(--amber); }}
+  /* Sunrise progression through the day — derived from the data's own
+     as-of clock, applied as a barely-there tint. */
+  .earthrise .sky-wash {{ opacity: 0; }}
+  .phase-dawn .earthrise .sky-wash {{ fill: #c97b4a; opacity: .10; }}
+  .phase-day  .earthrise .sky-wash {{ fill: #7ea7d8; opacity: .07; }}
+  .phase-dusk .earthrise .sky-wash {{ fill: #b05c6e; opacity: .10; }}
+
+  /* ------------------------------------------------------- KPI cards. */
+  .cards {{ display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }}
+  @media (max-width: 980px) {{ .cards {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }} }}
+  @media (max-width: 420px) {{ .cards {{ grid-template-columns: minmax(0, 1fr); }} }}
+  .card {{
+    border: 1px solid var(--line); border-radius: 10px; padding: 18px 18px 15px;
+    background: var(--panel); display: block;
+  }}
+  a.card:hover {{ border-color: var(--line-strong); }}
+  .card .label {{ font-size: 10px; font-weight: 600; letter-spacing: .18em; color: var(--muted); margin-bottom: 12px; }}
+  .card .value {{ font-size: 26px; font-weight: 600; letter-spacing: -.01em; }}
+  .card .value.na {{ color: var(--faint); font-weight: 400; }}
+  .card .sub {{ font-size: 11px; color: var(--faint); margin-top: 8px; letter-spacing: .04em; }}
+  .card .sub.warn {{ color: var(--amber); }}
+
+  /* --------------------------------------------- Apollo Mission cards. */
+  .missions {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }}
+  .card.mission .m-head {{ display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }}
+  .m-status {{ font-size: 11px; font-weight: 700; letter-spacing: .18em; }}
+  .m-status.green {{ color: var(--green); }}
+  .m-status.amber {{ color: var(--amber); }}
+  .m-status.red   {{ color: var(--red); }}
+  .m-status.none  {{ color: var(--faint); }}
+  .m-name {{ font-size: 17px; font-weight: 600; margin: 10px 0 8px; }}
+  .m-progress {{ font-size: 12px; color: var(--muted); letter-spacing: .04em; }}
+  /* Deviation gauge (RFC-004B): centre band = the declared target
+     zone (±1 tolerance), track = ±3 tolerances (Core's RAG banding),
+     tick = current value. Not a completion bar. */
+  .m-gauge {{ position: relative; height: 14px; margin-top: 12px; }}
+  .m-gauge::before {{
+    content: ""; position: absolute; left: 0; right: 0; top: 6px; height: 2px;
+    background: var(--line); border-radius: 1px;
+  }}
+  .m-gauge .zone {{
+    position: absolute; left: 33.33%; right: 33.33%; top: 5px; height: 4px;
+    background: var(--line-strong); border-radius: 2px;
+  }}
+  .m-gauge .tick {{
+    position: absolute; top: 1px; width: 2px; height: 12px; margin-left: -1px;
+    border-radius: 1px; background: var(--muted);
+  }}
+  .m-gauge .tick.green {{ background: var(--green); }}
+  .m-gauge .tick.amber {{ background: var(--amber); }}
+  .m-gauge .tick.red   {{ background: var(--red); }}
+  .m-link {{ font-size: 10px; font-weight: 600; letter-spacing: .18em; color: var(--faint); margin-top: 14px; }}
+  a.card.mission:hover .m-link {{ color: var(--muted); }}
+
+  /* --------------------- Flight Director & Recent Course Corrections. */
+  .duo {{ display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 32px; }}
+  @media (max-width: 900px) {{ .duo {{ grid-template-columns: minmax(0, 1fr); }} }}
+  .panel {{ border: 1px solid var(--line); border-radius: 10px; background: var(--panel); padding: 20px 22px; }}
+  .fd-lede {{ font-size: 12px; color: var(--muted); letter-spacing: .04em; margin-bottom: 14px; }}
+  .fd-statement {{ font-size: 15px; line-height: 1.6; }}
+  .fd-meta {{ font-size: 10px; font-weight: 600; letter-spacing: .16em; color: var(--faint); margin-top: 12px; }}
+  .fd-nominal {{ font-size: 16px; font-weight: 600; }}
+  .fd-sub {{ font-size: 13px; color: var(--muted); margin-top: 4px; }}
+  ul.corrections {{ list-style: none; }}
+  ul.corrections li {{
+    display: flex; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line);
+  }}
+  ul.corrections li:last-child {{ border-bottom: 0; }}
+  .tick {{ flex: none; width: 20px; text-align: center; font-weight: 700; }}
+  .tick.green {{ color: var(--green); }}
+  .tick.amber {{ color: var(--amber); }}
+  .tick.red   {{ color: var(--red); }}
+  .tick.none  {{ color: var(--faint); }}
+  .corrections p {{ font-size: 13px; line-height: 1.55; }}
+  .corrections .c-meta {{ font-size: 10px; font-weight: 600; letter-spacing: .16em; color: var(--faint); margin-top: 4px; }}
+
+  /* -------------------------------------------- drill-down page bits. */
   .status-word {{ font-size: 40px; font-weight: 650; letter-spacing: .04em; }}
   .status-word.green {{ color: var(--green); }}
   .status-word.amber {{ color: var(--amber); }}
   .status-word.red   {{ color: var(--red); }}
   .status-word.none  {{ color: var(--faint); }}
   .status-sub {{ color: var(--muted); font-size: 13px; margin-top: 8px; }}
-
-  .cards {{ display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 14px; }}
-  @media (max-width: 980px) {{ .cards {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }} }}
-  .card {{
-    border: 1px solid var(--line); border-radius: 8px; padding: 18px 18px 15px;
-    background: var(--panel); display: block;
-  }}
-  a.card:hover {{ border-color: var(--line-strong); }}
-  .card .label {{ font-size: 10px; letter-spacing: .18em; color: var(--muted); margin-bottom: 14px; }}
-  .card .value {{ font-size: 26px; font-weight: 600; letter-spacing: -.01em; }}
-  .card .value.na {{ color: var(--faint); font-weight: 400; }}
-  .card .sub {{ font-size: 11px; color: var(--faint); margin-top: 8px; letter-spacing: .04em; }}
-  .card .sub.warn {{ color: var(--amber); }}
-
-  dl.brief {{ display: grid; grid-template-columns: max-content 1fr; gap: 12px 40px; }}
-  dl.brief dt {{ font-size: 11px; letter-spacing: .18em; color: var(--muted); padding-top: 2px; }}
-  dl.brief dd {{ font-size: 14px; }}
-  dl.brief dd .dim {{ color: var(--muted); }}
 
   table {{ border-collapse: collapse; width: 100%; font-size: 13px; }}
   th {{ text-align: left; font-size: 10px; letter-spacing: .18em; color: var(--muted);
@@ -335,32 +520,70 @@ _SHELL = """<!doctype html>
 </style>
 </head>
 <body>
-<nav>
-  <div class="mark">◈</div>
-  {nav_items}
-</nav>
-<main>
+<a class="skip" href="#main">Skip to content</a>
+<div class="nav-zone">
+  <input type="checkbox" id="nav-toggle" aria-label="Toggle navigation">
+  <label class="menu-btn" for="nav-toggle"><span aria-hidden="true">☰</span>MENU</label>
+  <nav class="drawer" aria-label="Primary">
+    <div class="mark">◈ FOUNDRY</div>
+    {nav_items}
+  </nav>
+</div>
 <header class="top">
   <h1 class="crumb">FOUNDRY · MISSION CONTROL</h1>
   <div class="meta">DATA AS OF {as_of} &nbsp;·&nbsp; <a href="/logout">SIGN OUT</a></div>
 </header>
+<main id="main">
 {body}
 </main>
 </body>
 </html>
 """
 
-_NAV = (("HO", "Home", "/"), ("FI", "Finance", "/finance"), ("DE", "Decisions", "/decisions"),
-        ("MI", "Missions", "/missions"), ("SE", "Settings", "/settings"))
+_NAV = (("FLIGHT DECK", "/"), ("FINANCE", "/finance"), ("DECISIONS", "/decisions"),
+        ("MISSIONS", "/missions"), ("SETTINGS", "/settings"))
+
+# The Earthrise hero — Foundry's visual identity, rendered as a small
+# inline SVG (~1 KB): no external request, nothing to lazy-load, no
+# img-src needed in the CSP, and identical bytes on every render.
+# Decorative only, so it is aria-hidden.
+_EARTHRISE_SVG = """<svg class="earthrise" viewBox="0 0 1200 380" preserveAspectRatio="xMidYMax slice" aria-hidden="true" focusable="false">
+<defs>
+<linearGradient id="g-sky" x1="0" y1="0" x2="0" y2="1">
+<stop offset="0" stop-color="#02040a"/><stop offset="1" stop-color="#0a1018"/>
+</linearGradient>
+<radialGradient id="g-earth" cx="0.34" cy="0.32" r="0.85">
+<stop offset="0" stop-color="#c3dcf4"/><stop offset="0.38" stop-color="#5b93cf"/>
+<stop offset="0.75" stop-color="#1f4f86"/><stop offset="1" stop-color="#0c2a4d"/>
+</radialGradient>
+<linearGradient id="g-moon" x1="0" y1="0" x2="0" y2="1">
+<stop offset="0" stop-color="#3b4048"/><stop offset="1" stop-color="#131519"/>
+</linearGradient>
+</defs>
+<rect class="sky" width="1200" height="380" fill="url(#g-sky)"/>
+<g fill="#dfe8f2">
+<circle cx="150" cy="70" r="1" opacity="0.5"/><circle cx="335" cy="132" r="1" opacity="0.35"/>
+<circle cx="520" cy="52" r="1.3" opacity="0.45"/><circle cx="705" cy="105" r="1" opacity="0.3"/>
+<circle cx="243" cy="205" r="1" opacity="0.3"/><circle cx="640" cy="188" r="1" opacity="0.4"/>
+<circle cx="1050" cy="60" r="1" opacity="0.45"/><circle cx="1140" cy="170" r="1.2" opacity="0.35"/>
+<circle cx="900" cy="40" r="1" opacity="0.4"/><circle cx="430" cy="250" r="1" opacity="0.25"/>
+</g>
+<circle cx="895" cy="168" r="82" fill="#5b93cf" opacity="0.12"/>
+<circle cx="895" cy="168" r="62" fill="url(#g-earth)"/>
+<path d="M0,380 L0,318 Q280,286 560,296 T1200,306 L1200,380 Z" fill="url(#g-moon)"/>
+<ellipse cx="330" cy="322" rx="60" ry="7" fill="#0a0c10" opacity="0.35"/>
+<ellipse cx="840" cy="334" rx="90" ry="9" fill="#0a0c10" opacity="0.3"/>
+<rect class="sky-wash" width="1200" height="380"/>
+</svg>"""
 
 
 def _render(title: str, body: str, as_of: float, active_path: str) -> HTMLResponse:
     items = []
-    for short, label, path in _NAV:
-        active = ' class="active"' if path == active_path else ""
-        items.append(f'<a href="{path}" title="{label}"{active}>{short}</a>')
+    for label, path in _NAV:
+        active = ' class="active" aria-current="page"' if path == active_path else ""
+        items.append(f'<a href="{path}"{active}>{label}</a>')
     return HTMLResponse(_SHELL.format(
-        title=html.escape(title), nav_items="\n  ".join(items),
+        title=html.escape(title), nav_items="\n    ".join(items),
         as_of=html.escape(_iso(as_of)), body=body))
 
 
@@ -375,6 +598,71 @@ def _footer(console: Console) -> str:
 
 # -------------------------------------------------------------------- pages
 
+def _active_claims(console: Console, claim_ids) -> list:
+    """Resolve claim ids to active Canon claims, deterministically
+    ordered (newest first, id as tiebreaker)."""
+    claims = [console.canon.claims.get(cid) for cid in sorted(claim_ids)]
+    claims = [c for c in claims if c is not None and c.status == "active"]
+    claims.sort(key=lambda c: (-c.ts, c.id))
+    return claims
+
+
+# ------------------------------------------- mission deviation (RFC-004B)
+#
+# Core's Mission policy (mission_evaluation.py) is *proximity*: distance
+# from the declared target (or range edge) measured against tolerance.
+# A fill-toward-100% bar assumes "higher is better" and misrepresents
+# lower-is-better Missions, so the card renders a deviation gauge
+# instead: a track spanning ±3 tolerances (Core's exact banding —
+# within 1 on_track, within 2 at_risk, beyond off_track), the ±1
+# tolerance target band shaded at the centre, and a tick at the
+# current value. Direction-agnostic by construction. Missions without
+# a numeric target or tolerance get no gauge — never an invented one.
+
+def _mission_deviation(mission: Mission, result) -> tuple[float | None, bool]:
+    """Signed distance from the Mission's declared target, in the
+    metric's own units — 0.0 when inside a declared range. (deviation,
+    is_range); deviation is None when no honest comparison exists."""
+    if result is None or result.status not in ("available", "stale") \
+            or result.value is None:
+        return None, False
+    value = result.value
+    if mission.target_range is not None:
+        lo, hi = mission.target_range
+        if value < lo:
+            return value - lo, True
+        if value > hi:
+            return value - hi, True
+        return 0.0, True
+    if mission.target_value is not None:
+        return value - mission.target_value, False
+    return None, False
+
+
+def _variance_text(deviation: float | None, is_range: bool,
+                   unit: str | None, kind: str) -> str:
+    """The signed variance, spelled out — the number the gauge draws,
+    stated in text so the visual never carries meaning the words
+    don't."""
+    if deviation is None:
+        return ""
+    if deviation == 0.0:
+        return "WITHIN RANGE" if is_range else "ON TARGET"
+    sign = "+" if deviation > 0 else "−"
+    noun = "OUTSIDE RANGE" if is_range else "FROM TARGET"
+    return f"{sign}{_format_value(abs(deviation), unit, kind)} {noun}"
+
+
+def _deviation_gauge(deviation: float, tolerance: float, klass: str) -> str:
+    """Tick position: deviation in tolerance units, clamped to ±3 and
+    mapped onto the track — the same arithmetic Core's RAG banding
+    applies, so the picture and the policy cannot disagree."""
+    units = max(-3.0, min(3.0, deviation / tolerance))
+    left = 50.0 + units / 6.0 * 100.0
+    return (f'<div class="m-gauge" aria-hidden="true"><span class="zone"></span>'
+            f'<span class="tick {klass}" style="left:{left:.1f}%"></span></div>')
+
+
 @router.get("/", response_class=HTMLResponse)
 def home(request: Request):
     if session_email(request) is None:
@@ -382,30 +670,38 @@ def home(request: Request):
     console = _console(request)
     as_of = _as_of(console)
     scope = _household_scope(console)
-    mission = _current_mission(console)
+    missions = _active_missions(console)
 
-    # -- mission status banner: Core evaluates, this page only renders.
-    rag = None
-    mission_result = None
-    if mission is not None and scope is not None:
-        rag, mission_result = get_mission_status(
-            mission.id, console.entities, console.registry, scope, as_of)
-    if mission is None:
+    # -- Core evaluates every active Mission; this page only renders.
+    evaluated = []  # (mission, rag, result)
+    if scope is not None:
+        for mission in missions:
+            rag, result = get_mission_status(
+                mission.id, console.entities, console.registry, scope, as_of)
+            evaluated.append((mission, rag, result))
+
+    # -- FLIGHT PLAN: worst status wins across active Missions. When
+    #    the worst status is a deviation, remember which Mission caused
+    #    it — the Flight Director must speak to that Mission (RFC-004B).
+    rags = [rag for _, rag, _ in evaluated if rag is not None]
+    deviating: Mission | None = None
+    if not missions:
         banner_word, banner_class = "NO ACTIVE MISSION", "none"
-    elif rag is None:
-        # A Mission exists but its metric couldn't be evaluated —
-        # honestly distinct from having no Mission at all.
+    elif not rags:
+        # Missions exist but none could be evaluated — honestly
+        # distinct from having no Mission at all.
         banner_word, banner_class = "NOT EVALUABLE", "none"
     else:
-        banner_word, banner_class = _RAG_TO_BANNER.get(rag, (rag.upper(), "none"))
-    banner_sub = (html.escape(mission.name) if mission is not None
-                  else "Declare a Mission to give this console something to steer by.")
+        worst = min(rags, key=lambda r: _RAG_SEVERITY.get(r, 0))
+        banner_word, banner_class = _RAG_TO_BANNER.get(worst, (worst.upper(), "none"))
+        if worst in ("at_risk", "off_track"):
+            deviating = next((m for m, rag, _ in evaluated if rag == worst), None)
 
-    # -- five KPI cards, each a Flight Deck tile (000 §14).
+    # -- four KPI cards, each a Flight Deck tile (000 §14).
     cards_html = []
     tiles: dict[str, Tile] = {}
     if scope is not None:
-        for label, metric_id, kind in KPI_CARDS:
+        for label, metric_id, kind, period in KPI_CARDS:
             tile = compose_tile(metric_id, scope, console.registry,
                                 console.entities, console.evidence, as_of)
             tiles[metric_id] = tile
@@ -418,8 +714,10 @@ def home(request: Request):
             else:
                 value_html = '<div class="value na">—</div>'
                 note, sub_class = result.status.upper(), "sub"
+            if period:
+                note = f"{note} · {period}"
             cards_html.append(
-                f'<a class="card" href="/metrics/{html.escape(metric_id)}">'
+                f'<a class="card kpi" href="/metrics/{html.escape(metric_id)}">'
                 f'<div class="label">{html.escape(label)}</div>'
                 f'{value_html}'
                 f'<div class="{sub_class}">{html.escape(note)}</div></a>')
@@ -429,48 +727,204 @@ def home(request: Request):
                  '(see <span class="mono">examples/seed_mission_control.py</span>) '
                  'and reload — this console renders only real, replayed state.</p>')
 
-    # -- mission brief.
-    if mission is not None:
-        target = "—"
-        if mission.target_value is not None:
-            kind = next((k for _, m, k in KPI_CARDS if m == mission.target_metric), "plain")
-            unit = mission_result.unit_or_currency if mission_result else None
-            target = (f"{mission.target_metric} ≥ "
-                      f"{_format_value(mission.target_value, unit, kind)}")
-            if mission.tolerance:
-                target += f" (±{_format_value(mission.tolerance, unit, kind)})"
-        next_decision = "—"
-        any_tile = next(iter(tiles.values()), None)
-        if any_tile is not None and any_tile.next_decision:
-            claims = [console.canon.claims.get(cid) for cid in any_tile.next_decision]
-            claims = [c for c in claims if c is not None and c.status == "active"]
-            if claims:
-                latest = max(claims, key=lambda c: c.ts)
-                next_decision = html.escape(latest.statement)
-        brief = f"""<dl class="brief">
-  <dt>CURRENT MISSION</dt><dd>{html.escape(mission.name)}</dd>
-  <dt>MISSION STATUS</dt><dd><span class="dot {banner_class}"></span>{html.escape(banner_word if rag else "NOT EVALUABLE")}</dd>
-  <dt>CURRENT TARGET</dt><dd class="num">{html.escape(target)}</dd>
-  <dt>NEXT DECISION</dt><dd>{next_decision}</dd>
-</dl>"""
-    else:
-        brief = '<p class="empty">No active Mission.</p>'
+    # -- evidence behind the hero: standing recommendations and open
+    #    vulnerabilities, from the shared Evidence Index via the tile
+    #    contract (the same data path RFC-003's home page used),
+    #    plus recommendation Claims that concern an active Mission
+    #    directly (RFC-004B: the Flight Director needs to know which
+    #    corrections address which Mission).
+    any_tile = next(iter(tiles.values()), None)
+    household_recs = _active_claims(console, any_tile.next_decision) if any_tile else []
+    vulnerabilities = _active_claims(console, any_tile.strategic_vulnerability) if any_tile else []
+    mission_recs: dict[str, list] = {}
+    for mission, _, _ in evaluated:
+        mission_recs[mission.id] = _active_claims(console, [
+            cid for cid in console.evidence.claims_concerning(mission.id)
+            if console.evidence.current_tag(cid, "insight_type") == "recommendation"])
+    all_recs = _active_claims(console, {c.id for c in household_recs} |
+                              {c.id for claims in mission_recs.values() for c in claims})
 
-    body = f"""<section>
-  <h2>MISSION STATUS</h2>
-  <div><span class="dot {banner_class}"></span><span class="status-word {banner_class}">{html.escape(banner_word)}</span></div>
-  <div class="status-sub">{banner_sub}</div>
-</section>
+    if scope is None:
+        risk_value, risk_class = "—", "none"
+        corrections_count = "—"
+    else:
+        if vulnerabilities:
+            risk_value, risk_class = f"WATCH · {len(vulnerabilities)} OPEN", "amber"
+        else:
+            risk_value, risk_class = "LOW", "green"
+        corrections_count = str(len(all_recs))
+
+    # -- the "why" line: the evidence-backed sentence under the word.
+    if scope is None:
+        why = "No household declared yet — this deck renders only real, replayed state."
+    elif not missions:
+        why = "Declare a Mission to give this Flight Deck something to steer by."
+    elif not rags:
+        names = ", ".join(m.name for m, _, _ in evaluated)
+        why = f"{names}: the target metric cannot be evaluated from the current log."
+    else:
+        primary_mission, _, primary_result = next(
+            (row for row in evaluated if row[1] is not None and
+             _RAG_TO_BANNER.get(row[1], ("", ""))[0] == banner_word), evaluated[0])
+        label, kind = _METRIC_PRESENTATION.get(
+            primary_mission.target_metric, (primary_mission.target_metric, "plain"))
+        unit = primary_result.unit_or_currency if primary_result else None
+        why = (f"{primary_mission.name}: {label.lower()} "
+               f"{_format_value(primary_result.value if primary_result else None, unit, kind)}"
+               f" against a target of "
+               f"{_format_value(primary_mission.target_value, unit, kind)}")
+        if primary_mission.tolerance:
+            why += f" ±{_format_value(primary_mission.tolerance, unit, kind)}"
+        why += "."
+
+    hero = f"""<section class="hero phase-{_sun_phase(as_of)}" aria-label="Flight plan">
+  {_EARTHRISE_SVG}
+  <div class="scrim"></div>
+  <div class="hero-content">
+    <p class="eyebrow">FLIGHT PLAN</p>
+    <p class="flight-word {banner_class}">{html.escape(banner_word)}</p>
+    <p class="why">{html.escape(why)}</p>
+    <div class="hero-stats">
+      <div class="stat"><div class="k">STRATEGIC RISK</div>
+        <div class="v {risk_class}">{html.escape(risk_value)}</div></div>
+      <div class="stat"><div class="k">RECOMMENDED COURSE CORRECTIONS</div>
+        <div class="v">{html.escape(corrections_count)}</div></div>
+    </div>
+  </div>
+</section>"""
+
+    # -- Apollo Mission cards: status, progress, drill-down affordance.
+    if scope is None:
+        missions_html = ('<p class="empty">No household declared yet.</p>')
+    elif not evaluated:
+        missions_html = ('<p class="empty">No active Mission. Declare one to give '
+                         'this Flight Deck something to steer by.</p>')
+    else:
+        mission_cards = []
+        for mission, rag, result in evaluated:
+            word, klass = (_RAG_TO_BANNER.get(rag, (rag.upper(), "none"))
+                           if rag else ("NOT EVALUABLE", "none"))
+            label, kind = _METRIC_PRESENTATION.get(
+                mission.target_metric,
+                (mission.target_metric.upper() or "—", "plain"))
+            unit = result.unit_or_currency if result else None
+            value_ok = result is not None and result.status in ("available", "stale")
+            value_txt = _format_value(result.value, unit, kind) if value_ok else "—"
+            progress = f"{label} {value_txt}"
+            if mission.target_range is not None:
+                lo, hi = mission.target_range
+                progress += (f" · RANGE {_format_value(lo, unit, kind)}"
+                             f"–{_format_value(hi, unit, kind)}")
+            elif mission.target_value is not None:
+                progress += f" · TARGET {_format_value(mission.target_value, unit, kind)}"
+                if mission.tolerance:
+                    progress += f" ±{_format_value(mission.tolerance, unit, kind)}"
+            # RFC-004B: deviation, not completion — honest in both
+            # directions, silent when no comparison exists.
+            deviation, is_range = _mission_deviation(mission, result)
+            variance = _variance_text(deviation, is_range, unit, kind)
+            if variance:
+                progress += f" · {variance}"
+            bar = ""
+            if deviation is not None and mission.tolerance:
+                bar = _deviation_gauge(deviation, mission.tolerance, klass)
+            href = (f"/metrics/{mission.target_metric}"
+                    if mission.target_metric else "/missions")
+            mission_cards.append(
+                f'<a class="card mission" href="{html.escape(href)}">'
+                f'<div class="m-head"><span class="label">MISSION</span>'
+                f'<span class="m-status {klass}">{html.escape(word)}</span></div>'
+                f'<div class="m-name">{html.escape(mission.name)}</div>'
+                f'<div class="m-progress num">{html.escape(progress)}</div>'
+                f'{bar}'
+                f'<div class="m-link">TELEMETRY →</div></a>')
+        missions_html = f'<div class="missions">{"".join(mission_cards)}</div>'
+
+    # -- Flight Director: at most one evidence-backed recommendation,
+    #    and always about the *displayed* state (RFC-004B). Under a
+    #    WATCH / OFF COURSE Flight Plan only a recommendation that
+    #    concerns the deviating Mission may appear; if none exists, the
+    #    panel says so — an unrelated correction under a red banner
+    #    would fabricate causality, and absence of advice is a fact
+    #    this surface reports like any other.
+    def _rec_panel(latest, lede):
+        meta = (f"CONFIDENCE {latest.confidence * 100:.0f}% · "
+                f"EVIDENCE ITEMS {len(latest.evidence)} · {_short_date(latest.ts)}")
+        return (f'<p class="fd-lede">{html.escape(lede)}</p>'
+                f'<div class="panel">'
+                f'<p class="fd-statement">{html.escape(latest.statement)}</p>'
+                f'<p class="fd-meta">{html.escape(meta)}</p></div>')
+
+    if scope is None:
+        director = '<div class="panel"><p class="empty">No household declared yet.</p></div>'
+    elif deviating is not None:
+        related = mission_recs.get(deviating.id, [])
+        if related:
+            director = _rec_panel(related[0], f"Course correction for {deviating.name}.")
+        else:
+            others = len(all_recs)
+            note = ""
+            if others:
+                note = (f" {others} standing recommendation"
+                        f"{'s' if others != 1 else ''} on file concern other subjects.")
+            director = (
+                f'<div class="panel">'
+                f'<p class="fd-nominal">No course correction on file for '
+                f'{html.escape(deviating.name)}.</p>'
+                f'<p class="fd-sub">The Flight Director surfaces only evidence-backed '
+                f'recommendations that address the deviation — nothing is invented.'
+                f'{html.escape(note)}</p></div>')
+    elif all_recs:
+        latest = all_recs[0]
+        lede = ("One worthwhile course correction available."
+                if len(all_recs) == 1 else
+                f"{len(all_recs)} standing course corrections · most recent shown.")
+        director = _rec_panel(latest, lede)
+    else:
+        director = ('<div class="panel"><p class="fd-nominal">Flight Plan remains nominal.</p>'
+                    '<p class="fd-sub">No intervention required.</p></div>')
+
+    # -- Recent Course Corrections: the latest reviewed decisions —
+    #    Decision Review claims (000 §12) concerning this household.
+    corrections = '<p class="empty">No course corrections recorded yet. Reviewed decisions appear here.</p>'
+    if scope is not None:
+        subjects = {scope.id} | {m.id for m in console.entities.members_of(scope.id)}
+        review_ids = [cid for cid in console.evidence.claims_tagged("insight_type", "review")
+                      if any(cid in console.evidence.claims_concerning(s) for s in subjects)]
+        reviews = _active_claims(console, review_ids)[:4]
+        if reviews:
+            items = []
+            for claim in reviews:
+                verdict = console.evidence.current_tag(claim.id, "review_verdict") or "recorded"
+                glyph, klass = _VERDICT_GLYPH.get(verdict, ("·", "none"))
+                items.append(
+                    f'<li><span class="tick {klass}" aria-hidden="true">{glyph}</span>'
+                    f'<div><p>{html.escape(claim.statement)}</p>'
+                    f'<p class="c-meta">{html.escape(verdict.replace("_", " ").upper())} · '
+                    f'{html.escape(_short_date(claim.ts))}</p></div></li>')
+            corrections = f'<ul class="corrections">{"".join(items)}</ul>'
+
+    body = f"""{hero}
 <section>
   <h2>KEY INDICATORS</h2>
   {cards}
 </section>
 <section>
-  <h2>MISSION BRIEF</h2>
-  {brief}
+  <h2>APOLLO MISSIONS</h2>
+  {missions_html}
 </section>
+<div class="duo">
+<section>
+  <h2>FLIGHT DIRECTOR</h2>
+  {director}
+</section>
+<section>
+  <h2>RECENT COURSE CORRECTIONS</h2>
+  {corrections}
+</section>
+</div>
 {_footer(console)}"""
-    return _render("Home", body, as_of, "/")
+    return _render("Flight Deck", body, as_of, "/")
 
 
 @router.get("/metrics/{metric_id}", response_class=HTMLResponse)
@@ -488,8 +942,7 @@ def metric_drill_down(request: Request, metric_id: str):
         return _render("Metric", '<p class="empty">No household declared yet.</p>' + _footer(console),
                        as_of, "/")
 
-    label, kind = next(((l, k) for l, m, k in KPI_CARDS if m == metric_id),
-                       (metric_id.upper(), "plain"))
+    label, kind = _METRIC_PRESENTATION.get(metric_id, (metric_id.upper(), "plain"))
     result = console.registry.dispatch(MetricRequest(metric_id=metric_id, scope=scope, as_of=as_of))
 
     headline = (_format_value(result.value, result.unit_or_currency, kind)

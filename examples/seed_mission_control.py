@@ -7,7 +7,7 @@ root, then start the server:
 
 Writes the synthetic Parker-Brads household (the same fixture the test
 suite validates), an active Mission for the console to steer by, and
-one recommendation Claim for the NEXT DECISION slot — every value the
+one recommendation Claim for the Flight Director panel — every value the
 console then shows is computed by Finance from these replayed events,
 through the Metric Registry. Mission Control itself never writes;
 seeding is this script's job precisely so the surface stays read-only.

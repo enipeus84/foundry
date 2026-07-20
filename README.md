@@ -49,7 +49,7 @@ Run locally:
 ```bash
 pip install -e ".[web]"
 uvicorn foundry.web:app --host 0.0.0.0 --port 8000
-# http://localhost:8000/        Mission Control (requires session)
+# http://localhost:8000/        Flight Deck — Mission Control home (requires session)
 # http://localhost:8000/health  {"status": "ok", ...}
 ```
 
