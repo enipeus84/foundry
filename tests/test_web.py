@@ -48,7 +48,7 @@ def test_home_renders_mission_control_even_on_an_empty_log():
     assert r.headers["content-type"].startswith("text/html")
     html = r.text
     assert "MISSION CONTROL" in html
-    assert "MISSION STATUS" in html
+    assert "FLIGHT PLAN" in html
     assert "NO ACTIVE MISSION" in html
     assert "HASH CHAIN OK" in html  # the system-health footer is always present
 

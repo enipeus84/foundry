@@ -1,6 +1,6 @@
 __pycache__/
 *.egg-info/
-.venv/
+.venv*/
 .pytest_cache/
 foundry_data/
 v1_data/
