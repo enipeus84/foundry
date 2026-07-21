@@ -387,6 +387,13 @@ _SHELL = """<!doctype html>
   .drawer a:hover {{ color: var(--text); background: var(--surface); }}
   .drawer a.active {{ color: var(--text); background: var(--surface); border-left-color: var(--green); }}
   .drawer a.sign-out {{ margin-top: auto; border-top: 1px solid var(--line); }}
+  .noscript-nav {{
+    position: relative; z-index: 5; max-width: 1256px; margin: 76px auto 0;
+    padding: 12px 16px; border-block: 1px solid var(--line);
+    color: var(--muted); font-size: 10px; letter-spacing: .1em;
+  }}
+  .noscript-nav nav {{ display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 8px; }}
+  .noscript-nav a {{ color: var(--text); text-decoration: underline; text-underline-offset: 3px; }}
   @media (prefers-reduced-motion: reduce) {{
     .drawer {{ animation: none; }}
     .card.kpi, .card.mission, .card .drill {{ transition: none; }}
@@ -656,6 +663,16 @@ _SHELL = """<!doctype html>
 <button class="menu-btn" id="nav-open" type="button" aria-controls="primary-drawer" aria-expanded="false">
   <span aria-hidden="true">☰</span>MENU
 </button>
+<noscript>
+  <style>#nav-open {{ display: none; }}</style>
+  <div class="noscript-nav">
+    <p>JavaScript is unavailable. The navigation drawer cannot open; use these direct links.</p>
+    <nav aria-label="Primary navigation (JavaScript unavailable)">
+      {nav_items}
+      <a href="/logout">SIGN OUT</a>
+    </nav>
+  </div>
+</noscript>
 <div class="drawer-shell" id="primary-drawer" role="dialog" aria-modal="true" aria-label="Navigation" hidden>
   <button class="drawer-backdrop" type="button" tabindex="-1" data-nav-dismiss aria-label="Close navigation"></button>
   <nav class="drawer" aria-label="Primary">
@@ -1015,7 +1032,8 @@ def home(request: Request):
     }.get(banner_word, "Flight Plan status is not yet available.")
 
     def _rec_panel(latest, lede):
-        meta = f"EVIDENCE VERIFIED · {_short_date(latest.ts)}"
+        meta = (f"CONFIDENCE {latest.confidence * 100:.0f}% · "
+                f"EVIDENCE ITEMS {len(latest.evidence)} · {_short_date(latest.ts)}")
         return (f'<p class="fd-nominal">{html.escape(director_status)}</p>'
                 f'<p class="fd-lede">{html.escape(lede)}</p>'
                 f'<div class="panel">'

@@ -6,7 +6,8 @@ RFC-004B: the Flight Deck's final presentation review. Three places
 where the RFC-004 presentation could mislead (all documented in
 docs/rfc-004-visual-review.md) now tell the truth. Presentation only;
 no calculation, evaluation, registry, log, or security change, and
-still zero JavaScript behind the unchanged CSP.
+one local JavaScript file now provides the Flight Deck's accessible
+navigation drawer behind a narrowly updated CSP.
 
 ### Changed
 - **Mission deviation gauge replaces the progress bar.** The old bar
@@ -36,6 +37,12 @@ still zero JavaScript behind the unchanged CSP.
   the complete raw result without claiming a separate period header.
 - **Release metadata is aligned.** Runtime health, the Flight Deck
   footer, and package metadata now report version 1.5.1.
+- **Navigation behaviour is explicit.** The Flight Deck loads the local
+  `flight-deck.js` asset for deliberate-click drawer behaviour, focus
+  management, focus trapping, Escape handling, and focus return. The
+  CSP now permits scripts from `'self'` only; inline and third-party
+  scripts remain blocked. A server-rendered no-JavaScript notice and
+  direct navigation links provide an honest degradation path.
 - Tests 265 → 272: gauge direction-honesty both ways, range and
   no-target Missions, deviation-relevant and honestly-absent Flight
   Director states, and the period label. Full suite passes.

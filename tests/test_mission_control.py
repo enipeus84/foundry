@@ -243,6 +243,9 @@ def test_home_shows_nominal_flight_plan_and_flight_director(tmp_path):
     assert "NOMINAL" in html
     assert "Financial independence glide path" in html
     assert "Reduce employer concentration below 25%." in html
+    assert "CONFIDENCE 80%" in html
+    assert "EVIDENCE ITEMS 1" in html
+    assert "EVIDENCE VERIFIED" not in html
 
 
 def test_drill_down_shows_full_lineage(tmp_path):
@@ -486,6 +489,9 @@ def test_navigation_is_hidden_by_default_and_uses_no_inline_script(tmp_path):
     assert 'aria-modal="true"' in html
     assert 'data-nav-close' in html
     assert '<script src="/static/flight-deck.js" defer></script>' in html
+    assert "JavaScript is unavailable. The navigation drawer cannot open" in html
+    assert 'aria-label="Primary navigation (JavaScript unavailable)"' in html
+    assert html.count('href="/finance"') == 2
     assert "javascript:" not in html.lower()
     for handler in ("onclick=", "onload=", "onerror=", "onfocus="):
         assert handler not in html.lower()
