@@ -40,6 +40,10 @@ def test_health_returns_ok_json():
     assert body["version"] == __version__
 
 
+def test_release_version_is_not_stale():
+    assert __version__ == "1.5.1"
+
+
 def test_home_renders_mission_control_even_on_an_empty_log():
     """A fresh deployment with zero events must render, honestly empty
     — the graceful degenerate case, not an error page."""
@@ -65,10 +69,27 @@ def test_security_headers_on_authenticated_pages():
     assert r.headers["X-Frame-Options"] == "DENY"
     assert r.headers["Referrer-Policy"] == "no-referrer"
     assert "default-src 'none'" in r.headers["Content-Security-Policy"]
+    assert "img-src 'self'" in r.headers["Content-Security-Policy"]
+    assert "script-src 'self'" in r.headers["Content-Security-Policy"]
     assert r.headers["Cache-Control"] == "no-store"
     # /health stays cacheable for the platform health checker:
     health = TestClient(app).get("/health")
     assert health.headers.get("Cache-Control") != "no-store"
+
+
+def test_static_flight_deck_assets_are_local_cacheable_and_not_user_data():
+    c = TestClient(app)
+    image = c.get("/static/earthrise.webp")
+    assert image.status_code == 200
+    assert image.headers["content-type"] == "image/webp"
+    assert image.headers["Cache-Control"] == "public, max-age=31536000, immutable"
+    assert len(image.content) < 150_000
+
+    script = c.get("/static/flight-deck.js")
+    assert script.status_code == 200
+    assert "javascript" in script.headers["content-type"]
+    assert "innerHTML" not in script.text
+    assert "eval(" not in script.text
 
 
 def test_core_import_does_not_require_fastapi():

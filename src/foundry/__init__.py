@@ -14,7 +14,7 @@ from .errors import EventNotFoundError, FoundryError, IntegrityError
 from .eventlog import EventLog
 from .kernel import Kernel
 
-__version__ = "1.0.0"
+__version__ = "1.5.1"
 __all__ = [
     "Canon", "Claim", "EventLog", "Kernel",
     "FoundryError", "EventNotFoundError", "IntegrityError",

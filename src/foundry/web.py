@@ -48,9 +48,11 @@ from __future__ import annotations
 import logging
 import os
 import time
+from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.staticfiles import StaticFiles
 
 from foundry import __version__
 from foundry import webauth
@@ -67,6 +69,7 @@ from foundry.mission_control import Console, router as mission_control_router
 logger = logging.getLogger("foundry.web")
 
 app = FastAPI(title="Foundry", version=__version__, docs_url=None, redoc_url=None)
+app.mount("/static", StaticFiles(directory=Path(__file__).with_name("static")), name="static")
 
 DEFAULT_DATA_PATH = "foundry_data/events.jsonl"
 
@@ -151,9 +154,12 @@ async def security_headers(request: Request, call_next):
     resp.headers["X-Frame-Options"] = "DENY"
     resp.headers["Referrer-Policy"] = "no-referrer"
     resp.headers["Content-Security-Policy"] = (
-        "default-src 'none'; style-src 'unsafe-inline'; "
+        "default-src 'none'; style-src 'unsafe-inline'; img-src 'self'; "
+        "script-src 'self'; "
         "base-uri 'none'; form-action 'self'")
-    if request.url.path != "/health":
+    if request.url.path.startswith("/static/"):
+        resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+    elif request.url.path != "/health":
         resp.headers["Cache-Control"] = "no-store"
     return resp
 
