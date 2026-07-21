@@ -275,10 +275,21 @@ def test_flight_deck_hero_answers_the_three_questions(tmp_path):
 def test_apollo_mission_card_shows_status_progress_and_drill_down(tmp_path):
     _seed(tmp_path)
     html = client().get("/").text
-    assert 'class="card mission"' in html
+    assert 'class="card mission live"' in html
     assert "Financial independence glide path" in html
     assert "TARGET £450,000" in html
-    assert "TELEMETRY" in html  # the drill-down affordance
+    assert 'href="/metrics/finance.net_worth"' in html
+
+
+def test_apollo_programme_shows_four_honest_mission_lanes(tmp_path):
+    _seed(tmp_path)
+    html = client().get("/").text
+    for title in ("Mortgage Freedom", "Financial Independence", "Retirement"):
+        assert title in html
+    assert "Children" in html and "Future" in html
+    assert html.count('class="card mission live"') == 1
+    assert html.count('class="card mission planned"') == 3
+    assert html.count("TARGET NOT DECLARED") == 3
 
 
 def test_flight_director_says_so_when_nothing_needs_doing(tmp_path):
@@ -356,6 +367,7 @@ def test_mission_gauge_is_honest_for_lower_is_better_metrics(tmp_path):
     html = client().get("/").text
     assert 'class="m-bar"' not in html          # the misleading metaphor is gone
     assert 'class="m-gauge"' in html
+    assert '<span class="zone"></span>' in html  # exact-target tolerance band
     assert "+5.4% FROM TARGET" in html          # signed, in the metric's units
     assert "WATCH" in html                      # Core's verdict, unchanged
 
@@ -378,6 +390,24 @@ def test_mission_inside_declared_range_says_within_range(tmp_path):
     html = client().get("/").text
     assert "WITHIN RANGE" in html
     assert "RANGE £400,000–£500,000" in html
+    assert "against a target range of £400,000–£500,000." in html
+    assert "against a target of —" not in html
+    assert '<span class="zone"></span>' not in html
+
+
+def test_range_mission_watch_gauge_has_no_false_target_band(tmp_path):
+    """Outside a declared range, Core says WATCH even when the value is
+    within one tolerance of the edge. The tick remains, but the target-value
+    tolerance band must not imply that the WATCH state is on target."""
+    log, household = _seed_household_with(tmp_path)
+    declare_mission(log, "Stability corridor", target_metric="finance.net_worth",
+                     target_range=(500_000.0, 600_000.0), tolerance=50_000.0)
+    html = client().get("/").text
+    assert "WATCH" in html
+    assert "−£19,240 OUTSIDE RANGE" in html
+    assert "against a target range of £500,000–£600,000." in html
+    assert 'class="m-gauge"' in html
+    assert '<span class="zone"></span>' not in html
 
 
 def test_mission_without_numeric_target_gets_no_gauge(tmp_path):
@@ -440,19 +470,42 @@ def test_cash_flow_card_declares_its_measurement_period(tmp_path):
     observation; the card must say so, on the card."""
     _seed(tmp_path)
     html = client().get("/").text
-    assert "NET CASH FLOW" in html
+    assert "CASH FLOW" in html
     assert "SINCE FIRST OBSERVATION" in html
+    assert "VIEW TELEMETRY" not in html
 
 
-def test_navigation_is_hidden_by_default_and_script_free(tmp_path):
-    """RFC-004 navigation: a CSS-only drawer (checkbox toggle), zero
-    JavaScript anywhere on the page — the CSP has no script-src and
-    nothing on the page needs one."""
+def test_navigation_is_hidden_by_default_and_uses_no_inline_script(tmp_path):
+    """RFC-004.1 navigation: a deliberately opened dialog with a clear
+    close control. The small external script owns focus return, Escape,
+    and trapping; no inline handlers or unsafe dynamic HTML are used."""
     _seed(tmp_path)
     html = client().get("/").text
-    assert 'id="nav-toggle"' in html
-    assert 'class="drawer"' in html
-    assert "<script" not in html.lower()
+    assert 'id="nav-open"' in html
+    assert 'id="primary-drawer"' in html
+    assert 'aria-modal="true"' in html
+    assert 'data-nav-close' in html
+    assert '<script src="/static/flight-deck.js" defer></script>' in html
     assert "javascript:" not in html.lower()
     for handler in ("onclick=", "onload=", "onerror=", "onfocus="):
         assert handler not in html.lower()
+
+
+def test_earthrise_is_prioritised_local_and_accessible(tmp_path):
+    _seed(tmp_path)
+    html = client().get("/").text
+    assert 'rel="preload" as="image" href="/static/earthrise.webp"' in html
+    assert 'src="/static/earthrise.webp"' in html
+    assert 'fetchpriority="high"' in html
+    assert 'alt="Earth at sunrise from orbit' in html
+    assert 'class="earthrise"' in html
+    assert '<svg class="earthrise"' not in html
+
+
+def test_scope_controls_do_not_imply_unsupported_individual_metrics(tmp_path):
+    _seed(tmp_path)
+    html = client().get("/").text
+    assert 'aria-label="Financial scope"' in html
+    assert 'HOUSEHOLD<small>ACTIVE</small>' in html
+    for name in ("CHRIS", "FIONA", "HAMISH", "HARRIET"):
+        assert f'disabled>{name}<small>FUTURE SCOPE</small>' in html

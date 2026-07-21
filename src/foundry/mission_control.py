@@ -23,11 +23,11 @@ the same log is byte-identical (the determinism test), because `as_of`
 is the latest event's timestamp, not the wall clock.
 
 Design (RFC-003, restyled by RFC-004): calm, sparse, high-signal,
-dark-first, typography over chrome. Server-rendered HTML, zero
-JavaScript, zero new dependencies. RFC-004's Flight Deck language —
-Earthrise hero (an inline SVG rendition, no external asset), NOMINAL /
-WATCH / OFF COURSE, Apollo Mission cards, the Flight Director, Recent
-Course Corrections — is presentation only: every number still arrives
+dark-first, typography over chrome. Server-rendered HTML, one small
+local script for accessible drawer behaviour, and zero new dependencies.
+RFC-004.2's Flight Deck language — a full-bleed photographic Earthrise,
+NOMINAL / WATCH / OFF COURSE, the four-lane Apollo programme, the Flight
+Director, and Recent Course Corrections — is presentation only: every number still arrives
 through the Metric Registry and the Flight Deck tile contract, every
 insight through the Evidence Index, and the page stays deterministic
 for a given log (the sunrise phase derives from `as_of`, never the
@@ -85,8 +85,18 @@ class Console:
 KPI_CARDS: tuple[tuple[str, str, str, str], ...] = (
     ("NET WORTH", "finance.net_worth", "currency", ""),
     ("LIQUIDITY", "finance.cash_available", "currency", ""),
-    ("NET CASH FLOW", "finance.cash_flow", "currency", "SINCE FIRST OBSERVATION"),
+    ("CASH FLOW", "finance.cash_flow", "currency", "SINCE FIRST OBSERVATION"),
     ("RUNWAY", "finance.liquidity_runway", "months", ""),
+)
+
+# Presentation-only Mission programme. These lanes create no Mission entities
+# and carry no financial values unless an existing active Mission can be shown
+# inside them. Empty lanes are visibly labelled PLANNED / TARGET NOT DECLARED.
+_MISSION_LANES: tuple[tuple[str, str, str], ...] = (
+    ("mortgage", "Mortgage Freedom", "Own the home outright."),
+    ("independence", "Financial Independence", "Build lasting freedom of choice."),
+    ("retirement", "Retirement", "Fund the life beyond work."),
+    ("children", "Children's Future", "Create long-term optionality."),
 )
 
 # Drill-down pages for metrics no longer on the opening screen keep
@@ -163,10 +173,29 @@ def _household_scope(console: Console) -> Subject | None:
 
 
 def _active_missions(console: Console) -> list[Mission]:
-    """Every active Mission, in declaration order — each becomes one
-    Apollo Mission card. Aggregation into the single FLIGHT PLAN word
-    is worst-status-wins, done at render time from Core's evaluations."""
+    """Every active Mission, in declaration order. Aggregation into the
+    single FLIGHT PLAN word is worst-status-wins, done at render time
+    from Core's evaluations."""
     return [m for m in console.entities.missions.values() if m.status == "active"]
+
+
+def _mission_lane(name: str) -> str | None:
+    """Choose a visual programme lane from an existing Mission name.
+
+    This is display taxonomy only: it never creates or evaluates a Mission,
+    and the real Mission name remains visible. Unknown names remain visible
+    as additional live rows rather than being forced into a false category.
+    """
+    text = name.casefold()
+    if "mortgage" in text or "home" in text:
+        return "mortgage"
+    if "child" in text or "education" in text:
+        return "children"
+    if "retire" in text or "pension" in text:
+        return "retirement"
+    if "independ" in text or "fire" in text:
+        return "independence"
+    return None
 
 
 _CURRENCY_SYMBOL = {"GBP": "£", "USD": "$", "EUR": "€"}
@@ -286,23 +315,32 @@ _SHELL = """<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{title} · Foundry Mission Control</title>
+<link rel="preload" as="image" href="/static/earthrise.webp" type="image/webp" fetchpriority="high">
 <style>
   :root {{
-    --bg: #0a0d12; --panel: #10141b; --line: #1c232d; --line-strong: #2b3441;
-    --text: #e8edf3; --muted: #8b98a5; --faint: #75818f;
-    --green: #3fb950; --amber: #d29922; --red: #f85149;
+    --bg: #05080c; --surface: #090e14; --panel: #0d131b; --elevated: #111923;
+    --line: #202a35; --line-strong: #344252;
+    --text: #edf2f7; --muted: #9aa8b6; --faint: #6f7c89;
+    --green: #66c56f; --amber: #e0a83c; --red: #ed6a64; --blue: #64a5e8;
   }}
   * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+  [hidden] {{ display: none !important; }}
   body {{
     background: var(--bg); color: var(--text); min-height: 100vh;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    font-size: 15px; line-height: 1.5;
+    font-size: 15px; line-height: 1.5; overflow-x: hidden;
     -webkit-font-smoothing: antialiased;
   }}
+  body.nav-open {{ overflow: hidden; }}
   a {{ color: inherit; text-decoration: none; }}
+  button {{ font: inherit; }}
   .mono {{ font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }}
   .num  {{ font-variant-numeric: tabular-nums; }}
-  :focus-visible {{ outline: 2px solid var(--text); outline-offset: 2px; border-radius: 2px; }}
+  .sr-only {{
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0;
+  }}
+  :focus-visible {{ outline: 2px solid var(--text); outline-offset: 3px; }}
 
   .skip {{
     position: absolute; left: -9999px; top: 8px; z-index: 90; padding: 8px 14px;
@@ -311,180 +349,233 @@ _SHELL = """<!doctype html>
   }}
   .skip:focus {{ left: 8px; }}
 
-  /* ------------------------------------------------ hidden navigation.
-     Desktop: revealed on hover or via the MENU control. Mobile: a
-     slide-over drawer. Keyboard: focus keeps the drawer open
-     (:focus-within), so every link stays reachable without a pointer.
-     Pure CSS — no script, no CSP change. */
-  .nav-zone {{ position: fixed; top: 0; left: 0; z-index: 50; }}
-  #nav-toggle {{
-    position: fixed; top: 18px; left: 18px; width: 1px; height: 1px;
-    opacity: 0; z-index: 51;
-  }}
+  /* Deliberate-click navigation; no hover-only state. */
   .menu-btn {{
-    position: fixed; top: 14px; left: 16px; z-index: 52; cursor: pointer;
+    position: fixed; top: 18px; left: 20px; z-index: 60; cursor: pointer;
     display: inline-flex; align-items: center; gap: 8px;
-    padding: 9px 14px; border: 1px solid var(--line); border-radius: 8px;
-    background: var(--panel); color: var(--muted);
-    font-size: 11px; font-weight: 600; letter-spacing: .18em;
+    padding: 8px 10px; border: 1px solid var(--line); border-radius: 4px;
+    background: rgba(9,14,20,.94); color: var(--muted);
+    font-size: 10px; font-weight: 650; letter-spacing: .2em;
   }}
   .menu-btn:hover {{ color: var(--text); border-color: var(--line-strong); }}
-  #nav-toggle:focus-visible ~ .menu-btn {{ outline: 2px solid var(--text); outline-offset: 2px; }}
+  .drawer-shell {{ position: fixed; inset: 0; z-index: 70; }}
+  .drawer-backdrop {{
+    position: absolute; inset: 0; width: 100%; border: 0; cursor: default;
+    background: rgba(1,4,8,.7); backdrop-filter: blur(3px);
+  }}
   .drawer {{
-    position: fixed; top: 0; bottom: 0; left: 0; width: 250px; z-index: 51;
-    background: var(--panel); border-right: 1px solid var(--line-strong);
-    padding: 70px 14px 20px; display: flex; flex-direction: column; gap: 2px;
-    transform: translateX(-102%); visibility: hidden;
-    transition: transform .22s ease, visibility .22s;
+    position: absolute; inset: 0 auto 0 0; width: min(310px, 88vw);
+    background: #080d13; border-right: 1px solid var(--line-strong);
+    padding: 24px 18px; display: flex; flex-direction: column; gap: 3px;
+    animation: drawer-in .18s ease-out both;
   }}
-  #nav-toggle:checked ~ .drawer,
-  .drawer:focus-within {{ transform: none; visibility: visible; }}
-  @media (hover: hover) and (min-width: 900px) {{
-    .nav-zone:hover .drawer {{ transform: none; visibility: visible; }}
+  @keyframes drawer-in {{ from {{ transform: translateX(-100%); }} to {{ transform: none; }} }}
+  .drawer-head {{
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 34px; padding: 0 8px;
   }}
-  .drawer .mark {{
-    font-size: 12px; font-weight: 600; letter-spacing: .22em; color: var(--muted);
-    padding: 0 12px 16px;
+  .drawer .mark {{ font-size: 12px; font-weight: 650; letter-spacing: .22em; color: var(--text); }}
+  .drawer-close {{
+    width: 38px; height: 38px; border: 1px solid var(--line); background: transparent;
+    color: var(--muted); cursor: pointer; font-size: 20px;
   }}
   .drawer a {{
-    padding: 10px 12px; border-radius: 6px; color: var(--muted);
-    font-size: 12px; font-weight: 600; letter-spacing: .16em;
-    border: 1px solid transparent;
+    padding: 13px 12px; color: var(--muted);
+    font-size: 11px; font-weight: 650; letter-spacing: .18em;
+    border-left: 2px solid transparent;
   }}
-  .drawer a:hover {{ color: var(--text); border-color: var(--line); }}
-  .drawer a.active {{ color: var(--text); background: var(--bg); border-color: var(--line-strong); }}
+  .drawer a:hover {{ color: var(--text); background: var(--surface); }}
+  .drawer a.active {{ color: var(--text); background: var(--surface); border-left-color: var(--green); }}
+  .drawer a.sign-out {{ margin-top: auto; border-top: 1px solid var(--line); }}
   @media (prefers-reduced-motion: reduce) {{
-    .drawer {{ transition: none; }}
+    .drawer {{ animation: none; }}
+    .card.kpi, .card.mission, .card .drill {{ transition: none; }}
   }}
 
   header.top {{
+    position: absolute; inset: 0 0 auto; z-index: 4; width: 100%;
     display: flex; justify-content: space-between; align-items: center; gap: 16px;
-    max-width: 1160px; margin: 0 auto; padding: 22px 24px 0 108px; min-height: 56px;
+    max-width: 1320px; margin: 0 auto; padding: 24px 32px 0 112px; min-height: 66px;
   }}
-  h1.crumb {{ font-size: 11px; font-weight: 600; letter-spacing: .22em; color: var(--muted); }}
-  .meta {{ font-size: 11px; letter-spacing: .06em; color: var(--faint); text-align: right; }}
+  h1.crumb {{ font-size: 10px; font-weight: 650; letter-spacing: .26em; color: var(--muted); }}
+  .meta {{ font-size: 10px; letter-spacing: .12em; color: var(--faint); text-align: right; }}
+  .meta a {{ margin-left: 8px; }}
   .meta a:hover {{ color: var(--muted); }}
 
-  main {{ max-width: 1160px; margin: 0 auto; padding: 22px 24px 64px; }}
-  @media (max-width: 760px) {{
-    header.top {{ padding-left: 132px; justify-content: flex-end; }}
+  main {{ max-width: 1320px; margin: 0 auto; padding: 0 32px 72px; }}
+  @media (max-width: 820px) {{
+    header.top {{ padding-left: 116px; justify-content: flex-end; }}
     /* The brand crumb stays for screen readers; visually the MENU
        control and drawer carry the identity on small screens. */
     h1.crumb {{
       position: absolute; width: 1px; height: 1px; overflow: hidden;
       clip-path: inset(50%); white-space: nowrap;
     }}
-    .meta {{ font-size: 10px; }}
-    .hero-content {{ padding: 26px 24px 24px; }}
+    .meta {{ font-size: 9px; }}
   }}
 
-  section {{ margin-bottom: 44px; }}
+  section {{ margin-bottom: 74px; }}
   h2 {{
-    font-size: 11px; font-weight: 600; letter-spacing: .22em; color: var(--muted);
-    border-bottom: 1px solid var(--line); padding-bottom: 10px; margin-bottom: 20px;
+    font-size: 10px; font-weight: 650; letter-spacing: .26em; color: var(--muted);
+    border: 0; padding: 0; margin-bottom: 24px;
   }}
 
   /* -------------------------------------------------- Earthrise hero. */
   .hero {{
-    position: relative; border: 1px solid var(--line); border-radius: 12px;
-    overflow: hidden; margin-bottom: 28px; background: #04070c;
+    position: relative; width: 100vw; min-height: 620px;
+    margin-left: calc(50% - 50vw); margin-bottom: 78px;
+    border: 0; border-bottom: 1px solid var(--line); border-radius: 0;
+    overflow: hidden; background: #020407;
   }}
-  .hero svg.earthrise {{ position: absolute; inset: 0; width: 100%; height: 100%; }}
+  .hero img.earthrise {{
+    position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover;
+    object-position: 54% 58%;
+  }}
   .hero .scrim {{
     position: absolute; inset: 0;
-    background: linear-gradient(90deg, rgba(3,6,11,.88) 0%, rgba(3,6,11,.55) 55%, rgba(3,6,11,.08) 100%);
+    background:
+      linear-gradient(90deg, rgba(1,4,8,.88) 0%, rgba(1,4,8,.58) 34%, rgba(1,4,8,.12) 68%, rgba(1,4,8,.04) 100%),
+      linear-gradient(0deg, rgba(1,4,8,.34) 0%, transparent 38%);
   }}
-  .hero-content {{ position: relative; padding: 34px 40px 30px; max-width: 640px; }}
-  .eyebrow {{ font-size: 11px; font-weight: 600; letter-spacing: .26em; color: var(--muted); }}
+  .hero-content {{
+    position: relative; z-index: 1; width: min(100%, 1320px); min-height: 620px;
+    margin: 0 auto; padding: 118px 72px 64px;
+    display: flex; flex-direction: column; justify-content: flex-end;
+  }}
+  .hero-content > * {{ max-width: 680px; }}
+  .eyebrow {{ font-size: 10px; font-weight: 650; letter-spacing: .28em; color: #aab6c2; }}
   .flight-word {{
-    font-size: clamp(34px, 5vw, 52px); font-weight: 650; letter-spacing: .05em;
-    line-height: 1.15; margin: 6px 0 10px;
+    border: 0; padding: 0; font-size: clamp(58px, 7vw, 92px); font-weight: 540;
+    letter-spacing: .075em; line-height: .96; margin: 10px 0 20px;
   }}
   .flight-word.green {{ color: var(--green); }}
   .flight-word.amber {{ color: var(--amber); }}
   .flight-word.red   {{ color: var(--red); }}
   .flight-word.none  {{ color: var(--muted); }}
-  .hero .why {{ color: #b7c2cc; font-size: 14px; max-width: 52ch; }}
-  .hero-stats {{ display: flex; flex-wrap: wrap; gap: 10px 36px; margin-top: 22px; }}
-  .hero-stats .stat .k {{ font-size: 10px; font-weight: 600; letter-spacing: .2em; color: var(--muted); }}
-  .hero-stats .stat .v {{ font-size: 15px; font-weight: 600; letter-spacing: .06em; margin-top: 2px; }}
+  .hero .why {{ color: #d2d9e1; font-size: 17px; line-height: 1.55; max-width: 54ch; }}
+  .hero-stats {{ display: flex; flex-wrap: wrap; gap: 16px 56px; margin-top: 36px; }}
+  .hero-stats .stat .k {{ font-size: 9px; font-weight: 650; letter-spacing: .22em; color: #8d9aa7; }}
+  .hero-stats .stat .v {{ font-size: 16px; font-weight: 650; letter-spacing: .08em; margin-top: 4px; }}
   .hero-stats .v.green {{ color: var(--green); }}
   .hero-stats .v.amber {{ color: var(--amber); }}
-  /* Sunrise progression through the day — derived from the data's own
-     as-of clock, applied as a barely-there tint. */
-  .earthrise .sky-wash {{ opacity: 0; }}
-  .phase-dawn .earthrise .sky-wash {{ fill: #c97b4a; opacity: .10; }}
-  .phase-day  .earthrise .sky-wash {{ fill: #7ea7d8; opacity: .07; }}
-  .phase-dusk .earthrise .sky-wash {{ fill: #b05c6e; opacity: .10; }}
+  .phase-dawn img.earthrise {{ filter: saturate(.96) sepia(.05); }}
+  .phase-day img.earthrise {{ filter: brightness(1.02); }}
+  .phase-dusk img.earthrise {{ filter: saturate(.9) hue-rotate(-4deg); }}
 
-  /* ------------------------------------------------------- KPI cards. */
-  .cards {{ display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }}
-  @media (max-width: 980px) {{ .cards {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }} }}
-  @media (max-width: 420px) {{ .cards {{ grid-template-columns: minmax(0, 1fr); }} }}
-  .card {{
-    border: 1px solid var(--line); border-radius: 10px; padding: 18px 18px 15px;
-    background: var(--panel); display: block;
+  /* ------------------------------------------------ primary telemetry. */
+  .cards {{
+    display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: clamp(28px, 4vw, 64px); border-top: 1px solid var(--line);
+    padding-top: 30px;
   }}
-  a.card:hover {{ border-color: var(--line-strong); }}
-  .card .label {{ font-size: 10px; font-weight: 600; letter-spacing: .18em; color: var(--muted); margin-bottom: 12px; }}
-  .card .value {{ font-size: 26px; font-weight: 600; letter-spacing: -.01em; }}
+  .card {{ display: block; min-width: 0; }}
+  .card.kpi {{
+    position: relative; padding: 0 0 18px; transition: transform .16s ease-out;
+  }}
+  a.card.kpi:hover {{ transform: translateY(-2px); }}
+  .card .label {{
+    display: flex; gap: 10px; align-items: baseline;
+    font-size: 9px; font-weight: 650; letter-spacing: .21em; color: var(--muted);
+  }}
+  .card .channel {{ color: var(--green); font-variant-numeric: tabular-nums; }}
+  .card .value {{
+    font-size: clamp(30px, 3vw, 42px); font-weight: 530; letter-spacing: -.025em;
+    margin-top: 18px;
+  }}
   .card .value.na {{ color: var(--faint); font-weight: 400; }}
-  .card .sub {{ font-size: 11px; color: var(--faint); margin-top: 8px; letter-spacing: .04em; }}
+  .card .sub {{ font-size: 9px; color: var(--faint); margin-top: 10px; letter-spacing: .1em; }}
   .card .sub.warn {{ color: var(--amber); }}
+  .card .drill {{
+    position: absolute; top: -4px; right: 0; font-size: 15px;
+    color: var(--faint); transition: color .16s ease-out, transform .16s ease-out;
+  }}
+  a.card.kpi:hover .drill {{ color: var(--text); transform: translate(2px,-2px); }}
 
-  /* --------------------------------------------- Apollo Mission cards. */
-  .missions {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }}
-  .card.mission .m-head {{ display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }}
-  .m-status {{ font-size: 11px; font-weight: 700; letter-spacing: .18em; }}
+  /* ---------------------------------------------- Apollo mission rows. */
+  .missions {{ border-top: 1px solid var(--line); }}
+  .card.mission {{
+    display: grid; grid-template-columns: 54px minmax(230px,.88fr) minmax(360px,1.55fr) 126px 24px;
+    align-items: center; gap: 26px; padding: 28px 2px; border-bottom: 1px solid var(--line);
+  }}
+  .m-number {{ font-size: 12px; letter-spacing: .14em; color: var(--faint); }}
+  .m-name {{ font-size: 18px; font-weight: 550; margin-bottom: 5px; }}
+  .m-purpose {{ font-size: 11px; color: var(--faint); line-height: 1.5; }}
+  .m-progress {{ font-size: 9px; color: var(--muted); letter-spacing: .09em; }}
+  .m-status {{ justify-self: end; font-size: 10px; font-weight: 700; letter-spacing: .18em; white-space: nowrap; }}
   .m-status.green {{ color: var(--green); }}
   .m-status.amber {{ color: var(--amber); }}
   .m-status.red   {{ color: var(--red); }}
   .m-status.none  {{ color: var(--faint); }}
-  .m-name {{ font-size: 17px; font-weight: 600; margin: 10px 0 8px; }}
-  .m-progress {{ font-size: 12px; color: var(--muted); letter-spacing: .04em; }}
-  /* Deviation gauge (RFC-004B): centre band = the declared target
-     zone (±1 tolerance), track = ±3 tolerances (Core's RAG banding),
-     tick = current value. Not a completion bar. */
-  .m-gauge {{ position: relative; height: 14px; margin-top: 12px; }}
+  .m-gauge {{ position: relative; height: 20px; margin-top: 13px; }}
   .m-gauge::before {{
-    content: ""; position: absolute; left: 0; right: 0; top: 6px; height: 2px;
-    background: var(--line); border-radius: 1px;
+    content: ""; position: absolute; left: 0; right: 0; top: 8px; height: 4px;
+    background: var(--line);
   }}
   .m-gauge .zone {{
-    position: absolute; left: 33.33%; right: 33.33%; top: 5px; height: 4px;
-    background: var(--line-strong); border-radius: 2px;
+    position: absolute; left: 33.33%; right: 33.33%; top: 5px; height: 10px;
+    background: #344356;
   }}
   .m-gauge .tick {{
-    position: absolute; top: 1px; width: 2px; height: 12px; margin-left: -1px;
-    border-radius: 1px; background: var(--muted);
+    position: absolute; top: 0; width: 3px; height: 20px; margin-left: -1px;
+    background: var(--muted); box-shadow: 0 0 0 3px rgba(5,8,12,.75);
   }}
   .m-gauge .tick.green {{ background: var(--green); }}
   .m-gauge .tick.amber {{ background: var(--amber); }}
   .m-gauge .tick.red   {{ background: var(--red); }}
-  .m-link {{ font-size: 10px; font-weight: 600; letter-spacing: .18em; color: var(--faint); margin-top: 14px; }}
-  a.card.mission:hover .m-link {{ color: var(--muted); }}
+  .m-link {{ justify-self: end; font-size: 19px; color: var(--faint); }}
+  .m-link.unavailable {{ font-size: 12px; letter-spacing: .08em; }}
+  a.card.mission {{ transition: transform .16s ease-out; }}
+  a.card.mission:hover {{ transform: translateX(3px); }}
+  a.card.mission:hover .m-link {{ color: var(--text); }}
+  .card.mission.planned {{ color: var(--muted); }}
+  .card.mission.planned .m-purpose {{ color: var(--faint); }}
+  .card.mission.planned .m-status {{ color: var(--faint); }}
+  .m-gauge.planned::before {{
+    background: repeating-linear-gradient(90deg, var(--line) 0 12px, transparent 12px 19px);
+  }}
 
   /* --------------------- Flight Director & Recent Course Corrections. */
-  .duo {{ display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 32px; }}
-  @media (max-width: 900px) {{ .duo {{ grid-template-columns: minmax(0, 1fr); }} }}
-  .panel {{ border: 1px solid var(--line); border-radius: 10px; background: var(--panel); padding: 20px 22px; }}
-  .fd-lede {{ font-size: 12px; color: var(--muted); letter-spacing: .04em; margin-bottom: 14px; }}
-  .fd-statement {{ font-size: 15px; line-height: 1.6; }}
-  .fd-meta {{ font-size: 10px; font-weight: 600; letter-spacing: .16em; color: var(--faint); margin-top: 12px; }}
-  .fd-nominal {{ font-size: 16px; font-weight: 600; }}
-  .fd-sub {{ font-size: 13px; color: var(--muted); margin-top: 4px; }}
+  .duo {{ display: block; }}
+  .duo section {{ margin-bottom: 74px; }}
+  .flight-director .director-copy {{
+    max-width: 880px; border-left: 2px solid var(--green); padding: 3px 0 4px 28px;
+  }}
+  .panel {{ padding: 0; }}
+  .fd-lede {{ font-size: 14px; color: var(--muted); margin: 9px 0 0; }}
+  .fd-statement {{ font-size: 17px; line-height: 1.6; max-width: 66ch; margin-top: 22px; }}
+  .fd-meta {{ font-size: 9px; font-weight: 650; letter-spacing: .16em; color: var(--faint); margin-top: 16px; }}
+  .fd-nominal {{ font-size: clamp(23px, 2.4vw, 32px); font-weight: 520; line-height: 1.25; }}
+  .fd-sub {{ font-size: 14px; color: var(--muted); margin-top: 10px; }}
   ul.corrections {{ list-style: none; }}
   ul.corrections li {{
-    display: flex; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line);
+    display: grid; grid-template-columns: 24px 1fr; gap: 14px;
+    padding: 21px 0; border-top: 1px solid var(--line);
   }}
-  ul.corrections li:last-child {{ border-bottom: 0; }}
-  .tick {{ flex: none; width: 20px; text-align: center; font-weight: 700; }}
+  .tick {{ width: 20px; text-align: center; font-weight: 700; }}
   .tick.green {{ color: var(--green); }}
   .tick.amber {{ color: var(--amber); }}
   .tick.red   {{ color: var(--red); }}
   .tick.none  {{ color: var(--faint); }}
-  .corrections p {{ font-size: 13px; line-height: 1.55; }}
-  .corrections .c-meta {{ font-size: 10px; font-weight: 600; letter-spacing: .16em; color: var(--faint); margin-top: 4px; }}
+  .corrections p {{ font-size: 14px; line-height: 1.6; max-width: 78ch; }}
+  .corrections .c-meta {{ font-size: 9px; font-weight: 650; letter-spacing: .16em; color: var(--faint); margin-top: 6px; }}
+
+  /* ----------------------------------------------- honest scope strip. */
+  .scope-bar {{
+    margin-top: 10px; border-top: 1px solid var(--line); padding-top: 25px;
+    display: flex; align-items: center; gap: clamp(18px, 4vw, 48px); flex-wrap: wrap;
+  }}
+  .scope-label {{ margin-right: 8px; font-size: 9px; letter-spacing: .22em; color: var(--faint); }}
+  .scope-bar button {{
+    position: relative; border: 0; padding: 0; color: var(--faint);
+    background: transparent; font-size: 11px; letter-spacing: .08em;
+  }}
+  .scope-bar button.active {{ color: var(--text); padding-left: 15px; }}
+  .scope-bar button.active::before {{
+    content: ""; position: absolute; left: 0; top: .46em; width: 6px; height: 6px;
+    border-radius: 50%; background: var(--green);
+  }}
+  .scope-bar button[disabled] {{ cursor: not-allowed; opacity: .82; }}
+  .scope-bar small {{ display: block; margin-top: 3px; font-size: 7px; letter-spacing: .14em; color: var(--faint); }}
 
   /* -------------------------------------------- drill-down page bits. */
   .status-word {{ font-size: 40px; font-weight: 650; letter-spacing: .04em; }}
@@ -507,7 +598,7 @@ _SHELL = """<!doctype html>
   }}
 
   footer {{
-    border-top: 1px solid var(--line); padding-top: 18px; margin-top: 26px;
+    border-top: 1px solid var(--line); padding-top: 18px; margin-top: 46px;
     display: flex; flex-wrap: wrap; gap: 8px 28px;
   }}
   footer .item {{ font-size: 10px; letter-spacing: .14em; color: var(--faint); }}
@@ -517,25 +608,72 @@ _SHELL = """<!doctype html>
 
   .empty {{ color: var(--muted); font-size: 14px; }}
   .placeholder {{ color: var(--faint); font-size: 14px; margin-top: 6px; }}
+
+  @media (max-width: 980px) {{
+    .cards {{ grid-template-columns: repeat(2, minmax(0,1fr)); gap: 48px 40px; }}
+    .card.mission {{ grid-template-columns: 42px minmax(0,1fr) auto; gap: 14px 18px; }}
+    .m-telemetry {{ grid-column: 2 / -1; }}
+    .m-link {{ grid-column: 3; grid-row: 1; }}
+    .m-status {{ grid-column: 3; grid-row: 2; }}
+  }}
+  @media (max-width: 620px) {{
+    .menu-btn {{ top: 14px; left: 14px; }}
+    header.top {{ min-height: 56px; padding: 18px 16px 0 94px; }}
+    .meta .timestamp {{ display: none; }}
+    .meta a {{ color: var(--muted); }}
+    main {{ padding: 0 16px 48px; }}
+    section {{ margin-bottom: 58px; }}
+    h2 {{ margin-bottom: 20px; }}
+    .hero {{ min-height: 560px; margin-bottom: 62px; }}
+    .hero img.earthrise {{ object-position: 67% 54%; }}
+    .hero .scrim {{ background: linear-gradient(180deg, rgba(1,4,8,.08) 0%, rgba(1,4,8,.28) 38%, rgba(1,4,8,.94) 78%, rgba(1,4,8,.98) 100%); }}
+    .hero-content {{ min-height: 560px; padding: 104px 24px 38px; max-width: none; }}
+    .flight-word {{ font-size: clamp(45px, 14vw, 58px); letter-spacing: .055em; }}
+    .hero .why {{ font-size: 15px; }}
+    .hero-stats {{ gap: 16px 28px; margin-top: 24px; }}
+    .hero-stats .stat {{ min-width: 112px; }}
+    .cards {{ gap: 38px 22px; padding-top: 24px; }}
+    .card.kpi {{ padding: 0; }}
+    .card .label {{ gap: 7px; letter-spacing: .15em; }}
+    .card .value {{ font-size: clamp(24px, 7.2vw, 31px); margin-top: 14px; }}
+    .card .sub {{ min-height: 1.4em; line-height: 1.4; }}
+    .card.mission {{ grid-template-columns: 34px minmax(0,1fr); gap: 11px 14px; padding: 22px 4px; }}
+    .m-number {{ grid-row: 1 / span 2; align-self: start; padding-top: 3px; }}
+    .m-identity {{ grid-column: 2; grid-row: 1; padding-right: 28px; }}
+    .m-status {{ grid-column: 2; grid-row: 2; justify-self: start; }}
+    .m-telemetry {{ grid-column: 1 / -1; grid-row: 3; }}
+    .m-link {{ grid-column: 2; grid-row: 1; }}
+    .flight-director .director-copy {{ padding-left: 20px; }}
+    .scope-bar {{ gap: 22px 18px; }}
+    .scope-label {{ flex-basis: 100%; margin: 0; }}
+    .scope-bar button {{ flex: 1 1 calc(50% - 18px); text-align: left; }}
+    .scope-bar button:last-child {{ flex-basis: 100%; }}
+  }}
 </style>
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
-<div class="nav-zone">
-  <input type="checkbox" id="nav-toggle" aria-label="Toggle navigation">
-  <label class="menu-btn" for="nav-toggle"><span aria-hidden="true">☰</span>MENU</label>
+<button class="menu-btn" id="nav-open" type="button" aria-controls="primary-drawer" aria-expanded="false">
+  <span aria-hidden="true">☰</span>MENU
+</button>
+<div class="drawer-shell" id="primary-drawer" role="dialog" aria-modal="true" aria-label="Navigation" hidden>
+  <button class="drawer-backdrop" type="button" tabindex="-1" data-nav-dismiss aria-label="Close navigation"></button>
   <nav class="drawer" aria-label="Primary">
-    <div class="mark">◈ FOUNDRY</div>
+    <div class="drawer-head"><div class="mark">◈ FOUNDRY</div>
+      <button class="drawer-close" type="button" data-nav-close aria-label="Close navigation">×</button>
+    </div>
     {nav_items}
+    <a class="sign-out" href="/logout">SIGN OUT</a>
   </nav>
 </div>
 <header class="top">
   <h1 class="crumb">FOUNDRY · MISSION CONTROL</h1>
-  <div class="meta">DATA AS OF {as_of} &nbsp;·&nbsp; <a href="/logout">SIGN OUT</a></div>
+  <div class="meta"><span class="timestamp">DATA AS OF {as_of} &nbsp;·&nbsp;</span><a href="/logout">SIGN OUT</a></div>
 </header>
 <main id="main">
 {body}
 </main>
+<script src="/static/flight-deck.js" defer></script>
 </body>
 </html>
 """
@@ -543,38 +681,7 @@ _SHELL = """<!doctype html>
 _NAV = (("FLIGHT DECK", "/"), ("FINANCE", "/finance"), ("DECISIONS", "/decisions"),
         ("MISSIONS", "/missions"), ("SETTINGS", "/settings"))
 
-# The Earthrise hero — Foundry's visual identity, rendered as a small
-# inline SVG (~1 KB): no external request, nothing to lazy-load, no
-# img-src needed in the CSP, and identical bytes on every render.
-# Decorative only, so it is aria-hidden.
-_EARTHRISE_SVG = """<svg class="earthrise" viewBox="0 0 1200 380" preserveAspectRatio="xMidYMax slice" aria-hidden="true" focusable="false">
-<defs>
-<linearGradient id="g-sky" x1="0" y1="0" x2="0" y2="1">
-<stop offset="0" stop-color="#02040a"/><stop offset="1" stop-color="#0a1018"/>
-</linearGradient>
-<radialGradient id="g-earth" cx="0.34" cy="0.32" r="0.85">
-<stop offset="0" stop-color="#c3dcf4"/><stop offset="0.38" stop-color="#5b93cf"/>
-<stop offset="0.75" stop-color="#1f4f86"/><stop offset="1" stop-color="#0c2a4d"/>
-</radialGradient>
-<linearGradient id="g-moon" x1="0" y1="0" x2="0" y2="1">
-<stop offset="0" stop-color="#3b4048"/><stop offset="1" stop-color="#131519"/>
-</linearGradient>
-</defs>
-<rect class="sky" width="1200" height="380" fill="url(#g-sky)"/>
-<g fill="#dfe8f2">
-<circle cx="150" cy="70" r="1" opacity="0.5"/><circle cx="335" cy="132" r="1" opacity="0.35"/>
-<circle cx="520" cy="52" r="1.3" opacity="0.45"/><circle cx="705" cy="105" r="1" opacity="0.3"/>
-<circle cx="243" cy="205" r="1" opacity="0.3"/><circle cx="640" cy="188" r="1" opacity="0.4"/>
-<circle cx="1050" cy="60" r="1" opacity="0.45"/><circle cx="1140" cy="170" r="1.2" opacity="0.35"/>
-<circle cx="900" cy="40" r="1" opacity="0.4"/><circle cx="430" cy="250" r="1" opacity="0.25"/>
-</g>
-<circle cx="895" cy="168" r="82" fill="#5b93cf" opacity="0.12"/>
-<circle cx="895" cy="168" r="62" fill="url(#g-earth)"/>
-<path d="M0,380 L0,318 Q280,286 560,296 T1200,306 L1200,380 Z" fill="url(#g-moon)"/>
-<ellipse cx="330" cy="322" rx="60" ry="7" fill="#0a0c10" opacity="0.35"/>
-<ellipse cx="840" cy="334" rx="90" ry="9" fill="#0a0c10" opacity="0.3"/>
-<rect class="sky-wash" width="1200" height="380"/>
-</svg>"""
+_EARTHRISE_PATH = "/static/earthrise.webp"
 
 
 def _render(title: str, body: str, as_of: float, active_path: str) -> HTMLResponse:
@@ -613,11 +720,13 @@ def _active_claims(console: Console, claim_ids) -> list:
 # from the declared target (or range edge) measured against tolerance.
 # A fill-toward-100% bar assumes "higher is better" and misrepresents
 # lower-is-better Missions, so the card renders a deviation gauge
-# instead: a track spanning ±3 tolerances (Core's exact banding —
-# within 1 on_track, within 2 at_risk, beyond off_track), the ±1
-# tolerance target band shaded at the centre, and a tick at the
-# current value. Direction-agnostic by construction. Missions without
-# a numeric target or tolerance get no gauge — never an invented one.
+# instead: a track spanning ±3 tolerances and a tick at the current
+# deviation. Target-value Missions also shade their ±1 tolerance band,
+# which is exactly Core's on-track policy. Range Missions deliberately
+# omit that band: Core considers any value outside the range WATCH even
+# when it is within one tolerance of the edge, so a central shaded band
+# would make the picture disagree with the policy. Missions without a
+# numeric target or tolerance get no gauge — never an invented one.
 
 def _mission_deviation(mission: Mission, result) -> tuple[float | None, bool]:
     """Signed distance from the Mission's declared target, in the
@@ -653,13 +762,15 @@ def _variance_text(deviation: float | None, is_range: bool,
     return f"{sign}{_format_value(abs(deviation), unit, kind)} {noun}"
 
 
-def _deviation_gauge(deviation: float, tolerance: float, klass: str) -> str:
+def _deviation_gauge(deviation: float, tolerance: float, klass: str,
+                     is_range: bool = False) -> str:
     """Tick position: deviation in tolerance units, clamped to ±3 and
-    mapped onto the track — the same arithmetic Core's RAG banding
-    applies, so the picture and the policy cannot disagree."""
+    mapped onto the track. Only target-value Missions get a shaded
+    tolerance band; range status semantics do not support one."""
     units = max(-3.0, min(3.0, deviation / tolerance))
     left = 50.0 + units / 6.0 * 100.0
-    return (f'<div class="m-gauge" aria-hidden="true"><span class="zone"></span>'
+    zone = '' if is_range else '<span class="zone"></span>'
+    return (f'<div class="m-gauge" aria-hidden="true">{zone}'
             f'<span class="tick {klass}" style="left:{left:.1f}%"></span></div>')
 
 
@@ -701,26 +812,32 @@ def home(request: Request):
     cards_html = []
     tiles: dict[str, Tile] = {}
     if scope is not None:
-        for label, metric_id, kind, period in KPI_CARDS:
+        for channel, (label, metric_id, kind, period) in enumerate(KPI_CARDS, start=1):
             tile = compose_tile(metric_id, scope, console.registry,
                                 console.entities, console.evidence, as_of)
             tiles[metric_id] = tile
             result = tile.current_value
             if result.status in ("available", "stale"):
                 value_html = f'<div class="value num">{html.escape(_format_value(result.value, result.unit_or_currency, kind))}</div>'
-                note = f"{len(result.limitations)} CAVEAT{'S' if len(result.limitations) != 1 else ''}" \
-                    if result.limitations else result.status.upper()
+                note = (f"{len(result.limitations)} CAVEAT"
+                        f"{'S' if len(result.limitations) != 1 else ''}"
+                        if result.limitations else "")
                 sub_class = "sub warn" if result.limitations else "sub"
             else:
                 value_html = '<div class="value na">—</div>'
                 note, sub_class = result.status.upper(), "sub"
             if period:
-                note = f"{note} · {period}"
+                note = f"{note} · {period}" if note else period
+            note_html = (f'<div class="{sub_class}">{html.escape(note)}</div>'
+                         if note else "")
             cards_html.append(
                 f'<a class="card kpi" href="/metrics/{html.escape(metric_id)}">'
-                f'<div class="label">{html.escape(label)}</div>'
+                f'<div class="label"><span class="channel">{channel:02d}</span>'
+                f'<span>{html.escape(label)}</span></div>'
                 f'{value_html}'
-                f'<div class="{sub_class}">{html.escape(note)}</div></a>')
+                f'{note_html}'
+                f'<span class="drill" aria-hidden="true">↗</span>'
+                f'<span class="sr-only">Open {html.escape(label.title())} telemetry</span></a>')
         cards = f'<div class="cards">{"".join(cards_html)}</div>'
     else:
         cards = ('<p class="empty">No household declared yet. Seed the event log '
@@ -769,20 +886,30 @@ def home(request: Request):
         label, kind = _METRIC_PRESENTATION.get(
             primary_mission.target_metric, (primary_mission.target_metric, "plain"))
         unit = primary_result.unit_or_currency if primary_result else None
-        why = (f"{primary_mission.name}: {label.lower()} "
-               f"{_format_value(primary_result.value if primary_result else None, unit, kind)}"
-               f" against a target of "
-               f"{_format_value(primary_mission.target_value, unit, kind)}")
-        if primary_mission.tolerance:
-            why += f" ±{_format_value(primary_mission.tolerance, unit, kind)}"
-        why += "."
+        current = _format_value(
+            primary_result.value if primary_result else None, unit, kind)
+        if primary_mission.target_range is not None:
+            lo, hi = primary_mission.target_range
+            why = (f"{primary_mission.name}: {label.lower()} {current} against a "
+                   f"target range of {_format_value(lo, unit, kind)}"
+                   f"–{_format_value(hi, unit, kind)}.")
+        elif primary_mission.target_value is not None:
+            why = (f"{primary_mission.name}: {label.lower()} {current} against a target of "
+                   f"{_format_value(primary_mission.target_value, unit, kind)}")
+            if primary_mission.tolerance:
+                why += f" ±{_format_value(primary_mission.tolerance, unit, kind)}"
+            why += "."
+        else:
+            why = f"{primary_mission.name}: no numeric target is declared."
 
-    hero = f"""<section class="hero phase-{_sun_phase(as_of)}" aria-label="Flight plan">
-  {_EARTHRISE_SVG}
+    hero = f"""<section class="hero phase-{_sun_phase(as_of)}" aria-labelledby="flight-status">
+  <img class="earthrise" src="{_EARTHRISE_PATH}"
+    alt="Earth at sunrise from orbit, its curved horizon lit above the night side"
+    width="1774" height="887" fetchpriority="high" decoding="async">
   <div class="scrim"></div>
   <div class="hero-content">
     <p class="eyebrow">FLIGHT PLAN</p>
-    <p class="flight-word {banner_class}">{html.escape(banner_word)}</p>
+    <h2 class="flight-word {banner_class}" id="flight-status">{html.escape(banner_word)}</h2>
     <p class="why">{html.escape(why)}</p>
     <div class="hero-stats">
       <div class="stat"><div class="k">STRATEGIC RISK</div>
@@ -793,15 +920,13 @@ def home(request: Request):
   </div>
 </section>"""
 
-    # -- Apollo Mission cards: status, progress, drill-down affordance.
+    # -- Apollo Mission programme: four visual lanes, with real Mission
+    #    telemetry rendered only where an active Mission exists. Planned
+    #    lanes are explicit UI placeholders and never receive invented values.
     if scope is None:
         missions_html = ('<p class="empty">No household declared yet.</p>')
-    elif not evaluated:
-        missions_html = ('<p class="empty">No active Mission. Declare one to give '
-                         'this Flight Deck something to steer by.</p>')
     else:
-        mission_cards = []
-        for mission, rag, result in evaluated:
+        def live_mission_row(mission_number, lane_title, mission, rag, result):
             word, klass = (_RAG_TO_BANNER.get(rag, (rag.upper(), "none"))
                            if rag else ("NOT EVALUABLE", "none"))
             label, kind = _METRIC_PRESENTATION.get(
@@ -827,17 +952,53 @@ def home(request: Request):
                 progress += f" · {variance}"
             bar = ""
             if deviation is not None and mission.tolerance:
-                bar = _deviation_gauge(deviation, mission.tolerance, klass)
+                bar = _deviation_gauge(
+                    deviation, mission.tolerance, klass, is_range=is_range)
             href = (f"/metrics/{mission.target_metric}"
                     if mission.target_metric else "/missions")
-            mission_cards.append(
-                f'<a class="card mission" href="{html.escape(href)}">'
-                f'<div class="m-head"><span class="label">MISSION</span>'
-                f'<span class="m-status {klass}">{html.escape(word)}</span></div>'
-                f'<div class="m-name">{html.escape(mission.name)}</div>'
-                f'<div class="m-progress num">{html.escape(progress)}</div>'
-                f'{bar}'
-                f'<div class="m-link">TELEMETRY →</div></a>')
+            purpose = (f"Tracked against {label.title()}."
+                       if mission.name.casefold() == lane_title.casefold() else
+                       f"{mission.name} · tracked against {label.title()}.")
+            return (
+                f'<a class="card mission live" href="{html.escape(href)}">'
+                f'<div class="m-number num">{mission_number:02d}</div>'
+                f'<div class="m-identity"><div class="m-name">{html.escape(lane_title)}</div>'
+                f'<div class="m-purpose">{html.escape(purpose)}</div></div>'
+                f'<div class="m-telemetry"><div class="m-progress num">{html.escape(progress)}</div>'
+                f'{bar}</div>'
+                f'<div class="m-status {klass}">{html.escape(word)}</div>'
+                f'<div class="m-link" aria-hidden="true">›</div></a>')
+
+        def planned_mission_row(mission_number, title, description):
+            return (
+                f'<div class="card mission planned" role="link" aria-disabled="true" '
+                f'aria-label="{html.escape(title)}, planned view; target not declared">'
+                f'<div class="m-number num">{mission_number:02d}</div>'
+                f'<div class="m-identity"><div class="m-name">{html.escape(title)}</div>'
+                f'<div class="m-purpose">{html.escape(description)}</div></div>'
+                f'<div class="m-telemetry"><div class="m-progress">TARGET NOT DECLARED</div>'
+                f'<div class="m-gauge planned" aria-hidden="true"></div></div>'
+                f'<div class="m-status">PLANNED</div>'
+                f'<div class="m-link unavailable" aria-hidden="true">—</div></div>')
+
+        lane_rows = {}
+        unassigned = []
+        for row in evaluated:
+            lane = _mission_lane(row[0].name)
+            if lane is not None and lane not in lane_rows:
+                lane_rows[lane] = row
+            else:
+                unassigned.append(row)
+
+        mission_cards = []
+        for mission_number, (lane, title, description) in enumerate(_MISSION_LANES, start=1):
+            row = lane_rows.get(lane)
+            if row is None:
+                mission_cards.append(planned_mission_row(mission_number, title, description))
+            else:
+                mission_cards.append(live_mission_row(mission_number, title, *row))
+        for mission_number, row in enumerate(unassigned, start=len(_MISSION_LANES) + 1):
+            mission_cards.append(live_mission_row(mission_number, row[0].name, *row))
         missions_html = f'<div class="missions">{"".join(mission_cards)}</div>'
 
     # -- Flight Director: at most one evidence-backed recommendation,
@@ -847,10 +1008,16 @@ def home(request: Request):
     #    panel says so — an unrelated correction under a red banner
     #    would fabricate causality, and absence of advice is a fact
     #    this surface reports like any other.
+    director_status = {
+        "NOMINAL": "Flight Plan remains nominal.",
+        "WATCH": "Flight Plan requires monitoring.",
+        "OFF COURSE": "Flight Plan is off course.",
+    }.get(banner_word, "Flight Plan status is not yet available.")
+
     def _rec_panel(latest, lede):
-        meta = (f"CONFIDENCE {latest.confidence * 100:.0f}% · "
-                f"EVIDENCE ITEMS {len(latest.evidence)} · {_short_date(latest.ts)}")
-        return (f'<p class="fd-lede">{html.escape(lede)}</p>'
+        meta = f"EVIDENCE VERIFIED · {_short_date(latest.ts)}"
+        return (f'<p class="fd-nominal">{html.escape(director_status)}</p>'
+                f'<p class="fd-lede">{html.escape(lede)}</p>'
                 f'<div class="panel">'
                 f'<p class="fd-statement">{html.escape(latest.statement)}</p>'
                 f'<p class="fd-meta">{html.escape(meta)}</p></div>')
@@ -868,6 +1035,7 @@ def home(request: Request):
                 note = (f" {others} standing recommendation"
                         f"{'s' if others != 1 else ''} on file concern other subjects.")
             director = (
+                f'<p class="fd-lede">{html.escape(director_status)}</p>'
                 f'<div class="panel">'
                 f'<p class="fd-nominal">No course correction on file for '
                 f'{html.escape(deviating.name)}.</p>'
@@ -876,10 +1044,7 @@ def home(request: Request):
                 f'{html.escape(note)}</p></div>')
     elif all_recs:
         latest = all_recs[0]
-        lede = ("One worthwhile course correction available."
-                if len(all_recs) == 1 else
-                f"{len(all_recs)} standing course corrections · most recent shown.")
-        director = _rec_panel(latest, lede)
+        director = _rec_panel(latest, "One worthwhile course correction identified.")
     else:
         director = ('<div class="panel"><p class="fd-nominal">Flight Plan remains nominal.</p>'
                     '<p class="fd-sub">No intervention required.</p></div>')
@@ -906,7 +1071,7 @@ def home(request: Request):
 
     body = f"""{hero}
 <section>
-  <h2>KEY INDICATORS</h2>
+  <h2>PRIMARY TELEMETRY</h2>
   {cards}
 </section>
 <section>
@@ -914,14 +1079,22 @@ def home(request: Request):
   {missions_html}
 </section>
 <div class="duo">
-<section>
+<section class="flight-director">
   <h2>FLIGHT DIRECTOR</h2>
-  {director}
+  <div class="director-copy">{director}</div>
 </section>
-<section>
+<section class="course-corrections">
   <h2>RECENT COURSE CORRECTIONS</h2>
   {corrections}
 </section>
+</div>
+<div class="scope-bar" role="group" aria-label="Financial scope">
+  <div class="scope-label">SCOPE</div>
+  <button class="active" type="button" aria-pressed="true">HOUSEHOLD<small>ACTIVE</small></button>
+  <button type="button" disabled>CHRIS<small>FUTURE SCOPE</small></button>
+  <button type="button" disabled>FIONA<small>FUTURE SCOPE</small></button>
+  <button type="button" disabled>HAMISH<small>FUTURE SCOPE</small></button>
+  <button type="button" disabled>HARRIET<small>FUTURE SCOPE</small></button>
 </div>
 {_footer(console)}"""
     return _render("Flight Deck", body, as_of, "/")

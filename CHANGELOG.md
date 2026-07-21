@@ -29,10 +29,13 @@ still zero JavaScript behind the unchanged CSP.
   banner. Nominal behaviour (latest standing recommendation, or the
   explicit no-intervention statement) is unchanged. The hero's
   corrections count now includes Mission-scoped recommendations.
-- **Cash Flow card declares its period.** Relabelled NET CASH FLOW
-  with "SINCE FIRST OBSERVATION" on the card (and on its drill-down
-  header) — the metric is net flow over all observed transactions,
-  and the reader should never have to infer that.
+- **Cash Flow card declares its period.** Relabelled Cash Flow with
+  "SINCE FIRST OBSERVATION" on the opening telemetry instrument — the
+  metric is net flow over all observed transactions, and the reader
+  should never have to infer that. The drill-down continues to expose
+  the complete raw result without claiming a separate period header.
+- **Release metadata is aligned.** Runtime health, the Flight Deck
+  footer, and package metadata now report version 1.5.1.
 - Tests 265 → 272: gauge direction-honesty both ways, range and
   no-target Missions, deviation-relevant and honestly-absent Flight
   Director states, and the period label. Full suite passes.
