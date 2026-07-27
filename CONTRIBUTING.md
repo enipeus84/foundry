@@ -8,11 +8,10 @@ If not, it belongs in `docs/roadmap.md`, however good the idea.
 
 ## Constitutional invariants (non-negotiable)
 
-1. The event log is append-only. No edit or delete paths, ever.
-2. Claim mutations are events. The Canon never gets its own write path.
-3. Replay is deterministic — no model participates in projection.
-4. Model identity is recorded on every derivation.
-5. Model failure must never corrupt the substrate.
+See [`docs/architecture.md#constitutional-invariants`](docs/architecture.md#constitutional-invariants)
+for the canonical list — the event log's append-only guarantee, claim
+mutations as events, deterministic replay, model identity as provenance,
+and model-failure containment.
 
 A PR that violates one of these is a new architecture, not a
 contribution.

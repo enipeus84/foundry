@@ -32,6 +32,8 @@ compute operating over user-owned state.
 
 ## Constitutional invariants
 
+This is the canonical statement of these invariants — `CONTRIBUTING.md`
+and historical reports reference this section rather than restating it.
 These properties are load-bearing. Changing them is a new architecture,
 not a new version.
 
@@ -68,3 +70,10 @@ contradiction and collapses the system to one storage primitive.
   calibrated probabilities. Cross-model corroboration (roadmap) is the
   intended calibration mechanism.
 - Single-writer assumption on the log file. Concurrency is roadmap.
+
+## See also
+
+- [Design Constitution](design/design-constitution.md) — product and
+  visual design decisions; independent of the invariants above.
+- [Roadmap](roadmap.md) — what's deliberately not built yet.
+- [RFC index](rfcs/index.md) — how each RFC changed this system.

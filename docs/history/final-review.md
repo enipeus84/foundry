@@ -1,3 +1,9 @@
+> **Historical record.** This is the point-in-time final engineering
+> review for the V1.0 release (tag `1.0.0`), before the RFC process and
+> the current [engineering review gates](../engineering/review-gates.md)
+> existed. Preserved verbatim for provenance; see
+> [`docs/rfcs/index.md`](../rfcs/index.md) for the wider history.
+
 # Foundry V1.0 — Final Engineering Review
 
 Reviewer stance: what would a sceptical senior engineer, cloning this
