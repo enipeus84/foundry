@@ -17,6 +17,8 @@ from pathlib import Path
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("output", type=Path)
+    parser.add_argument("--route", default="/",
+                        help="Authenticated Mission Control route to render")
     args = parser.parse_args()
 
     data_dir = Path(tempfile.mkdtemp(prefix="foundry-flight-deck-review-"))
@@ -43,7 +45,7 @@ def main() -> None:
         webauth.SESSION_COOKIE,
         webauth.session_token("synthetic-review@example.com", webauth.load_config()),
     )
-    response = client.get("/")
+    response = client.get(args.route)
     response.raise_for_status()
 
     args.output.mkdir(parents=True, exist_ok=True)

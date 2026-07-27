@@ -26,6 +26,7 @@ Submodules:
     decisions.py            Decision lifecycle (000 §12)
     metrics.py              MetricRequest/Result, Metric Registry (000 §13)
     mission_evaluation.py   domain calculates / Core evaluates / AI explains
+    mission_assessment.py   rich cross-domain Mission assessment contract
     flight_deck.py          Flight Deck composition (000 §14)
 """
 
@@ -36,6 +37,11 @@ from .metrics import MetricProvider, MetricRegistry, MetricRequest, MetricResult
 from .scope import Subject
 from .flight_deck import Tile, compose_flight_deck, compose_tile
 from .mission_evaluation import evaluate_mission_status, get_mission_status
+from .mission_assessment import (
+    DeltaV, ForecastPoint, MissionAssessment, MissionAssessmentProvider,
+    MissionAssessmentRegistry, MissionAssessmentRequest, MissionMargin,
+    MissionPhaseAssessment, RecommendationAssessment, TrajectoryPoint,
+)
 
 __all__ = [
     "Party", "Employer", "Mission", "EntityProjection",
@@ -45,4 +51,7 @@ __all__ = [
     "Subject",
     "Tile", "compose_flight_deck", "compose_tile",
     "evaluate_mission_status", "get_mission_status",
+    "DeltaV", "ForecastPoint", "MissionAssessment", "MissionAssessmentProvider",
+    "MissionAssessmentRegistry", "MissionAssessmentRequest", "MissionMargin",
+    "MissionPhaseAssessment", "RecommendationAssessment", "TrajectoryPoint",
 ]

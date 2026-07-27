@@ -8,11 +8,11 @@ responsibility is architectural, not stylistic:
     Core evaluates.       (mission_evaluation, compose_tile)
     Mission Control composes.   (this module — no business logic)
 
-Everything on every page arrives through exactly two Core contracts:
-the Metric Registry (`registry.dispatch`, 000 §13) and the Flight Deck
-tile contract (`compose_tile`, 000 §14). This module never calculates
-a figure, never owns state, never appends an event, and never imports
-a domain's calculation code — the AST test in
+Everything on every page arrives through Core contracts: the Metric
+Registry (`registry.dispatch`, 000 §13), the Mission Assessment Registry,
+and the Flight Deck tile contract (`compose_tile`, 000 §14). This module
+never calculates a figure, never owns state, never appends an event, and
+never imports a domain's calculation code — the AST test in
 tests/test_mission_control.py enforces that last property structurally.
 
 The app's composition root (web.py) supplies a `Console` factory via
@@ -39,6 +39,7 @@ from __future__ import annotations
 import ast
 import html
 import json
+import math
 import os
 import subprocess
 import time
@@ -57,6 +58,9 @@ from foundry.core.evidence import EvidenceIndex
 from foundry.core.flight_deck import Tile, compose_tile
 from foundry.core.metrics import MetricRegistry, MetricRequest
 from foundry.core.mission_evaluation import get_mission_status
+from foundry.core.mission_assessment import (
+    MissionAssessment, MissionAssessmentRegistry, MissionAssessmentRequest,
+)
 from foundry.core.scope import Subject
 from foundry.eventlog import EventLog
 
@@ -70,6 +74,7 @@ class Console:
     wiring and registers nothing with the registry."""
     log: EventLog
     registry: MetricRegistry
+    assessments: MissionAssessmentRegistry
     entities: EntityProjection
     evidence: EvidenceIndex
     canon: Canon
@@ -108,6 +113,7 @@ _METRIC_PRESENTATION: dict[str, tuple[str, str]] = {
     "finance.liquidity_runway": ("RUNWAY", "months"),
     "finance.employer_concentration": ("EMPLOYER CONCENTRATION", "percent"),
     "finance.debt_ratio": ("DEBT RATIO", "percent"),
+    "finance.accessible_assets": ("ACCESSIBLE ASSETS", "currency"),
 }
 
 # NASA flight-status vocabulary (Design Constitution): Core's RAG
@@ -117,6 +123,12 @@ _RAG_TO_BANNER = {
     "achieved": ("NOMINAL", "green"),
     "at_risk": ("WATCH", "amber"),
     "off_track": ("OFF COURSE", "red"),
+}
+
+_ASSESSMENT_TO_RAG = {
+    "green": "on_track",
+    "amber": "at_risk",
+    "red": "off_track",
 }
 
 # Worst-status-wins ordering for aggregating several active Missions
@@ -616,12 +628,170 @@ _SHELL = """<!doctype html>
   .empty {{ color: var(--muted); font-size: 14px; }}
   .placeholder {{ color: var(--faint); font-size: 14px; margin-top: 6px; }}
 
+  /* -------------------------------- RFC-005 Mission Assessment detail. */
+  .mission-detail-hero {{
+    min-height: 720px; margin-bottom: 42px; isolation: isolate;
+  }}
+  .mission-detail-hero img.earthrise {{
+    object-position: 57% 62%; filter: saturate(.84) brightness(.86);
+    transform: scale(1.42); transform-origin: 58% 0;
+  }}
+  .mission-detail-hero .scrim {{
+    z-index: 1;
+    background:
+      linear-gradient(90deg, rgba(1,4,8,.97) 0%, rgba(1,4,8,.88) 25%,
+        rgba(1,4,8,.34) 49%, rgba(1,4,8,.05) 78%),
+      linear-gradient(0deg, rgba(1,4,8,.32) 0%, transparent 38%),
+      linear-gradient(180deg, rgba(1,4,8,.18) 0%, transparent 30%);
+  }}
+  .mission-detail-hero .hero-content {{
+    z-index: 3; min-height: 720px; justify-content: center;
+    align-items: flex-start; padding: 112px 72px 54px;
+    pointer-events: none;
+  }}
+  .mission-detail-hero .hero-content > * {{ max-width: 390px; }}
+  .mission-detail-hero .mission-title {{
+    font-size: clamp(50px, 5.3vw, 76px); font-weight: 510;
+    letter-spacing: -.035em; line-height: .98; margin: 12px 0 22px;
+  }}
+  .mission-detail-hero .mission-definition {{
+    color: #d2d9e1; font-size: 15px; line-height: 1.62;
+  }}
+  .mission-hero-meta {{
+    display: grid; grid-template-columns: repeat(2, minmax(0,1fr));
+    gap: 22px 34px; margin-top: 32px;
+  }}
+  .mission-hero-meta .margin-stat {{ grid-column: 1 / -1; }}
+  .mission-hero-meta .k, .analysis-rail .k, .telemetry-grid .k {{
+    font-size: 9px; font-weight: 650; letter-spacing: .2em; color: var(--faint);
+  }}
+  .mission-hero-meta .v {{
+    margin-top: 4px; font-size: 18px; font-weight: 580; letter-spacing: .06em;
+  }}
+  .mission-hero-meta .v.green {{ color: var(--green); }}
+  .mission-hero-meta .v.amber {{ color: var(--amber); }}
+  .mission-hero-meta .v.red {{ color: var(--red); }}
+  .mission-hero-meta .v.none {{ color: var(--muted); }}
+  .mission-hero-meta .sub {{
+    margin-top: 4px; color: #9aa8b6; font-size: 10px; letter-spacing: .04em;
+  }}
+  .hero-trajectory {{
+    position: absolute; z-index: 2; inset: 62px max(0px, calc((100vw - 1320px) / 2)) 0;
+    width: min(1320px, 100%); height: 650px; margin-inline: auto;
+    overflow: visible;
+  }}
+  .hero-trajectory .actual-path {{
+    fill: none; stroke: #edf2f7; stroke-width: 2.1;
+    stroke-linecap: round; stroke-linejoin: round;
+    filter: drop-shadow(0 0 4px rgba(237,242,247,.3));
+  }}
+  .hero-trajectory .forecast-path {{
+    fill: none; stroke: #d8e1ea; stroke-width: 1.75; stroke-dasharray: 8 7;
+    stroke-linecap: round; stroke-linejoin: round;
+    filter: drop-shadow(0 0 3px rgba(216,225,234,.22));
+  }}
+  .hero-trajectory .range-envelope-aura {{
+    fill: url(#mission-range-gradient); opacity: .48;
+    filter: url(#range-feather-wide);
+  }}
+  .hero-trajectory .range-envelope-core {{
+    fill: url(#mission-range-gradient); opacity: .34;
+    filter: url(#range-feather-close);
+  }}
+  .hero-trajectory .current-halo {{
+    fill: rgba(224,168,60,.15); stroke: rgba(237,242,247,.3); stroke-width: 1;
+    filter: drop-shadow(0 0 9px rgba(224,168,60,.48));
+  }}
+  .hero-trajectory .current-node {{
+    fill: #070b10; stroke: #edf2f7; stroke-width: 2.2;
+    filter: drop-shadow(0 0 8px rgba(224,168,60,.8));
+  }}
+  .hero-trajectory .current-position {{ outline: none; }}
+  .hero-trajectory .current-position:focus-visible .current-node {{
+    stroke-width: 3.2; filter: drop-shadow(0 0 10px rgba(237,242,247,.8));
+  }}
+  .hero-trajectory .mission-milestone {{ outline: none; opacity: .78; }}
+  .hero-trajectory .mission-milestone.next-milestone,
+  .hero-trajectory .mission-milestone.completion-milestone {{ opacity: .9; }}
+  .hero-trajectory .mission-milestone:focus-visible .milestone-ring {{
+    stroke-width: 2.2; filter: drop-shadow(0 0 4px currentColor);
+  }}
+  .hero-trajectory .milestone-stem {{
+    stroke: currentColor; stroke-opacity: .28; stroke-width: .75;
+  }}
+  .hero-trajectory .milestone-ring {{
+    fill: #071018; stroke: currentColor; stroke-width: 1.15;
+  }}
+  .hero-trajectory .milestone-core {{ fill: currentColor; }}
+  .hero-trajectory .milestone-label {{
+    fill: currentColor; font-size: 8.2px; font-weight: 620; letter-spacing: .9px;
+  }}
+  .hero-trajectory .milestone-detail {{
+    fill: #8998a6; font-size: 7.4px; letter-spacing: .4px;
+  }}
+  .hero-trajectory .phase-0 {{ color: #788692; }}
+  .hero-trajectory .phase-1 {{ color: #aa9569; }}
+  .hero-trajectory .phase-2 {{ color: #7692aa; }}
+  .hero-trajectory .phase-3 {{ color: #79a27e; }}
+
+  .analysis-rail {{
+    display: grid; grid-template-columns: .8fr .8fr 1.7fr .8fr;
+    border: 1px solid var(--line); background: rgba(9,14,20,.72);
+  }}
+  .analysis-rail .instrument {{ min-width: 0; padding: 24px 26px; }}
+  .analysis-rail .instrument + .instrument {{ border-left: 1px solid var(--line); }}
+  .analysis-rail .v {{
+    margin-top: 8px; font-size: clamp(18px, 2.1vw, 27px);
+    font-weight: 540; letter-spacing: .035em;
+  }}
+  .analysis-rail .recommendation-action .v {{
+    font-size: 16px; line-height: 1.45; letter-spacing: 0;
+  }}
+  .analysis-rail .recommendation-action .sub {{
+    color: var(--text); font-size: 14px; font-variant-numeric: tabular-nums;
+  }}
+  .analysis-rail .sub {{ margin-top: 7px; color: var(--muted); font-size: 11px; }}
+  .analysis-rail .green {{ color: var(--green); }}
+  .analysis-rail .amber {{ color: var(--amber); }}
+  .analysis-rail .red {{ color: var(--red); }}
+
+  details.mission-drilldown {{
+    margin-top: 30px; border-block: 1px solid var(--line);
+  }}
+  details.mission-drilldown > summary {{
+    cursor: pointer; list-style: none; padding: 18px 2px;
+    color: var(--muted); font-size: 9px; font-weight: 650; letter-spacing: .2em;
+  }}
+  details.mission-drilldown > summary::-webkit-details-marker {{ display: none; }}
+  details.mission-drilldown > summary::after {{
+    content: "+"; float: right; color: var(--faint); font-size: 15px; line-height: .8;
+  }}
+  details.mission-drilldown[open] > summary::after {{ content: "−"; }}
+  .mission-drilldown-content {{ padding: 8px 0 26px; }}
+  .telemetry-grid {{
+    display: grid; grid-template-columns: repeat(3, minmax(0,1fr));
+    gap: 1px; background: var(--line); border: 1px solid var(--line);
+  }}
+  .telemetry-grid .telemetry {{ background: var(--surface); padding: 24px; }}
+  .telemetry-grid .value {{ margin-top: 8px; font-size: 26px; }}
+  .telemetry-grid .sub {{ margin-top: 7px; color: var(--faint); font-size: 10px; }}
+  .assessment-notes {{ margin-top: 30px; border-top: 1px solid var(--line); padding-top: 22px; }}
+  .assessment-notes ul {{
+    margin: 0 0 0 18px; color: var(--faint); font-size: 12px; line-height: 1.8;
+  }}
+
   @media (max-width: 980px) {{
     .cards {{ grid-template-columns: repeat(2, minmax(0,1fr)); gap: 48px 40px; }}
     .card.mission {{ grid-template-columns: 42px minmax(0,1fr) auto; gap: 14px 18px; }}
     .m-telemetry {{ grid-column: 2 / -1; }}
     .m-link {{ grid-column: 3; grid-row: 1; }}
     .m-status {{ grid-column: 3; grid-row: 2; }}
+    .mission-detail-hero .hero-content {{ padding-inline: 44px; }}
+    .mission-detail-hero .hero-content > * {{ max-width: 340px; }}
+    .hero-trajectory {{ transform: translateX(40px); }}
+    .analysis-rail {{ grid-template-columns: repeat(2, minmax(0,1fr)); }}
+    .analysis-rail .instrument:nth-child(3) {{ border-left: 0; border-top: 1px solid var(--line); }}
+    .analysis-rail .instrument:nth-child(4) {{ border-top: 1px solid var(--line); }}
   }}
   @media (max-width: 620px) {{
     .menu-btn {{ top: 14px; left: 14px; }}
@@ -655,6 +825,53 @@ _SHELL = """<!doctype html>
     .scope-label {{ flex-basis: 100%; margin: 0; }}
     .scope-bar button {{ flex: 1 1 calc(50% - 18px); text-align: left; }}
     .scope-bar button:last-child {{ flex-basis: 100%; }}
+    .mission-detail-hero {{ min-height: 780px; margin-bottom: 34px; }}
+    .mission-detail-hero img.earthrise {{
+      object-position: 66% 72%; height: 58%; top: 42%;
+      transform: scale(1.32); transform-origin: 66% 0;
+    }}
+    .mission-detail-hero .scrim {{
+      background:
+        linear-gradient(180deg, rgba(1,4,8,.96) 0%, rgba(1,4,8,.9) 39%,
+          rgba(1,4,8,.28) 68%, rgba(1,4,8,.08) 100%),
+        linear-gradient(90deg, rgba(1,4,8,.34), transparent);
+    }}
+    .mission-detail-hero .hero-content {{
+      min-height: auto; height: 390px; justify-content: flex-start;
+      padding: 92px 24px 18px;
+    }}
+    .mission-detail-hero .hero-content > * {{ max-width: none; }}
+    .mission-detail-hero .mission-title {{
+      font-size: clamp(42px, 12.5vw, 58px); max-width: 8ch;
+    }}
+    .mission-detail-hero .mission-definition {{ font-size: 14px; max-width: 38ch; }}
+    .mission-hero-meta {{ grid-template-columns: repeat(3, minmax(0,1fr)); gap: 16px; margin-top: 24px; }}
+    .mission-hero-meta .margin-stat {{ grid-column: auto; }}
+    .mission-hero-meta .v {{ font-size: 14px; letter-spacing: .03em; }}
+    .mission-hero-meta .sub {{ display: none; }}
+    .hero-trajectory {{
+      inset: 350px -40px 0 -70px; width: calc(100% + 110px); height: 430px;
+      transform: none;
+    }}
+    .hero-trajectory .milestone-detail {{ opacity: 0; }}
+    .hero-trajectory .mission-milestone:not(.next-milestone):not(.completion-milestone)
+      .milestone-label {{ opacity: 0; }}
+    .hero-trajectory .mission-milestone:focus .milestone-detail,
+    .hero-trajectory .mission-milestone:hover .milestone-detail {{
+      opacity: 1; paint-order: stroke; stroke: #05080c; stroke-width: 3px;
+    }}
+    .hero-trajectory .mission-milestone:focus .milestone-label,
+    .hero-trajectory .mission-milestone:hover .milestone-label {{
+      opacity: 1; paint-order: stroke; stroke: #05080c; stroke-width: 3px;
+    }}
+    .hero-trajectory .milestone-label {{ font-size: 8px; }}
+    .analysis-rail {{ grid-template-columns: 1fr; }}
+    .analysis-rail .instrument + .instrument {{
+      border-left: 0; border-top: 1px solid var(--line);
+    }}
+    .analysis-rail .instrument:nth-child(3),
+    .analysis-rail .instrument:nth-child(4) {{ border-top: 1px solid var(--line); }}
+    .telemetry-grid {{ grid-template-columns: 1fr; }}
   }}
 </style>
 </head>
@@ -802,10 +1019,19 @@ def home(request: Request):
 
     # -- Core evaluates every active Mission; this page only renders.
     evaluated = []  # (mission, rag, result)
+    assessments_by_mission: dict[str, MissionAssessment] = {}
     if scope is not None:
         for mission in missions:
-            rag, result = get_mission_status(
-                mission.id, console.entities, console.registry, scope, as_of)
+            if mission.assessment_policy_id:
+                assessment = console.assessments.dispatch(MissionAssessmentRequest(
+                    mission_id=mission.id, policy_id=mission.assessment_policy_id,
+                    scope=scope, as_of=as_of))
+                assessments_by_mission[mission.id] = assessment
+                rag = _ASSESSMENT_TO_RAG.get(assessment.status)
+                result = assessment.current_value
+            else:
+                rag, result = get_mission_status(
+                    mission.id, console.entities, console.registry, scope, as_of)
             evaluated.append((mission, rag, result))
 
     # -- FLIGHT PLAN: worst status wins across active Missions. When
@@ -905,7 +1131,18 @@ def home(request: Request):
         unit = primary_result.unit_or_currency if primary_result else None
         current = _format_value(
             primary_result.value if primary_result else None, unit, kind)
-        if primary_mission.target_range is not None:
+        primary_assessment = assessments_by_mission.get(primary_mission.id)
+        if primary_assessment is not None:
+            phase = (
+                primary_assessment.phase.label
+                if primary_assessment.phase else "not evaluable")
+            flight_status = (
+                primary_assessment.flight_status_label or "not evaluable")
+            why = (
+                f"{primary_mission.name}: {label.lower()} {current}. "
+                f"Current phase {phase}; flight status {flight_status}."
+            )
+        elif primary_mission.target_range is not None:
             lo, hi = primary_mission.target_range
             why = (f"{primary_mission.name}: {label.lower()} {current} against a "
                    f"target range of {_format_value(lo, unit, kind)}"
@@ -944,8 +1181,15 @@ def home(request: Request):
         missions_html = ('<p class="empty">No household declared yet.</p>')
     else:
         def live_mission_row(mission_number, lane_title, mission, rag, result):
-            word, klass = (_RAG_TO_BANNER.get(rag, (rag.upper(), "none"))
-                           if rag else ("NOT EVALUABLE", "none"))
+            assessment = assessments_by_mission.get(mission.id)
+            if assessment is not None:
+                word = assessment.flight_status_label.upper() or "NOT EVALUABLE"
+                klass = (
+                    assessment.status
+                    if assessment.status in ("green", "amber", "red") else "none")
+            else:
+                word, klass = (_RAG_TO_BANNER.get(rag, (rag.upper(), "none"))
+                               if rag else ("NOT EVALUABLE", "none"))
             label, kind = _METRIC_PRESENTATION.get(
                 mission.target_metric,
                 (mission.target_metric.upper() or "—", "plain"))
@@ -953,7 +1197,13 @@ def home(request: Request):
             value_ok = result is not None and result.status in ("available", "stale")
             value_txt = _format_value(result.value, unit, kind) if value_ok else "—"
             progress = f"{label} {value_txt}"
-            if mission.target_range is not None:
+            if assessment is not None:
+                phase = assessment.phase.label if assessment.phase else "NOT EVALUABLE"
+                progress += f" · CURRENT PHASE {phase.upper()}"
+                margin = assessment.mission_margin
+                if margin and margin.pace_percent is not None:
+                    progress += f" · MISSION MARGIN {margin.pace_percent:+.1f}%"
+            elif mission.target_range is not None:
                 lo, hi = mission.target_range
                 progress += (f" · RANGE {_format_value(lo, unit, kind)}"
                              f"–{_format_value(hi, unit, kind)}")
@@ -963,15 +1213,23 @@ def home(request: Request):
                     progress += f" ±{_format_value(mission.tolerance, unit, kind)}"
             # RFC-004B: deviation, not completion — honest in both
             # directions, silent when no comparison exists.
-            deviation, is_range = _mission_deviation(mission, result)
-            variance = _variance_text(deviation, is_range, unit, kind)
+            deviation, is_range = (
+                (None, False) if assessment is not None
+                else _mission_deviation(mission, result))
+            variance = (
+                "" if assessment is not None
+                else _variance_text(deviation, is_range, unit, kind))
             if variance:
                 progress += f" · {variance}"
             bar = ""
             if deviation is not None and mission.tolerance:
                 bar = _deviation_gauge(
                     deviation, mission.tolerance, klass, is_range=is_range)
-            href = (f"/metrics/{mission.target_metric}"
+            if assessment is not None and _mission_lane(mission.name) == "independence":
+                href = "/missions/financial-independence"
+            else:
+                href = (
+                    f"/metrics/{mission.target_metric}"
                     if mission.target_metric else "/missions")
             purpose = (f"Tracked against {label.title()}."
                        if mission.name.casefold() == lane_title.casefold() else
@@ -983,7 +1241,7 @@ def home(request: Request):
                 f'<div class="m-purpose">{html.escape(purpose)}</div></div>'
                 f'<div class="m-telemetry"><div class="m-progress num">{html.escape(progress)}</div>'
                 f'{bar}</div>'
-                f'<div class="m-status {klass}">{html.escape(word)}</div>'
+                f'<div class="m-status {klass}">FLIGHT STATUS · {html.escape(word)}</div>'
                 f'<div class="m-link" aria-hidden="true">›</div></a>')
 
         def planned_mission_row(mission_number, title, description):
@@ -1193,6 +1451,493 @@ def metric_drill_down(request: Request, metric_id: str):
 </section>
 {_footer(console)}"""
     return _render(label.title(), body, as_of, "/")
+
+
+def _month_year(ts: float | None) -> str:
+    return time.strftime("%b %Y", time.gmtime(ts)).upper() if ts is not None else "NOT IN HORIZON"
+
+
+def _format_month_delta(months: int | None, direction: str | None) -> str:
+    """Render the Finance-declared month resolution without extra precision."""
+    if months is None or direction not in ("accelerated", "delayed"):
+        return "NOT AVAILABLE"
+    magnitude = abs(months)
+    if magnitude == 0:
+        return f"LESS THAN 1 MONTH {direction.upper()}"
+    noun = "MONTH" if magnitude == 1 else "MONTHS"
+    return f"ABOUT {magnitude} {noun} {direction.upper()}"
+
+
+def _smooth_svg_path(points: tuple[tuple[float, float], ...]) -> str:
+    if not points:
+        return ""
+    if len(points) == 1:
+        return f"M{points[0][0]:.1f},{points[0][1]:.1f}"
+    commands = [f"M{points[0][0]:.1f},{points[0][1]:.1f}"]
+    for index in range(1, len(points) - 1):
+        control = points[index]
+        following = points[index + 1]
+        midpoint = (
+            (control[0] + following[0]) / 2.0,
+            (control[1] + following[1]) / 2.0,
+        )
+        commands.append(
+            f"Q{control[0]:.1f},{control[1]:.1f} "
+            f"{midpoint[0]:.1f},{midpoint[1]:.1f}")
+    final = points[-1]
+    commands.append(f"T{final[0]:.1f},{final[1]:.1f}")
+    return " ".join(commands)
+
+
+def _orbital_point(progress: float) -> tuple[float, float]:
+    """A visual mission arc, explicitly not a scientific orbit."""
+    progress = max(0.0, min(progress, 1.03))
+    inverse = 1.0 - progress
+    p0, p1, p2, p3 = (
+        (305.0, 455.0),
+        (445.0, 335.0),
+        (760.0, 105.0),
+        (950.0, 118.0),
+    )
+    return (
+        inverse ** 3 * p0[0]
+        + 3.0 * inverse ** 2 * progress * p1[0]
+        + 3.0 * inverse * progress ** 2 * p2[0]
+        + progress ** 3 * p3[0],
+        inverse ** 3 * p0[1]
+        + 3.0 * inverse ** 2 * progress * p1[1]
+        + 3.0 * inverse * progress ** 2 * p2[1]
+        + progress ** 3 * p3[1],
+    )
+
+
+def _polygon_area(points: tuple[tuple[float, float], ...]) -> float:
+    if len(points) < 3:
+        return 0.0
+    return abs(sum(
+        x1 * y2 - x2 * y1
+        for (x1, y1), (x2, y2) in zip(points, (*points[1:], points[0]))
+    )) / 2.0
+
+
+def _mission_trajectory_geometry(assessment: MissionAssessment) -> dict:
+    """Map immutable assessment values to honest two-dimensional geometry."""
+    current_value = (
+        assessment.current_value.value
+        if assessment.current_value and assessment.current_value.value is not None
+        else 0.0
+    )
+    actual_values = [
+        item.value for item in assessment.trajectory
+        if math.isfinite(item.value)
+    ]
+    actual_start = min(actual_values or [current_value])
+    phase_bounds = [
+        bound for phase in assessment.phases
+        for bound in (phase.lower_bound, phase.upper_bound)
+        if bound is not None and math.isfinite(bound)
+    ]
+    forecast_highs = [
+        point.high for point in assessment.forecast
+        if math.isfinite(point.high)
+    ]
+    mission_scale = max(
+        [current_value, *(phase_bounds or forecast_highs), 1.0])
+    current_transition = 0.38
+
+    def progress_for(value: float) -> float:
+        if value <= current_value:
+            span = max(current_value - actual_start, 1.0)
+            return max(0.0, min(
+                (value - actual_start) / span, 1.0)) * current_transition
+        span = max(mission_scale - current_value, 1.0)
+        future_progress = max(0.0, min(
+            (value - current_value) / span, 1.06))
+        return current_transition + future_progress * (1.0 - current_transition)
+
+    def point_for(value: float) -> tuple[float, float]:
+        return _orbital_point(progress_for(value))
+
+    valid_forecast = tuple(
+        point for point in assessment.forecast
+        if all(math.isfinite(value) for value in (
+            point.low, point.base, point.high))
+        and point.low <= point.base <= point.high
+    )
+    partial = len(valid_forecast) != len(assessment.forecast)
+    actual_points = tuple(point_for(value) for value in actual_values)
+    base_points = tuple(point_for(point.base) for point in valid_forecast)
+    spreads = tuple(point.high - point.low for point in valid_forecast)
+    maximum_spread = max(spreads or (0.0,))
+    low_points: tuple[tuple[float, float], ...] = ()
+    high_points: tuple[tuple[float, float], ...] = ()
+    range_status = "unavailable" if not valid_forecast else "collapsed"
+    if len(valid_forecast) >= 2 and maximum_spread > 0.0:
+        pixels_per_unit = 54.0 / maximum_spread
+        low_points = tuple(
+            (base_x, base_y + (point.base - point.low) * pixels_per_unit)
+            for point, (base_x, base_y) in zip(valid_forecast, base_points)
+        )
+        high_points = tuple(
+            (base_x, base_y - (point.high - point.base) * pixels_per_unit)
+            for point, (base_x, base_y) in zip(valid_forecast, base_points)
+        )
+        range_status = "partial" if partial else "available"
+    elif valid_forecast and maximum_spread > 0.0:
+        # A single point can have vertical width but cannot define an
+        # honest two-dimensional corridor.
+        range_status = "unavailable"
+    boundary = (
+        (*low_points, *reversed(high_points))
+        if low_points and high_points else ()
+    )
+    range_path = (
+        "M" + " L".join(f"{x:.1f},{y:.1f}" for x, y in boundary) + " Z"
+        if boundary else ""
+    )
+    return {
+        "actual_points": actual_points,
+        "base_points": base_points,
+        "low_points": low_points,
+        "high_points": high_points,
+        "actual_path": _smooth_svg_path(actual_points),
+        "forecast_path": _smooth_svg_path(base_points),
+        "range_path": range_path,
+        "range_area": _polygon_area(tuple(boundary)),
+        "range_widths": tuple(
+            low[1] - high[1] for low, high in zip(low_points, high_points)),
+        "range_status": range_status,
+        "current_point": point_for(current_value),
+        "phase_points": tuple(
+            (phase, point_for(phase.lower_bound))
+            for phase in sorted(assessment.phases, key=lambda item: item.order)
+        ),
+    }
+
+
+def _phase_range_text(phase) -> str:
+    unit = phase.unit_or_currency
+    if phase.upper_bound is None:
+        return f"ABOVE {_format_value(phase.lower_bound, unit, 'currency')}"
+    if phase.lower_bound <= 0:
+        return f"BELOW {_format_value(phase.upper_bound, unit, 'currency')}"
+    return (
+        f"{_format_value(phase.lower_bound, unit, 'currency')} – "
+        f"{_format_value(phase.upper_bound, unit, 'currency')}"
+    )
+
+
+def _mission_trajectory_svg(assessment: MissionAssessment) -> str:
+    geometry = _mission_trajectory_geometry(assessment)
+    if not geometry["actual_path"] and not geometry["forecast_path"]:
+        return '<p class="empty">Trajectory unavailable.</p>'
+
+    current_value = (
+        assessment.current_value.value
+        if assessment.current_value and assessment.current_value.value is not None
+        else None
+    )
+    current_unit = (
+        assessment.current_value.unit_or_currency
+        if assessment.current_value else None)
+    current_phase = assessment.phase.label if assessment.phase else "Not evaluable"
+    current_x, current_y = geometry["current_point"]
+    range_path = geometry["range_path"]
+    range_svg = (
+        f'<path class="range-envelope-aura" d="{range_path}" aria-hidden="true"/>'
+        f'<path class="range-envelope-core" d="{range_path}" aria-hidden="true"/>'
+        if range_path else "")
+    actual_svg = (
+        f'<path class="actual-path" d="{geometry["actual_path"]}" '
+        f'aria-hidden="true"/>' if geometry["actual_path"] else "")
+    forecast_svg = (
+        f'<path class="forecast-path" d="{geometry["forecast_path"]}" '
+        f'aria-hidden="true"/>' if geometry["forecast_path"] else "")
+
+    future_phases = [
+        phase for phase in assessment.phases
+        if phase.lower_bound > (current_value or 0.0)]
+    next_phase_id = (
+        min(future_phases, key=lambda phase: phase.order).id
+        if future_phases else None)
+    milestone_svg = []
+    for phase, (x, y) in geometry["phase_points"]:
+        classes = ["mission-milestone", f"phase-{phase.order % 4}"]
+        if phase.id == next_phase_id:
+            classes.append("next-milestone")
+        if phase.completes_mission:
+            classes.append("completion-milestone")
+        if phase.is_current:
+            classes.append("current-phase")
+        below = phase.order == 0
+        stem_end = y + 42.0 if below else y - 45.0
+        label_y = y + 58.0 if below else y - 57.0
+        detail_y = label_y + 13.0
+        anchor = "end" if below or phase.order == len(assessment.phases) - 1 else "middle"
+        label_x = x - 4.0 if anchor == "end" else x
+        context = "Current phase. " if phase.is_current else ""
+        completion = "Mission completion milestone. " if phase.completes_mission else ""
+        eta = (
+            f"Estimated {_month_year(phase.estimated_at)}. "
+            if phase.estimated_at is not None else "")
+        accessible_name = (
+            f"{phase.label}. {context}{completion}"
+            f"{_phase_range_text(phase)}. {eta}"
+        )
+        milestone_svg.append(f"""<g class="{" ".join(classes)}" tabindex="0"
+    role="group" aria-label="{html.escape(accessible_name)}">
+    <line class="milestone-stem" x1="{x:.1f}" y1="{y:.1f}"
+      x2="{x:.1f}" y2="{stem_end:.1f}"/>
+    <circle class="milestone-ring" cx="{x:.1f}" cy="{y:.1f}" r="5.5"/>
+    <circle class="milestone-core" cx="{x:.1f}" cy="{y:.1f}" r="1.8"/>
+    <text class="milestone-label" x="{label_x:.1f}" y="{label_y:.1f}"
+      text-anchor="{anchor}">{html.escape(phase.label.upper())}</text>
+    <text class="milestone-detail" x="{label_x:.1f}" y="{detail_y:.1f}"
+      text-anchor="{anchor}">{html.escape(_phase_range_text(phase))}</text>
+  </g>""")
+
+    current_label = (
+        f"Today. Current value {_format_value(current_value, current_unit, 'currency')}. "
+        f"Current phase {current_phase}. Flight status "
+        f"{assessment.flight_status_label or 'not evaluable'}."
+    )
+    range_description = {
+        "available": (
+            "A low to high sensitivity corridor widens as the calculated "
+            "forecast paths diverge. It is not a probability."),
+        "partial": (
+            "A partial low to high sensitivity corridor is shown for valid "
+            "forecast points only. It is not a probability."),
+        "collapsed": (
+            "Low and high forecast paths are identical, so no sensitivity "
+            "corridor is drawn."),
+        "unavailable": "Low and high sensitivity geometry is unavailable.",
+    }[geometry["range_status"]]
+    return f"""<svg class="trajectory-svg hero-trajectory" viewBox="0 0 1000 600"
+      role="group" aria-labelledby="trajectory-title trajectory-description"
+      data-range-status="{geometry["range_status"]}"
+      preserveAspectRatio="xMidYMid meet">
+  <title id="trajectory-title">Mission trajectory</title>
+  <desc id="trajectory-description">A solid historical path reaches the current position
+  at {_format_value(current_value, current_unit, "currency")}. A dashed base forecast
+  continues along the mission arc. {html.escape(range_description)}</desc>
+  <defs>
+    <linearGradient id="mission-range-gradient" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#6d879f" stop-opacity=".02"/>
+      <stop offset=".55" stop-color="#7e9cb7" stop-opacity=".14"/>
+      <stop offset="1" stop-color="#b2c2d0" stop-opacity=".26"/>
+    </linearGradient>
+    <filter id="range-feather-wide" x="-22%" y="-35%" width="144%" height="170%">
+      <feGaussianBlur stdDeviation="10"/>
+    </filter>
+    <filter id="range-feather-close" x="-12%" y="-20%" width="124%" height="140%">
+      <feGaussianBlur stdDeviation="3.2"/>
+    </filter>
+  </defs>
+  {range_svg}
+  {actual_svg}
+  {forecast_svg}
+  <g class="current-position" tabindex="0" role="group"
+    aria-label="{html.escape(current_label)}">
+    <circle class="current-halo" cx="{current_x:.1f}" cy="{current_y:.1f}" r="19"/>
+    <circle class="current-node" cx="{current_x:.1f}" cy="{current_y:.1f}" r="7.5"/>
+    <circle cx="{current_x:.1f}" cy="{current_y:.1f}" r="2.5" fill="#e0a83c"/>
+    <text x="{current_x + 12:.1f}" y="{current_y - 17:.1f}" fill="#edf2f7"
+      font-size="10.5" font-weight="700" letter-spacing="1.1">TODAY</text>
+    <text x="{current_x + 12:.1f}" y="{current_y - 3:.1f}" fill="#b8c3ce"
+      font-size="8.5" letter-spacing=".5">{_format_value(current_value, current_unit, "currency")}</text>
+  </g>
+  {"".join(milestone_svg)}
+</svg>"""
+
+
+@router.get("/missions/financial-independence", response_class=HTMLResponse)
+def financial_independence_mission(request: Request):
+    if session_email(request) is None:
+        return _login_redirect()
+    console = _console(request)
+    as_of = _as_of(console)
+    scope = _household_scope(console)
+    owned_policies = console.assessments.owned_policy_ids()
+    mission = next((
+        mission for mission in _active_missions(console)
+        if _mission_lane(mission.name) == "independence"
+        and mission.assessment_policy_id in owned_policies
+    ), None)
+    if scope is None or mission is None:
+        body = """<section>
+  <h2>FINANCIAL INDEPENDENCE</h2>
+  <p class="empty">No active Financial Independence Mission is declared.</p>
+  <p class="placeholder">The route remains read-only and will not invent policy or household state.</p>
+</section>""" + _footer(console)
+        return _render("Financial Independence", body, as_of, "/missions")
+
+    assessment = console.assessments.dispatch(MissionAssessmentRequest(
+        mission_id=mission.id, policy_id=mission.assessment_policy_id,
+        scope=scope, as_of=as_of))
+    if assessment.status == "unavailable" or assessment.current_value is None:
+        limitations = "".join(
+            f"<li>{html.escape(note)}</li>" for note in assessment.limitations)
+        body = f"""<section>
+  <h2>FINANCIAL INDEPENDENCE</h2>
+  <div class="status-word none">NOT EVALUABLE</div>
+  <p class="status-sub">The assessment failed closed; no mission state was fabricated.</p>
+  <ul style="margin:24px 0 0 18px;color:var(--muted);">{limitations}</ul>
+</section>{_footer(console)}"""
+        return _render("Financial Independence", body, as_of, "/missions")
+
+    phase = assessment.phase
+    status_class = assessment.status if assessment.status in ("green", "amber", "red") else "none"
+    eta = _month_year(assessment.eta)
+    phase_label = phase.label.upper() if phase else "NOT EVALUABLE"
+    completion_phase = next(
+        (item for item in assessment.phases if item.completes_mission), None)
+    completion_label = (
+        completion_phase.label.upper()
+        if completion_phase else "MISSION COMPLETION")
+    flight_status_label = (
+        assessment.flight_status_label.upper()
+        if assessment.flight_status_label else "NOT EVALUABLE")
+    phase_completion = phase.completion * 100.0 if phase else 0.0
+    margin = assessment.mission_margin
+    margin_value = (
+        f"{margin.pace_percent:+.1f}%"
+        if margin and margin.pace_percent is not None else "—")
+    margin_sub = margin.description if margin else "Not available"
+    delta_v = assessment.delta_v
+    delta_value = _format_month_delta(
+        delta_v.months if delta_v else None,
+        delta_v.direction if delta_v else None)
+    delta_sub = delta_v.description if delta_v else "Not available"
+
+    recommendation = (
+        assessment.recommendations[0] if assessment.recommendations else None)
+    if recommendation is None:
+        recommendation_action = "No scenario-modelled action is available."
+        recommendation_amount = "No declared intervention"
+        recommendation_impact = "NOT AVAILABLE"
+        recommendation_detail = (
+            "<li>No improving recommendation Scenario is declared.</li>")
+    elif recommendation.status != "available" \
+            or recommendation.amount is None \
+            or recommendation.unit_or_currency is None \
+            or not recommendation.action_label:
+        recommendation_action = "Recommendation unavailable"
+        recommendation_amount = "Structured Scenario data is incomplete"
+        recommendation_impact = "NOT AVAILABLE"
+        recommendation_detail = "".join(
+            f"<li>{html.escape(note)}</li>"
+            for note in (
+                *recommendation.limitations,
+                f"Scenario {recommendation.scenario_id}",
+            ))
+    else:
+        recommendation_action = recommendation.action_label
+        amount = _format_value(
+            recommendation.amount, recommendation.unit_or_currency, "currency")
+        recommendation_amount = (
+            f"{amount} per {recommendation.cadence}"
+            if recommendation.cadence else amount)
+        recommendation_impact = _format_month_delta(
+            recommendation.estimated_delta_v_months,
+            recommendation.delta_v_direction)
+        recommendation_lineage = (
+            f"Scenario {recommendation.scenario_id[:8]} · "
+            f"{len(recommendation.assumption_references)} assumption reference(s)")
+        raw_impact = (
+            f"{recommendation.estimated_delta_v_days:.1f} days"
+            if recommendation.estimated_delta_v_days is not None
+            else "not available")
+        recommendation_detail = (
+            f"<li>Next Burn source: {html.escape(recommendation_lineage)}</li>"
+            f"<li>Declared action: {html.escape(recommendation.action)}</li>"
+            f"<li>Structured adjustment: "
+            f"{html.escape(recommendation.adjustment_key)} = "
+            f"{html.escape(amount)} per {html.escape(recommendation.cadence or 'declared cadence')}</li>"
+            f"<li>Raw modelled ETA delta: {html.escape(raw_impact)}; "
+            f"user-facing resolution: month</li>")
+
+    telemetry_cards = []
+    for result in assessment.telemetry:
+        label, kind = _METRIC_PRESENTATION.get(
+            result.metric_id, (result.metric_id.rsplit(".", 1)[-1].replace("_", " ").upper(), "plain"))
+        if result.metric_id == "finance.accessible_assets":
+            label, kind = "ACCESSIBLE ASSETS", "currency"
+        value = (
+            _format_value(result.value, result.unit_or_currency, kind)
+            if result.status in ("available", "stale") else result.status.upper())
+        telemetry_cards.append(
+            f'<div class="telemetry"><p class="k">{html.escape(label)}</p>'
+            f'<p class="value num">{html.escape(value)}</p>'
+            f'<p class="sub">{html.escape(result.status.upper())} · '
+            f'{len(result.input_references)} INPUT EVENT(S)</p></div>')
+
+    notes = [assessment.confidence_basis, *assessment.limitations]
+    note_items = "".join(f"<li>{html.escape(note)}</li>" for note in notes if note)
+    body = f"""<section class="hero mission-detail-hero phase-{_sun_phase(as_of)}"
+  aria-labelledby="mission-title" aria-describedby="trajectory-summary">
+  <img class="earthrise" src="{_EARTHRISE_PATH}"
+    alt="Earth at sunrise from orbit, its curved horizon lit above the night side"
+    width="1774" height="887" fetchpriority="high" decoding="async">
+  <div class="scrim"></div>
+  {_mission_trajectory_svg(assessment)}
+  <div class="hero-content">
+    <p class="eyebrow">MISSION</p>
+    <h2 class="mission-title" id="mission-title">Financial Independence</h2>
+    <p class="mission-definition">The ability to choose whether you work because your accessible
+    assets can indefinitely support your desired lifestyle.</p>
+    <div class="mission-hero-meta">
+      <div><p class="k">CURRENT PHASE</p><p class="v">{html.escape(phase_label)}</p></div>
+      <div><p class="k">FLIGHT STATUS</p>
+        <p class="v {status_class}">{html.escape(flight_status_label)}</p></div>
+      <div><p class="k">ETA · {html.escape(completion_label)}</p>
+        <p class="v">{html.escape(eta)}</p></div>
+      <div class="margin-stat"><p class="k">MISSION MARGIN</p>
+        <p class="v num {status_class}">{html.escape(margin_value)}</p>
+        <p class="sub">{html.escape(margin_sub)}</p></div>
+    </div>
+  </div>
+  <p class="sr-only" id="trajectory-summary">The solid historical path reaches
+    {_format_value(assessment.current_value.value, assessment.current_value.unit_or_currency, "currency")}.
+    The dashed base forecast continues through a widening low to high sensitivity
+    range toward the configured phases. Current phase is {html.escape(phase_label)};
+    flight status is {html.escape(flight_status_label)}.</p>
+</section>
+<section aria-labelledby="analysis-heading">
+  <h2 id="analysis-heading">FLIGHT ANALYSIS</h2>
+  <div class="analysis-rail">
+    <div class="instrument"><p class="k">Δv · LAST {delta_v.lookback_days if delta_v else 0} DAYS</p>
+      <p class="v num">{html.escape(delta_value)}</p>
+      <p class="sub">{html.escape(delta_sub)}</p></div>
+    <div class="instrument"><p class="k">PHASE COMPLETION</p>
+      <p class="v num">{phase_completion:.1f}%</p>
+      <p class="sub">{html.escape(phase_label)}</p></div>
+    <div class="instrument recommendation-action"><p class="k">NEXT BURN</p>
+      <p class="v">{html.escape(recommendation_action)}</p>
+      <p class="sub">{html.escape(recommendation_amount)}</p></div>
+    <div class="instrument"><p class="k">ESTIMATED Δv</p>
+      <p class="v num green">{html.escape(recommendation_impact)}</p>
+      <p class="sub">Month-level model resolution</p></div>
+  </div>
+</section>
+<section>
+  <details class="mission-drilldown">
+    <summary>DEEPER MISSION DATA · TELEMETRY, ASSUMPTIONS &amp; PROVENANCE</summary>
+    <div class="mission-drilldown-content">
+      <h2>PRIMARY TELEMETRY</h2>
+      <div class="telemetry-grid">{"".join(telemetry_cards)}</div>
+      <div class="assessment-notes">
+        <h2>ASSUMPTIONS, LIMITATIONS &amp; PROVENANCE</h2>
+        <ul>{recommendation_detail}{note_items}
+          <li>{len(assessment.input_references)} metric input reference(s)</li>
+          <li>{len(assessment.assumption_references)} Assumption Set reference(s)</li>
+        </ul>
+      </div>
+    </div>
+  </details>
+</section>
+{_footer(console)}"""
+    return _render("Financial Independence", body, as_of, "/missions")
 
 
 def _placeholder(request: Request, path: str, title: str, note: str):

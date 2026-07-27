@@ -61,6 +61,8 @@ class Mission:
     target_range: tuple[float, float] | None = None
     target_date: float | None = None
     tolerance: float | None = None
+    assessment_policy_id: str | None = None
+    assumption_set_id: str | None = None
     status: str = "active"
     provenance: list[str] = field(default_factory=list)
     asserted_by: str = ""
@@ -133,18 +135,24 @@ def declare_mission(log: EventLog, name: str, target_metric: str = "",
                      target_value: float | None = None,
                      target_range: tuple[float, float] | None = None,
                      target_date: float | None = None,
-                     tolerance: float | None = None, actor: str = "user") -> Mission:
+                     tolerance: float | None = None, actor: str = "user",
+                     assessment_policy_id: str | None = None,
+                     assumption_set_id: str | None = None) -> Mission:
     mission_id = grammar.new_id()
     attrs = {
         "name": name, "target_metric": target_metric, "target_value": target_value,
         "target_range": list(target_range) if target_range else None,
         "target_date": target_date, "tolerance": tolerance,
+        "assessment_policy_id": assessment_policy_id,
+        "assumption_set_id": assumption_set_id,
     }
     e = grammar.declare(log, PREFIX, "mission", mission_id, attrs, actor=actor)
     return Mission(id=mission_id, name=name, target_metric=target_metric,
                     target_value=target_value,
                     target_range=tuple(target_range) if target_range else None,
                     target_date=target_date, tolerance=tolerance, asserted_by=actor,
+                    assessment_policy_id=assessment_policy_id,
+                    assumption_set_id=assumption_set_id,
                     provenance=[e["id"]], history=[e["id"]])
 
 
@@ -248,6 +256,8 @@ class EntityProjection:
                 target_value=p.get("target_value"),
                 target_range=tuple(tr) if tr else None,
                 target_date=p.get("target_date"), tolerance=p.get("tolerance"),
+                assessment_policy_id=p.get("assessment_policy_id"),
+                assumption_set_id=p.get("assumption_set_id"),
                 asserted_by=e["actor"], provenance=[e["id"]], history=[e["id"]],
             )
         elif verb == "closed":
@@ -259,7 +269,8 @@ class EntityProjection:
             mission = self.missions.get(mid)
             if mission:
                 for k, v in p.items():
-                    if k in ("target_metric", "target_value", "target_date", "tolerance"):
+                    if k in ("target_metric", "target_value", "target_date", "tolerance",
+                             "assessment_policy_id", "assumption_set_id"):
                         setattr(mission, k, v)
                     elif k == "target_range" and v is not None:
                         mission.target_range = tuple(v)

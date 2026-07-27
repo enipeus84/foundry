@@ -186,7 +186,8 @@ def test_authentication_still_protects_every_surface(tmp_path):
     _seed(tmp_path)
     anonymous = TestClient(app, follow_redirects=False)
     for path in ("/", "/metrics/finance.net_worth", "/finance",
-                 "/decisions", "/missions", "/settings"):
+                 "/decisions", "/missions",
+                 "/missions/financial-independence", "/settings"):
         r = anonymous.get(path)
         assert r.status_code == 303, path
         assert r.headers["location"] == "/login", path
@@ -515,3 +516,411 @@ def test_scope_controls_do_not_imply_unsupported_individual_metrics(tmp_path):
     assert 'HOUSEHOLD<small>ACTIVE</small>' in html
     for name in ("CHRIS", "FIONA", "HAMISH", "HARRIET"):
         assert f'disabled>{name}<small>FUTURE SCOPE</small>' in html
+
+
+# ---------------------------------------- RFC-005 Financial Independence slice
+
+def _seed_financial_independence(tmp_path):
+    from foundry.demo_data import build
+
+    log = EventLog(tmp_path / "events.jsonl")
+    build(log)
+    return log
+
+
+def test_financial_independence_home_lane_opens_mission_detail(tmp_path):
+    _seed_financial_independence(tmp_path)
+    html = client().get("/").text
+    assert 'href="/missions/financial-independence"' in html
+    assert "Coast FIRE by 2038" in html
+
+
+def test_financial_independence_route_renders_assessment_not_calculations(tmp_path):
+    _seed_financial_independence(tmp_path)
+    response = client().get("/missions/financial-independence")
+    assert response.status_code == 200
+    html = response.text
+    assert "Financial Independence" in html
+    assert "Mission trajectory" in html
+    assert "MISSION MARGIN" in html
+    assert "Δv" in html
+    assert "low to high sensitivity corridor" in html
+    assert "ACCESSIBLE ASSETS" in html
+    assert "Increase ISA contribution" in html
+    assert "£250 per month" in html
+    assert "NOT A PROBABILITY" in html
+    assert "CONFIDENCE 78%" not in html
+    assert "Confidence: 78%" not in html
+    assert html.count('src="/static/earthrise.webp"') == 1
+
+
+def test_financial_independence_trajectory_is_integrated_into_hero(tmp_path):
+    _seed_financial_independence(tmp_path)
+    html = client().get("/missions/financial-independence").text
+    hero_start = html.index('<section class="hero mission-detail-hero')
+    hero_end = html.index("</section>", hero_start)
+    hero = html[hero_start:hero_end]
+
+    assert 'class="trajectory-svg hero-trajectory"' in hero
+    assert 'class="range-envelope-aura"' in hero
+    assert 'class="range-envelope-core"' in hero
+    assert 'class="actual-path"' in hero
+    assert 'class="forecast-path"' in hero
+    assert "MISSION MARGIN" in hero
+    assert "FLIGHT STATUS" in hero
+    assert "ETA · INDEPENDENT" in hero
+    assert "low to high sensitivity" in hero
+    assert "trajectory-legend" not in hero
+    assert "trajectory-shell" not in html
+    assert '<h2 id="trajectory-heading">' not in html
+
+
+def test_financial_independence_analysis_reduces_duplication(tmp_path):
+    _seed_financial_independence(tmp_path)
+    html = client().get("/missions/financial-independence").text
+    analysis_start = html.index('<section aria-labelledby="analysis-heading">')
+    analysis_end = html.index("</section>", analysis_start)
+    analysis = html[analysis_start:analysis_end]
+
+    assert "Δv · LAST" in analysis
+    assert "PHASE COMPLETION" in analysis
+    assert "NEXT BURN" in analysis
+    assert "Increase ISA contribution" in analysis
+    assert "£250 per month" in analysis
+    assert "ESTIMATED Δv" in analysis
+    assert "Scenario " not in analysis
+    assert "FLIGHT STATUS" not in analysis
+    assert "ETA · INDEPENDENT" not in analysis
+    assert "MISSION MARGIN" not in analysis
+    assert '<details class="mission-drilldown">' in html
+    assert "<summary>DEEPER MISSION DATA" in html
+    drilldown = html[html.index('<details class="mission-drilldown">'):]
+    assert "Next Burn source: Scenario " in drilldown
+    assert "Declared action: Increase monthly ISA contribution by £250" in drilldown
+
+
+def test_financial_independence_milestones_are_keyboard_and_text_accessible(tmp_path):
+    _seed_financial_independence(tmp_path)
+    html = client().get("/missions/financial-independence").text
+
+    assert html.count('class="mission-milestone ') == 4
+    assert html.count('tabindex="0"') >= 5  # Today, then four milestones
+    assert 'role="img"' not in html
+    assert html.index('class="current-position" tabindex="0"') \
+        < html.index('class="mission-milestone ')
+    assert 'role="group" aria-label="Building Capital.' in html
+    assert 'role="group" aria-label="Escape Velocity.' in html
+    assert 'role="group" aria-label="Independent.' in html
+    assert 'role="group" aria-label="Abundance.' in html
+    assert "Current phase." in html
+    assert "Mission completion milestone." in html
+    assert "Estimated " in html
+    assert 'aria-describedby="trajectory-summary"' in html
+    assert ".mission-milestone:focus .milestone-detail" in html
+    assert ".mission-milestone:focus-visible" in html
+
+
+def test_financial_independence_uses_one_smooth_orbital_arc(tmp_path):
+    import re
+
+    _seed_financial_independence(tmp_path)
+    html = client().get("/missions/financial-independence").text
+    actual = re.search(r'class="actual-path" d="([^"]+)"', html)
+    forecast = re.search(r'class="forecast-path" d="([^"]+)"', html)
+
+    assert actual and forecast
+    assert "Q" in actual.group(1) and "T" in actual.group(1)
+    assert "Q" in forecast.group(1) and "T" in forecast.group(1)
+    assert 'id="range-feather-wide"' in html
+    assert 'id="range-feather-close"' in html
+    assert "range-envelope-aura" in html
+    assert "range-envelope-core" in html
+    assert "trajectory-legend" not in html
+    assert 'class="current-halo"' in html
+    assert 'font-size="10.5" font-weight="700"' in html
+
+
+def test_financial_independence_mobile_keeps_briefing_and_trajectory_distinct(tmp_path):
+    _seed_financial_independence(tmp_path)
+    html = client().get("/missions/financial-independence").text
+
+    assert "@media (max-width: 620px)" in html
+    assert ".mission-detail-hero { min-height: 780px;" in html
+    assert "height: 390px; justify-content: flex-start;" in html
+    assert "inset: 350px -40px 0 -70px;" in html
+    assert ".hero-trajectory .milestone-detail { opacity: 0; }" in html
+    assert ".mission-milestone:focus .milestone-detail" in html
+
+
+def _synthetic_assessment(forecast=(), phases=None):
+    from foundry.core.metrics import MetricResult
+    from foundry.core.mission_assessment import (
+        MissionAssessment, MissionPhaseAssessment, TrajectoryPoint,
+    )
+    from foundry.core.scope import Subject
+
+    scope = Subject("party", "household-test")
+    phase_values = phases or (
+        MissionPhaseAssessment(
+            "capital", "Capital Assembly", 0.0, 400.0, .75,
+            order=0, unit_or_currency="USD", is_current=True),
+        MissionPhaseAssessment(
+            "velocity", "Velocity Gate", 400.0, 900.0, 0.0,
+            order=1, unit_or_currency="USD"),
+        MissionPhaseAssessment(
+            "free", "Choice Point", 900.0, 1_700.0, 0.0,
+            order=2, unit_or_currency="USD", completes_mission=True),
+        MissionPhaseAssessment(
+            "surplus", "Surplus Orbit", 1_700.0, None, 0.0,
+            order=3, unit_or_currency="USD"),
+    )
+    return MissionAssessment(
+        mission_id="mission-test", policy_id="domain.policy.v9",
+        scope=scope, as_of=4.0, status="amber",
+        calculation_version="domain-calc-v9",
+        current_value=MetricResult(
+            metric_id="domain.capacity", value=300.0,
+            unit_or_currency="USD", scope=scope, as_of=4.0,
+            status="available", calculation_version="domain-v1"),
+        flight_status_id="nominal", flight_status_label="Nominal",
+        phase=phase_values[0], phases=phase_values,
+        trajectory=(
+            TrajectoryPoint(1.0, 100.0),
+            TrajectoryPoint(2.0, 200.0),
+            TrajectoryPoint(3.0, 300.0),
+        ),
+        forecast=tuple(forecast),
+    )
+
+
+def test_sensitivity_geometry_uses_distinct_low_and_high_paths():
+    from foundry.core.mission_assessment import ForecastPoint
+    from foundry.mission_control import _mission_trajectory_geometry
+
+    assessment = _synthetic_assessment((
+        ForecastPoint(5.0, 330.0, 350.0, 370.0),
+        ForecastPoint(6.0, 380.0, 440.0, 500.0),
+        ForecastPoint(7.0, 430.0, 550.0, 670.0),
+    ))
+    geometry = _mission_trajectory_geometry(assessment)
+
+    assert geometry["range_status"] == "available"
+    assert geometry["low_points"] != geometry["high_points"]
+    assert all(
+        low[1] > high[1]
+        for low, high in zip(geometry["low_points"], geometry["high_points"]))
+    for low, base, high in zip(
+            geometry["low_points"], geometry["base_points"],
+            geometry["high_points"]):
+        assert low[1] - base[1] == pytest.approx(base[1] - high[1])
+    assert geometry["range_area"] > 0
+    assert geometry["range_widths"][0] \
+        < geometry["range_widths"][1] \
+        < geometry["range_widths"][2]
+
+
+def test_identical_sensitivity_paths_collapse_without_visual_width():
+    from foundry.core.mission_assessment import ForecastPoint
+    from foundry.mission_control import (
+        _mission_trajectory_geometry, _mission_trajectory_svg,
+    )
+
+    assessment = _synthetic_assessment((
+        ForecastPoint(5.0, 350.0, 350.0, 350.0),
+        ForecastPoint(6.0, 450.0, 450.0, 450.0),
+    ))
+    geometry = _mission_trajectory_geometry(assessment)
+    rendered = _mission_trajectory_svg(assessment)
+
+    assert geometry["range_status"] == "collapsed"
+    assert geometry["range_area"] == 0
+    assert geometry["range_widths"] == ()
+    assert 'class="range-envelope-' not in rendered
+    assert 'data-range-status="collapsed"' in rendered
+    assert "no sensitivity corridor is drawn" in rendered
+
+
+def test_partial_or_missing_sensitivity_data_renders_honestly():
+    from foundry.core.mission_assessment import ForecastPoint
+    from foundry.mission_control import (
+        _mission_trajectory_geometry, _mission_trajectory_svg,
+    )
+
+    partial = _synthetic_assessment((
+        ForecastPoint(5.0, 330.0, 350.0, 370.0),
+        ForecastPoint(6.0, float("nan"), 440.0, 500.0),
+        ForecastPoint(7.0, 430.0, 550.0, 670.0),
+    ))
+    missing = _synthetic_assessment(())
+
+    partial_geometry = _mission_trajectory_geometry(partial)
+    assert partial_geometry["range_status"] == "partial"
+    assert partial_geometry["range_area"] > 0
+    assert 'data-range-status="partial"' in _mission_trajectory_svg(partial)
+
+    missing_geometry = _mission_trajectory_geometry(missing)
+    assert missing_geometry["range_status"] == "unavailable"
+    assert missing_geometry["range_area"] == 0
+    assert 'class="range-envelope-' not in _mission_trajectory_svg(missing)
+
+
+def test_single_forecast_point_does_not_invent_a_corridor():
+    from foundry.core.mission_assessment import ForecastPoint
+    from foundry.mission_control import _mission_trajectory_geometry
+
+    geometry = _mission_trajectory_geometry(_synthetic_assessment((
+        ForecastPoint(5.0, 330.0, 350.0, 370.0),
+    )))
+    assert geometry["range_status"] == "unavailable"
+    assert geometry["range_area"] == 0
+    assert geometry["range_path"] == ""
+
+
+def test_milestone_policy_presentation_comes_from_assessment_contract():
+    import inspect
+
+    from foundry.mission_control import _mission_trajectory_svg
+    import foundry.mission_control as mission_control
+
+    rendered = _mission_trajectory_svg(_synthetic_assessment(()))
+    assert "CAPITAL ASSEMBLY" in rendered
+    assert "VELOCITY GATE" in rendered
+    assert "CHOICE POINT" in rendered
+    assert "SURPLUS ORBIT" in rendered
+    assert "BELOW $400" in rendered
+    assert "$400 – $900" in rendered
+    assert "ABOVE $1,700" in rendered
+    assert "domain.policy.v9" not in rendered
+
+    source = inspect.getsource(mission_control)
+    for forbidden in (
+        "finance.financial_independence.v1",
+        "Building Capital", "Escape Velocity", "Abundance",
+        "450_000", "750_000", "1_500_000",
+    ):
+        assert forbidden not in source
+
+
+def _replace_demo_scenario(log, *, name, amount, structured=True,
+                           unit_or_currency="GBP"):
+    from foundry.finance import entities as finance
+    from foundry.finance.entities import FinanceEntityProjection
+
+    projection = FinanceEntityProjection(log)
+    original = next(
+        scenario for scenario in projection.scenarios.values()
+        if scenario.status == "active")
+    finance.archive_scenario(log, original.id, "test replacement")
+    kwargs = {}
+    if structured:
+        kwargs = {
+            "action_type": "increase_contribution",
+            "action_label": "Increase ISA contribution",
+            "unit_or_currency": unit_or_currency,
+            "cadence": "month",
+        }
+    finance.declare_scenario(
+        log, name, original.assumption_set_id,
+        {"monthly_contribution_delta": amount}, **kwargs)
+
+
+def test_recommendation_display_uses_structured_adjustment_not_scenario_name(tmp_path):
+    log = _seed_financial_independence(tmp_path)
+    _replace_demo_scenario(
+        log, name="Misleading prose claims £999 weekly", amount=375.0)
+
+    html = client().get("/missions/financial-independence").text
+    analysis = html[
+        html.index('<section aria-labelledby="analysis-heading">'):
+        html.index("</section>", html.index(
+            '<section aria-labelledby="analysis-heading">'))
+    ]
+    assert "Increase ISA contribution" in analysis
+    assert "£375 per month" in analysis
+    assert "£999" not in analysis
+
+
+def test_user_controlled_scenario_name_is_escaped_in_drilldown(tmp_path):
+    log = _seed_financial_independence(tmp_path)
+    _replace_demo_scenario(
+        log, name="<script>alert('financial-data')</script>", amount=375.0)
+
+    html = client().get("/missions/financial-independence").text
+    assert "<script>alert('financial-data')</script>" not in html
+    assert "&lt;script&gt;alert(&#x27;financial-data&#x27;)&lt;/script&gt;" in html
+
+
+def test_missing_structured_recommendation_data_fails_honestly(tmp_path):
+    log = _seed_financial_independence(tmp_path)
+    _replace_demo_scenario(
+        log, name="Increase ISA by £999", amount=275.0, structured=False)
+
+    html = client().get("/missions/financial-independence").text
+    analysis = html[
+        html.index('<section aria-labelledby="analysis-heading">'):
+        html.index("</section>", html.index(
+            '<section aria-labelledby="analysis-heading">'))
+    ]
+    assert "Recommendation unavailable" in analysis
+    assert "Structured Scenario data is incomplete" in analysis
+    assert "£275" not in analysis
+    assert "£999" not in analysis
+
+
+def test_non_gbp_structured_values_are_formatted_without_rewriting():
+    from foundry.mission_control import _format_value
+
+    assert _format_value(250.0, "USD", "currency") == "$250"
+    assert _format_value(250.0, "EUR", "currency") == "€250"
+
+
+def test_financial_independence_home_and_detail_use_same_status_vocabulary(tmp_path):
+    _seed_financial_independence(tmp_path)
+    home = client().get("/").text
+    card_start = home.index(
+        '<a class="card mission live" href="/missions/financial-independence">')
+    card_end = home.index("</a>", card_start)
+    card = home[card_start:card_end]
+
+    assert "CURRENT PHASE BUILDING CAPITAL" in card
+    assert "FLIGHT STATUS · AHEAD" in card
+    assert "MISSION MARGIN +" in card
+    assert "FROM TARGET" not in card
+    assert "TARGET £" not in card
+
+    detail = client().get("/missions/financial-independence").text
+    assert "<p class=\"k\">CURRENT PHASE</p>" in detail
+    assert "<p class=\"k\">FLIGHT STATUS</p>" in detail
+    assert "MISSION MARGIN" in detail
+    assert "% above required pace" in detail
+
+
+@pytest.mark.parametrize("months,direction,expected", [
+    (0, "accelerated", "LESS THAN 1 MONTH ACCELERATED"),
+    (1, "accelerated", "ABOUT 1 MONTH ACCELERATED"),
+    (3, "accelerated", "ABOUT 3 MONTHS ACCELERATED"),
+    (-2, "delayed", "ABOUT 2 MONTHS DELAYED"),
+    (None, None, "NOT AVAILABLE"),
+])
+def test_month_level_delta_formatting(months, direction, expected):
+    from foundry.mission_control import _format_month_delta
+
+    assert _format_month_delta(months, direction) == expected
+
+
+def test_financial_independence_route_is_deterministic_and_read_only(tmp_path):
+    log = _seed_financial_independence(tmp_path)
+    path = tmp_path / "events.jsonl"
+    before = path.read_bytes()
+    first = client().get("/missions/financial-independence").text
+    second = client().get("/missions/financial-independence").text
+    assert first == second
+    assert path.read_bytes() == before
+    assert log.verify()
+
+
+def test_financial_independence_without_policy_fails_honestly(tmp_path):
+    _seed(tmp_path)  # legacy scalar Mission only
+    html = client().get("/missions/financial-independence").text
+    assert "No active Financial Independence Mission is declared." in html
+    assert "will not invent policy" in html
