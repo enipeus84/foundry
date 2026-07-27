@@ -1,3 +1,8 @@
+> **Historical record.** This document reflects Foundry at Prototype Alpha
+> (v0.1.0), before the RFC process began. It is preserved verbatim for
+> provenance. For current architecture, see [`docs/architecture.md`](../architecture.md);
+> for how this fits the wider history, see [`docs/rfcs/index.md`](../rfcs/index.md).
+
 # Foundry Prototype Alpha — Architecture & Honest Assessment
 
 ## Architecture

@@ -1,3 +1,10 @@
+> **Historical record — superseded.** This runbook describes validating
+> V1.0 (34 tests, mocks-only fallback). The current, maintained equivalent
+> is the "Verify it works" section of the root [`README.md`](../../README.md),
+> which reflects the present test count and web/demo-mode capabilities.
+> This document is preserved verbatim for provenance; see
+> [`docs/rfcs/index.md`](../rfcs/index.md) for the wider history.
+
 # Foundry V1.0 — Validation Runbook
 
 ## What V1.0 proves

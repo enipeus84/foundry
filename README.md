@@ -192,8 +192,20 @@ examples/         copy-paste-ready usage
 
 ## Documentation
 
+Start at [`docs/README.md`](docs/README.md) for the full map. Highlights:
+
 - [Architecture](docs/architecture.md) — the thesis, the layers, the
   constitutional invariants, the known limitations
+- [Design Constitution](docs/design/design-constitution.md) — the
+  product and visual design rules the Flight Deck UI implements
+- [Specifications](docs/specifications/) — the adopted domain models
+  (Core, Finance) that RFC-001 and RFC-002 implemented
+- [Engineering review gates](docs/engineering/review-gates.md) — the
+  process every change goes through before merge
+- [RFC index](docs/rfcs/index.md) — every RFC, its status, and links to
+  its spec, implementation report(s), and technical-debt register
+- [Historical record](docs/history/) — point-in-time documents from
+  before the RFC process (Prototype Alpha, the V1.0 runbook and review)
 - [Roadmap](docs/roadmap.md) — everything deliberately not built yet
 - [Contributing](CONTRIBUTING.md)
 - [Changelog](CHANGELOG.md)
