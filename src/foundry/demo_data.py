@@ -46,6 +46,7 @@ from foundry.core.entities import (
 from foundry.core.evidence import concern, derive_claim_directly, tag_claim
 from foundry.eventlog import EventLog
 from foundry.finance import entities as fin
+from foundry.finance.mission_assessment import POLICY_ID
 
 logger = logging.getLogger("foundry.demo_data")
 
@@ -474,10 +475,31 @@ def build(log: EventLog, as_of: float | None = None) -> MorganHousehold:
     _seed_transactions(log, hh, as_of)
     _seed_decision_lifecycle(log, hh, as_of)
 
+    fi_assumptions = fin.declare_assumption_set(
+        log, "Financial Independence baseline", "v1", {
+            "desired_annual_spending": 30_000.0,
+            "withdrawal_rate": 0.04,
+            "monthly_contribution": 4_300.0,
+            "low_real_return": 0.01,
+            "base_real_return": 0.04,
+            "high_real_return": 0.07,
+            "horizon_years": 50.0,
+            "history_months": 24.0,
+            "delta_v_lookback_days": 90.0,
+        })
+    fin.declare_scenario(
+        log, "Increase monthly ISA contribution by £250",
+        fi_assumptions.id, {"monthly_contribution_delta": 250.0},
+        action_type="increase_contribution",
+        action_label="Increase ISA contribution",
+        unit_or_currency="GBP",
+        cadence="month")
     declare_mission(
         log, "Coast FIRE by 2038",
-        target_metric="finance.net_worth",
-        target_value=420_000.0, tolerance=60_000.0,
+        target_metric="finance.accessible_assets",
+        target_value=750_000.0, target_date=as_of + 12 * 365.2425 * DAY,
+        tolerance=60_000.0, assessment_policy_id=POLICY_ID,
+        assumption_set_id=fi_assumptions.id,
     )
 
     _, claim_id = derive_claim_directly(

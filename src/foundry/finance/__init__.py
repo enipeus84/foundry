@@ -2,11 +2,10 @@
 Foundry Finance — the first product domain built on Core
 (docs/specifications/001-finance-domain-model.md).
 
-RFC-002, Part 1: deterministic entities and the first five registered
-metrics, validated against a synthetic household fixture. It stops
-before `002 §16 (Financial Projection model)` — Assumption Set and
-Scenario are not implemented in this package; see
-`docs/rfc-002-implementation-report.md` for what's deferred and why.
+RFC-002 established deterministic entities and registered metrics.
+RFC-005 adds Assumption Set, Scenario, the first Financial Projection
+engine, and Financial Independence as the first implementation of
+Core's domain-neutral Mission Assessment contract.
 
 Finance never redefines a Core concept and never duplicates a Core
 primitive (`000` §3): Party, Employer, Mission, the Decision lifecycle,
@@ -31,12 +30,23 @@ Submodules:
                    finance.net_worth, finance.liquidity_runway,
                    finance.cash_flow, finance.asset_allocation,
                    finance.employer_concentration, finance.debt_ratio,
-                   finance.cash_available
+                   finance.cash_available, finance.accessible_assets
+    mission_assessment.py
+                   Financial Independence policy, low/base/high
+                   projection, and MissionAssessment provider
     fixtures.py    The synthetic Parker-Brads household, used by tests
                    and examples/finance_demo.py to validate the pipeline
 """
 
 from .entities import FinanceEntityProjection
 from .metrics import FinanceMetricProvider
+from .mission_assessment import (
+    FinanceProjectionEngine, FinancialIndependenceAssessor,
+    FinancialIndependencePolicy,
+)
 
-__all__ = ["FinanceEntityProjection", "FinanceMetricProvider"]
+__all__ = [
+    "FinanceEntityProjection", "FinanceMetricProvider",
+    "FinanceProjectionEngine", "FinancialIndependenceAssessor",
+    "FinancialIndependencePolicy",
+]

@@ -1,13 +1,12 @@
 """
 Finance's own entities — 001-finance-domain-model.md §7.
 
-Eleven of the thirteen entities the spec's §7 table lists: Account,
+The thirteen entities the spec's §7 table lists: Account,
 Asset, Obligation, Transaction, Valuation, Position, Recurring Series,
 Tax Jurisdiction Configuration, Exchange Rate, Tax Position, Capital
-Gain Event. **Assumption Set and Scenario are not implemented here** —
-both exist in the spec solely to serve §16's Financial Projection
-model, which this package stops short of (see
-docs/rfc-002-implementation-report.md).
+Gain Event, Assumption Set, and Scenario. RFC-005 adds the final two
+together with the first Financial Projection consumer; neither existed
+as dead structure before a projection engine could use them.
 
 Every write is `EventLog.append` under a `finance.` event kind, built
 from `foundry.core.grammar`'s generic verbs exactly as 001 §3 requires
@@ -35,6 +34,7 @@ not a parallel primitive.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import math
 from typing import Any
 
 from foundry.eventlog import EventLog
@@ -45,6 +45,24 @@ from . import vocab
 from ..errors import VocabularyError
 
 PREFIX = "finance"
+
+
+# Finance owns the meaning of each supported adjustment key. Presentation
+# metadata may describe that meaning, but it cannot redefine it.
+_ADJUSTMENT_CADENCE = {
+    "monthly_contribution_delta": "month",
+}
+
+
+def _validate_adjustment_cadence(
+        adjustments: dict[str, float], cadence: str | None) -> None:
+    if cadence is None:
+        return  # Backward-compatible legacy Scenario with no presentation data.
+    for key, required_cadence in _ADJUSTMENT_CADENCE.items():
+        if key in adjustments and cadence != required_cadence:
+            raise ValueError(
+                f"{key} requires cadence {required_cadence!r}; "
+                f"got {cadence!r}")
 
 
 # ------------------------------------------------------------------- entities
@@ -206,6 +224,37 @@ class CapitalGainEvent:
     provenance: list[str] = field(default_factory=list)
     asserted_by: str = ""
     history: list[str] = field(default_factory=list)
+
+
+@dataclass
+class AssumptionSet:
+    id: str
+    name: str
+    version: str
+    assumptions: dict[str, float]
+    status: str = "active"
+    provenance: list[str] = field(default_factory=list)
+    asserted_by: str = ""
+    history: list[str] = field(default_factory=list)
+
+
+@dataclass
+class Scenario:
+    id: str
+    name: str
+    assumption_set_id: str
+    adjustments: dict[str, float]
+    action_type: str | None = None
+    action_label: str | None = None
+    unit_or_currency: str | None = None
+    cadence: str | None = None
+    status: str = "active"
+    provenance: list[str] = field(default_factory=list)
+    asserted_by: str = ""
+    history: list[str] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        _validate_adjustment_cadence(self.adjustments, self.cadence)
 
 
 # --------------------------------------------------------------- ownership
@@ -541,10 +590,99 @@ def declare_capital_gain_event(log: EventLog, position_id: str, realized_gain: f
                              provenance=[e["id"]], history=[e["id"]])
 
 
+# ------------------------------------------------ assumptions and scenarios
+
+def _validated_numeric_map(values: dict[str, float], label: str) -> dict[str, float]:
+    if not values:
+        raise ValueError(f"{label} must not be empty")
+    validated = {}
+    for key, value in values.items():
+        if not isinstance(key, str) or not key:
+            raise ValueError(f"{label} keys must be non-empty strings")
+        if isinstance(value, bool) or not isinstance(value, (int, float)) \
+                or not math.isfinite(float(value)):
+            raise ValueError(f"{label}[{key!r}] must be a finite number")
+        validated[key] = float(value)
+    return validated
+
+
+def declare_assumption_set(log: EventLog, name: str, version: str,
+                           assumptions: dict[str, float],
+                           actor: str = "user") -> AssumptionSet:
+    """Declare immutable, versioned forecast assumptions.
+
+    Revision means declaring a new set and archiving the old one. A
+    historic forecast's reference therefore remains interpretable.
+    """
+    assumption_set_id = grammar.new_id()
+    values = _validated_numeric_map(assumptions, "assumptions")
+    e = grammar.declare(
+        log, PREFIX, "assumption_set", assumption_set_id,
+        {"name": name, "version": version, "assumptions": values}, actor=actor)
+    return AssumptionSet(
+        id=assumption_set_id, name=name, version=version, assumptions=values,
+        asserted_by=actor, provenance=[e["id"]], history=[e["id"]])
+
+
+def archive_assumption_set(log: EventLog, assumption_set_id: str,
+                           reason: str, actor: str = "user") -> dict:
+    return grammar.close(
+        log, PREFIX, "assumption_set", assumption_set_id, reason,
+        actor=actor, status="archived")
+
+
+def declare_scenario(log: EventLog, name: str, assumption_set_id: str,
+                     adjustments: dict[str, float],
+                     actor: str = "user",
+                     action_type: str | None = None,
+                     action_label: str | None = None,
+                     unit_or_currency: str | None = None,
+                     cadence: str | None = None) -> Scenario:
+    scenario_id = grammar.new_id()
+    values = _validated_numeric_map(adjustments, "adjustments")
+    presentation = (action_type, action_label, unit_or_currency, cadence)
+    if any(value is not None for value in presentation):
+        if not all(isinstance(value, str) and value.strip()
+                   for value in presentation):
+            raise ValueError(
+                "structured Scenario presentation fields must be declared together")
+        if len(unit_or_currency.strip()) != 3 \
+                or not unit_or_currency.strip().isalpha():
+            raise ValueError("unit_or_currency must be a three-letter currency code")
+        action_type = action_type.strip()
+        action_label = action_label.strip()
+        unit_or_currency = unit_or_currency.strip().upper()
+        # Cadence is a Finance invariant, not free-form display prose. Keep
+        # canonical values exact so an invalid declaration is rejected rather
+        # than silently normalized into a different calculation contract.
+        _validate_adjustment_cadence(values, cadence)
+    else:
+        _validate_adjustment_cadence(values, cadence)
+    e = grammar.declare(
+        log, PREFIX, "scenario", scenario_id,
+        {"name": name, "assumption_set_id": assumption_set_id,
+         "adjustments": values,
+         **({"action_type": action_type, "action_label": action_label,
+             "unit_or_currency": unit_or_currency, "cadence": cadence}
+            if action_type is not None else {})}, actor=actor)
+    return Scenario(
+        id=scenario_id, name=name, assumption_set_id=assumption_set_id,
+        adjustments=values, action_type=action_type, action_label=action_label,
+        unit_or_currency=unit_or_currency, cadence=cadence, asserted_by=actor,
+        provenance=[e["id"]], history=[e["id"]])
+
+
+def archive_scenario(log: EventLog, scenario_id: str,
+                     reason: str, actor: str = "user") -> dict:
+    return grammar.close(
+        log, PREFIX, "scenario", scenario_id, reason,
+        actor=actor, status="archived")
+
+
 # ---------------------------------------------------------------------- reads
 
 class FinanceEntityProjection:
-    """Current state for Finance's eleven entity types, folded only
+    """Current state for Finance's thirteen entity types, folded only
     from `finance.*` events (001 §14). Deletable and rebuildable, with
     no write path of its own; `apply()` is the incremental
     optimisation, `rebuild()` the correctness oracle they must always
@@ -568,6 +706,8 @@ class FinanceEntityProjection:
         self.exchange_rates: dict[str, ExchangeRate] = {}
         self.tax_positions: dict[str, TaxPosition] = {}
         self.capital_gain_events: dict[str, CapitalGainEvent] = {}
+        self.assumption_sets: dict[str, AssumptionSet] = {}
+        self.scenarios: dict[str, Scenario] = {}
         self.rebuild()
 
     def rebuild(self) -> None:
@@ -575,6 +715,7 @@ class FinanceEntityProjection:
         self.transactions, self.valuations, self.positions = {}, {}, {}
         self.recurring_series, self.tax_jurisdictions = {}, {}
         self.exchange_rates, self.tax_positions, self.capital_gain_events = {}, {}, {}
+        self.assumption_sets, self.scenarios = {}, {}
         for e in self.log.events():
             self.apply(e)
 
@@ -592,6 +733,8 @@ class FinanceEntityProjection:
             "exchange_rate": self._apply_exchange_rate,
             "tax_position": self._apply_tax_position,
             "capital_gain_event": self._apply_capital_gain_event,
+            "assumption_set": self._apply_assumption_set,
+            "scenario": self._apply_scenario,
         }.get(type_)
         if handler:
             handler(e)
@@ -784,3 +927,38 @@ class FinanceEntityProjection:
             currency=p["currency"], date=p["date"], asserted_by=e["actor"],
             provenance=[e["id"]], history=[e["id"]],
         )
+
+    def _apply_assumption_set(self, e: dict) -> None:
+        verb = grammar.verb(e["kind"])
+        p = e["payload"]
+        aid = p["entity_id"]
+        if verb == "declared":
+            self.assumption_sets[aid] = AssumptionSet(
+                id=aid, name=p["name"], version=p["version"],
+                assumptions=dict(p["assumptions"]), asserted_by=e["actor"],
+                provenance=[e["id"]], history=[e["id"]])
+        elif verb == "closed":
+            assumption_set = self.assumption_sets.get(aid)
+            if assumption_set:
+                assumption_set.status = p.get("status", "archived")
+                assumption_set.history.append(e["id"])
+
+    def _apply_scenario(self, e: dict) -> None:
+        verb = grammar.verb(e["kind"])
+        p = e["payload"]
+        sid = p["entity_id"]
+        if verb == "declared":
+            self.scenarios[sid] = Scenario(
+                id=sid, name=p["name"], assumption_set_id=p["assumption_set_id"],
+                adjustments=dict(p["adjustments"]),
+                action_type=p.get("action_type"),
+                action_label=p.get("action_label"),
+                unit_or_currency=p.get("unit_or_currency"),
+                cadence=p.get("cadence"),
+                asserted_by=e["actor"],
+                provenance=[e["id"]], history=[e["id"]])
+        elif verb == "closed":
+            scenario = self.scenarios.get(sid)
+            if scenario:
+                scenario.status = p.get("status", "archived")
+                scenario.history.append(e["id"])

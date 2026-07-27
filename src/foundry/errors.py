@@ -34,3 +34,9 @@ class VocabularyError(FoundryError):
 class DuplicateMetricError(FoundryError):
     """A metric_id is already registered to a different provider
     (000-core-domain-model.md §13.5: duplicate ownership fails closed)."""
+
+
+class DuplicateMissionAssessmentError(FoundryError):
+    """A Mission assessment policy is already registered to a different
+    provider. Like metric ownership, assessment ownership is exact and
+    duplicate registration fails closed."""

@@ -60,10 +60,12 @@ from foundry.canon import Canon
 from foundry.core.entities import EntityProjection
 from foundry.core.evidence import EvidenceIndex
 from foundry.core.metrics import MetricRegistry
+from foundry.core.mission_assessment import MissionAssessmentRegistry
 from foundry.demo_data import ensure_demo_data
 from foundry.eventlog import EventLog
 from foundry.finance.entities import FinanceEntityProjection
 from foundry.finance.metrics import FinanceMetricProvider
+from foundry.finance.mission_assessment import FinancialIndependenceAssessor
 from foundry.mission_control import Console, router as mission_control_router
 
 logger = logging.getLogger("foundry.web")
@@ -133,9 +135,14 @@ def _build_console() -> Console:
     incremental maintenance is an optimisation for a later RFC."""
     log = EventLog(os.environ.get("FOUNDRY_DATA_PATH", DEFAULT_DATA_PATH))
     core_entities = EntityProjection(log)
+    finance_entities = FinanceEntityProjection(log)
     registry = MetricRegistry()
-    registry.register(FinanceMetricProvider(FinanceEntityProjection(log), core_entities))
+    registry.register(FinanceMetricProvider(finance_entities, core_entities))
+    assessments = MissionAssessmentRegistry()
+    assessments.register(FinancialIndependenceAssessor(
+        finance_entities, core_entities, registry))
     return Console(log=log, registry=registry, entities=core_entities,
+                   assessments=assessments,
                    evidence=EvidenceIndex(log), canon=Canon(log))
 
 

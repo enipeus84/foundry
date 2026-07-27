@@ -708,6 +708,7 @@ def test_all_registered_metric_ids(kernel):
         "finance.net_worth", "finance.liquidity_runway", "finance.cash_flow",
         "finance.asset_allocation", "finance.employer_concentration",
         "finance.debt_ratio", "finance.cash_available",
+        "finance.accessible_assets",
     }
 
 

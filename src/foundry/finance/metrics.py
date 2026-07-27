@@ -20,6 +20,11 @@ FinanceMetricProvider — Finance's registered Facts
                                     deliberately narrower cut than the
                                     liquidity-runway numerator (which
                                     also admits near-liquid holdings)
+    finance.accessible_assets      liquid and near-liquid Accounts and
+                                    Assets available to fund Financial
+                                    Independence; excludes pensions,
+                                    property, vehicles, and other
+                                    illiquid holdings
 
 Every calculation is a pure function over `FinanceEntityProjection` (own
 state) and a caller-supplied `foundry.core.entities.EntityProjection`
@@ -99,6 +104,7 @@ METRIC_IDS = frozenset({
     "finance.employer_concentration",
     "finance.debt_ratio",
     "finance.cash_available",
+    "finance.accessible_assets",
 })
 
 # A V1 product judgement (see module docstring), not a 001 formula.
@@ -133,6 +139,7 @@ class FinanceMetricProvider:
             "finance.employer_concentration": self._employer_concentration,
             "finance.debt_ratio": self._debt_ratio,
             "finance.cash_available": self._cash_available,
+            "finance.accessible_assets": self._accessible_assets,
         }.get(request.metric_id)
         if handler is None:
             return self._unsupported(request, "not owned by FinanceMetricProvider")
@@ -363,6 +370,49 @@ class FinanceMetricProvider:
             return self._unavailable(request, "no liquid-classified accounts observed yet",
                                       extra_limitations=limitations)
         return self._available(request, cash, target, refs, limitations)
+
+    def _accessible_assets(self, request: MetricRequest) -> MetricResult:
+        """Assets structurally available to fund lifestyle indefinitely.
+
+        V1 includes liquid and near-liquid Accounts and Assets. This
+        deliberately excludes pension accounts, property, vehicles, and
+        other illiquid wealth; Financial Independence is not net worth
+        with a different label. Obligations are not subtracted because
+        this metric measures the accessible capital pool. Debt belongs
+        to Mortgage Freedom / resilience telemetry and remains visible
+        through its own metrics.
+        """
+        person_ids = self._scope_persons(request.scope)
+        if person_ids is None:
+            return self._unsupported(request, "finance.accessible_assets requires a party scope")
+        if not person_ids:
+            return self._unavailable(request, "party resolves to no members")
+
+        target = self._target_currency(set(person_ids) | {request.scope.id})
+        attribute_to = self._attribute_to(request.scope)
+        if attribute_to is None:
+            account_total, account_refs, account_limits = self._store_total(
+                self.finance.accounts, set(person_ids), target, request.as_of,
+                filter_liquidity=_LIQUID)
+            asset_total, asset_refs, asset_limits = self._store_total(
+                self.finance.assets, set(person_ids), target, request.as_of,
+                filter_liquidity=_LIQUID)
+        else:
+            account_total, account_refs, account_limits = self._attributed_value(
+                attribute_to, self.finance.accounts, target, request.as_of,
+                filter_liquidity=_LIQUID)
+            asset_total, asset_refs, asset_limits = self._attributed_value(
+                attribute_to, self.finance.assets, target, request.as_of,
+                filter_liquidity=_LIQUID)
+
+        refs = [*account_refs, *asset_refs]
+        limitations = [*account_limits, *asset_limits]
+        if not refs:
+            return self._unavailable(
+                request, "no liquid or near-liquid Accounts or Assets observed yet",
+                extra_limitations=limitations)
+        return self._available(
+            request, account_total + asset_total, target, refs, limitations)
 
     # ---------------------------------------------------------------- scope
 
