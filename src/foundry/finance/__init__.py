@@ -44,9 +44,14 @@ from .mission_assessment import (
     FinanceProjectionEngine, FinancialIndependenceAssessor,
     FinancialIndependencePolicy,
 )
+from .missions import (
+    FINANCE_MISSION_DEFINITIONS,
+    register_finance_mission_definitions,
+)
 
 __all__ = [
     "FinanceEntityProjection", "FinanceMetricProvider",
     "FinanceProjectionEngine", "FinancialIndependenceAssessor",
-    "FinancialIndependencePolicy",
+    "FinancialIndependencePolicy", "FINANCE_MISSION_DEFINITIONS",
+    "register_finance_mission_definitions",
 ]

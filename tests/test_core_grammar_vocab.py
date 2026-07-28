@@ -80,3 +80,19 @@ def test_extending_a_copy_never_touches_the_shared_global_vocabulary():
     # the copy can never leak into the shared singleton:
     assert "some_other_domains_relation" not in vocab.PARTY_RELATIONSHIP
     assert core_party_relationship_shape is not vocab.PARTY_RELATIONSHIP
+
+
+def test_mission_assessment_vocabularies_are_core_owned_and_closed():
+    assert vocab.MISSION_TRAJECTORY.values == frozenset({
+        "Accelerated", "Nominal", "Constrained", "Divergent",
+        "Critical", "Complete",
+    })
+    assert vocab.MISSION_MARGIN.values == frozenset({
+        "High Margin", "Adequate Margin", "Low Margin", "Negative Margin",
+    })
+    assert vocab.MISSION_CONFIDENCE.values == frozenset({
+        "Established", "Supported", "Provisional", "Insufficient",
+    })
+
+    with pytest.raises(TypeError):
+        vocab.MISSION_TRAJECTORY.extend("Ahead")

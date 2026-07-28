@@ -66,6 +66,7 @@ from foundry.eventlog import EventLog
 from foundry.finance.entities import FinanceEntityProjection
 from foundry.finance.metrics import FinanceMetricProvider
 from foundry.finance.mission_assessment import FinancialIndependenceAssessor
+from foundry.finance.missions import register_finance_mission_definitions
 from foundry.mission_control import Console, router as mission_control_router
 
 logger = logging.getLogger("foundry.web")
@@ -139,6 +140,7 @@ def _build_console() -> Console:
     registry = MetricRegistry()
     registry.register(FinanceMetricProvider(finance_entities, core_entities))
     assessments = MissionAssessmentRegistry()
+    register_finance_mission_definitions(assessments)
     assessments.register(FinancialIndependenceAssessor(
         finance_entities, core_entities, registry))
     return Console(log=log, registry=registry, entities=core_entities,

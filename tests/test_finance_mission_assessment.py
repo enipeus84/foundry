@@ -1,5 +1,7 @@
 """RFC-005 Financial Independence calculation and assessment tests."""
 
+from dataclasses import replace
+
 import pytest
 
 from foundry.core.entities import EntityProjection, declare_party, join_household
@@ -373,15 +375,20 @@ def test_malformed_structured_adjustment_fails_honestly(tmp_path):
     assert "adjustment is invalid" in recommendation.limitations[0]
 
 
-@pytest.mark.parametrize("status,complete,expected", [
-    ("green", False, ("ahead", "Ahead")),
-    ("amber", False, ("nominal", "Nominal")),
-    ("red", False, ("at_risk", "At Risk")),
-    ("green", True, ("complete", "Mission Complete")),
+@pytest.mark.parametrize("complete,low_offset,base_offset,expected", [
+    (False, -1, -1, ("green", "Accelerated", "green")),
+    (False, 1, -1, ("amber", "Nominal", "amber")),
+    (False, 1, 1, ("red", "Divergent", "red")),
+    (True, None, None, ("green", "Complete", "green")),
 ])
-def test_flight_status_is_distinct_from_phase(status, complete, expected):
-    assert FinancialIndependenceAssessor._flight_status(
-        status, complete) == expected
+def test_schedule_policy_returns_presentation_and_trajectory_explicitly(
+        complete, low_offset, base_offset, expected):
+    target = NOW + YEAR
+    low_eta = None if low_offset is None else target + low_offset * DAY
+    base_eta = None if base_offset is None else target + base_offset * DAY
+
+    assert FinancialIndependenceAssessor._schedule_assessment(
+        complete, low_eta, base_eta, target) == expected
 
 
 def test_schedule_status_boundaries():
@@ -440,8 +447,11 @@ def test_full_financial_independence_assessment_is_read_only(tmp_path):
     assert result.current_value.value < registry.dispatch(MetricRequest(
         "finance.net_worth", result.scope, as_of)).value
     assert result.phase.label == "Building Capital"
-    assert result.flight_status_label in ("Ahead", "Nominal", "At Risk")
+    assert result.current_milestone == result.phase
+    assert result.trajectory_state in ("Accelerated", "Nominal", "Divergent")
+    assert result.flight_status_label == result.trajectory_state
     assert len(result.phases) == 4
+    assert result.milestones == result.phases
     assert result.phases[2].completes_mission
     assert all(phase.unit_or_currency == "GBP" for phase in result.phases)
     assert result.eta is not None
@@ -453,8 +463,70 @@ def test_full_financial_independence_assessment_is_read_only(tmp_path):
     assert result.recommendations[0].amount == 250.0
     assert result.recommendations[0].estimated_delta_v_months >= 1
     assert result.assumption_references
+    assert result.confidence.state == "Supported"
+    assert result.mission_margin.state in (
+        "High Margin", "Adequate Margin", "Low Margin", "Negative Margin")
+    assert tuple(item.label for item in result.telemetry) == (
+        "ACCESSIBLE ASSETS", "NET CASH FLOW", "RUNWAY")
+    assert tuple(item.format_kind for item in result.telemetry) == (
+        "currency", "currency", "months")
     assert "NOT A PROBABILITY" in result.confidence_basis
     assert "%" not in result.confidence_basis
+
+
+class _CurrentEvidenceOverride:
+    def __init__(self, registry, as_of, status):
+        self.registry = registry
+        self.as_of = as_of
+        self.status = status
+
+    def dispatch(self, request):
+        result = self.registry.dispatch(request)
+        if (
+            request.metric_id == "finance.accessible_assets"
+            and request.as_of == self.as_of
+        ):
+            return replace(
+                result,
+                status=self.status,
+                value=None if self.status == "unavailable" else result.value,
+            )
+        return result
+
+
+@pytest.mark.parametrize("evidence_status,assessment_status,confidence", [
+    ("stale", "green", "Provisional"),
+    ("unavailable", "unavailable", "Insufficient"),
+])
+def test_stale_and_absent_current_evidence_are_not_treated_as_supported(
+        tmp_path, evidence_status, assessment_status, confidence):
+    log = EventLog(tmp_path / f"{evidence_status}.jsonl")
+    household = build(log, as_of=NOW)
+    core, finance, registry = _registry(log)
+    mission = next(iter(core.missions.values()))
+    as_of = max(event["ts"] for event in log.events())
+
+    result = FinancialIndependenceAssessor(
+        finance, core,
+        _CurrentEvidenceOverride(registry, as_of, evidence_status),
+    ).assess(MissionAssessmentRequest(
+        mission.id, mission.assessment_policy_id,
+        Subject("party", household.household_id), as_of))
+
+    assert result.status == assessment_status
+    assert result.confidence.state == confidence
+
+
+@pytest.mark.parametrize("pace,buffer,expected", [
+    (1.0, 1.0, "High Margin"),
+    (0.0, 1.0, "Adequate Margin"),
+    (-1.0, 1.0, "Low Margin"),
+    (-1.0, -1.0, "Negative Margin"),
+    (None, None, None),
+])
+def test_margin_vocabulary_uses_only_margin_evidence(pace, buffer, expected):
+    assert FinancialIndependenceAssessor._margin_state(
+        pace, buffer) == expected
 
 
 def test_existing_mission_events_replay_without_assessment_fields(tmp_path):

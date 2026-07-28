@@ -7,10 +7,12 @@ import importlib
 
 import pytest
 
+from foundry.core.metrics import MetricResult
 from foundry.core.mission_assessment import (
-    DeltaV, MissionAssessment, MissionAssessmentRegistry,
-    MissionAssessmentRequest, MissionPhaseAssessment,
-    RecommendationAssessment,
+    DeltaV, ForecastPoint, MissionAssessment, MissionAssessmentRegistry,
+    MissionAssessmentRequest, MissionConfidence, MissionDefinition,
+    MissionMargin, MissionMilestone, MissionPhaseAssessment,
+    RecommendationAssessment, TrajectoryPoint,
 )
 from foundry.core.scope import Subject
 from foundry.errors import DuplicateMissionAssessmentError
@@ -44,6 +46,22 @@ def test_registry_dispatches_by_policy_id():
     assert result.policy_id == "alpha.mission.v1"
 
 
+def test_household_and_member_subjects_remain_explicit_and_distinct():
+    registry = MissionAssessmentRegistry()
+    registry.register(_Provider())
+    member_request = MissionAssessmentRequest(
+        mission_id="mission-1",
+        policy_id="alpha.mission.v1",
+        scope=Subject("party", "member-1"),
+        as_of=1.0,
+    )
+
+    member_result = registry.dispatch(member_request)
+
+    assert member_result.scope == Subject("party", "member-1")
+    assert member_result.scope != _request().scope
+
+
 def test_unknown_policy_fails_closed():
     result = MissionAssessmentRegistry().dispatch(_request("nobody.owns.this"))
     assert result.status == "unavailable"
@@ -56,6 +74,282 @@ def test_duplicate_policy_registration_fails_closed():
     registry.register(_Provider())
     with pytest.raises(DuplicateMissionAssessmentError):
         registry.register(_Provider())
+
+
+def test_definitions_are_discovered_in_stable_order():
+    registry = MissionAssessmentRegistry()
+    registry.register_definition(MissionDefinition(
+        slug="mission-b", label="Mission B", order=20,
+        destination_direction="lower_is_better"))
+    registry.register_definition(MissionDefinition(
+        slug="mission-a", label="Mission A", order=10,
+        destination_direction="higher_is_better",
+        assessment_policy_id="alpha.mission.v1"))
+
+    assert [item.slug for item in registry.definitions()] == [
+        "mission-a", "mission-b",
+    ]
+    assert registry.definition_for_slug("mission-a").label == "Mission A"
+    assert (
+        registry.definition_for_policy("alpha.mission.v1").slug
+        == "mission-a"
+    )
+
+
+@pytest.mark.parametrize("slug", [
+    "../mission", "Mission Name", "mission/name", "mission?name", "",
+])
+def test_forged_or_unsafe_definition_slug_is_rejected(slug):
+    with pytest.raises(ValueError):
+        MissionDefinition(
+            slug=slug, label="Mission", order=1,
+            destination_direction="higher_is_better")
+
+
+def test_unsupported_definition_direction_is_rejected():
+    with pytest.raises(ValueError):
+        MissionDefinition(
+            slug="mission", label="Mission", order=1,
+            destination_direction="sideways")
+
+
+@pytest.mark.parametrize("overrides", [
+    {"order": float("nan")},
+    {"definition": None},
+    {"assessment_policy_id": 123},
+])
+def test_unsupported_definition_runtime_data_is_rejected(overrides):
+    values = {
+        "slug": "mission",
+        "label": "Mission",
+        "order": 1,
+        "destination_direction": "higher_is_better",
+    }
+    values.update(overrides)
+    with pytest.raises(ValueError):
+        MissionDefinition(**values)
+
+
+def test_duplicate_definition_order_and_policy_fail_closed():
+    registry = MissionAssessmentRegistry()
+    registry.register_definition(MissionDefinition(
+        "mission-a", "Mission A", 1, "higher_is_better",
+        assessment_policy_id="alpha.mission.v1"))
+    with pytest.raises(DuplicateMissionAssessmentError):
+        registry.register_definition(MissionDefinition(
+            "mission-b", "Mission B", 1, "higher_is_better"))
+    with pytest.raises(DuplicateMissionAssessmentError):
+        registry.register_definition(MissionDefinition(
+            "mission-b", "Mission B", 2, "higher_is_better",
+            assessment_policy_id="alpha.mission.v1"))
+
+
+class _MalformedProvider(_Provider):
+    def assess(self, request):
+        raise ValueError("private provider detail")
+
+
+class _ForgedEnvelopeProvider(_Provider):
+    def assess(self, request):
+        return MissionAssessment(
+            mission_id="somebody-elses-mission",
+            policy_id=request.policy_id,
+            scope=request.scope,
+            as_of=request.as_of,
+            status="green",
+            calculation_version="test-v1",
+        )
+
+
+class _CrossScopeProvider(_Provider):
+    def assess(self, request):
+        return MissionAssessment(
+            mission_id=request.mission_id,
+            policy_id=request.policy_id,
+            scope=Subject("party", "member-1"),
+            as_of=request.as_of,
+            status="green",
+            calculation_version="test-v1",
+        )
+
+
+class _MalformedMilestoneProvider(_Provider):
+    def assess(self, request):
+        milestone = MissionMilestone(
+            "milestone", None, 0.0, 1.0, .5)
+        return MissionAssessment(
+            mission_id=request.mission_id,
+            policy_id=request.policy_id,
+            scope=request.scope,
+            as_of=request.as_of,
+            status="green",
+            calculation_version="test-v1",
+            current_milestone=milestone,
+            milestones=(milestone,),
+        )
+
+
+class _MalformedForecastProvider(_Provider):
+    def assess(self, request):
+        return MissionAssessment(
+            mission_id=request.mission_id,
+            policy_id=request.policy_id,
+            scope=request.scope,
+            as_of=request.as_of,
+            status="green",
+            calculation_version="test-v1",
+            forecast=(ForecastPoint(2.0, 1.0, float("nan"), 3.0),),
+        )
+
+
+class _CrossScopeMetricProvider(_Provider):
+    def assess(self, request):
+        return MissionAssessment(
+            mission_id=request.mission_id,
+            policy_id=request.policy_id,
+            scope=request.scope,
+            as_of=request.as_of,
+            status="green",
+            calculation_version="test-v1",
+            current_value=MetricResult(
+                "alpha.metric", 1.0, None,
+                Subject("party", "member-1"), request.as_of,
+                "available", "test-v1"),
+        )
+
+
+class _WrongTimestampMetricProvider(_Provider):
+    def assess(self, request):
+        return MissionAssessment(
+            mission_id=request.mission_id,
+            policy_id=request.policy_id,
+            scope=request.scope,
+            as_of=request.as_of,
+            status="green",
+            calculation_version="test-v1",
+            current_value=MetricResult(
+                "alpha.metric", 1.0, None, request.scope,
+                request.as_of - 1.0, "available", "test-v1"),
+        )
+
+
+class _FutureObservationProvider(_Provider):
+    def assess(self, request):
+        return MissionAssessment(
+            mission_id=request.mission_id,
+            policy_id=request.policy_id,
+            scope=request.scope,
+            as_of=request.as_of,
+            status="green",
+            calculation_version="test-v1",
+            trajectory=(
+                TrajectoryPoint(request.as_of + 1.0, 1.0),
+            ),
+        )
+
+
+class _PastForecastProvider(_Provider):
+    def assess(self, request):
+        return MissionAssessment(
+            mission_id=request.mission_id,
+            policy_id=request.policy_id,
+            scope=request.scope,
+            as_of=request.as_of,
+            status="green",
+            calculation_version="test-v1",
+            forecast=(
+                ForecastPoint(request.as_of - 1.0, 1.0, 2.0, 3.0),
+            ),
+        )
+
+
+@pytest.mark.parametrize("provider", [
+    _MalformedProvider(),
+    _ForgedEnvelopeProvider(),
+    _CrossScopeProvider(),
+    _MalformedMilestoneProvider(),
+    _MalformedForecastProvider(),
+    _CrossScopeMetricProvider(),
+    _WrongTimestampMetricProvider(),
+    _FutureObservationProvider(),
+    _PastForecastProvider(),
+])
+def test_malformed_provider_is_isolated_to_an_unavailable_envelope(provider):
+    registry = MissionAssessmentRegistry()
+    registry.register(provider)
+
+    result = registry.dispatch(_request())
+
+    assert result.status == "unavailable"
+    assert result.confidence == MissionConfidence(
+        "Insufficient", "assessment provider failed safely")
+    assert result.limitations == ("assessment provider failed safely",)
+    assert "private provider detail" not in repr(result)
+
+
+def test_definition_direction_is_authoritative_for_provider_milestones():
+    class DirectionProvider(_Provider):
+        def __init__(self, direction):
+            super().__init__()
+            self.direction = direction
+
+        def assess(self, request):
+            milestone = MissionMilestone(
+                "destination", "Destination", 0.0, 100.0, .5,
+                is_current=True,
+                destination_direction=self.direction,
+                destination_value=50.0)
+            return MissionAssessment(
+                mission_id=request.mission_id,
+                policy_id=request.policy_id,
+                scope=request.scope,
+                as_of=request.as_of,
+                status="green",
+                calculation_version="test-v1",
+                current_milestone=milestone,
+                milestones=(milestone,),
+            )
+
+    definition = MissionDefinition(
+        "mission", "Mission", 1, "lower_is_better",
+        assessment_policy_id="alpha.mission.v1")
+    mismatched = MissionAssessmentRegistry()
+    mismatched.register_definition(definition)
+    mismatched.register(DirectionProvider("higher_is_better"))
+    matching = MissionAssessmentRegistry()
+    matching.register_definition(definition)
+    matching.register(DirectionProvider("lower_is_better"))
+
+    assert mismatched.dispatch(_request()).status == "unavailable"
+    assert matching.dispatch(_request()).status == "green"
+
+
+def test_assessment_dimensions_are_independently_supplied():
+    result = MissionAssessment(
+        mission_id="mission-1", policy_id="alpha.mission.v1",
+        scope=Subject("party", "household-1"), as_of=1.0,
+        status="red", calculation_version="test-v1",
+        trajectory_state="Accelerated",
+        trajectory_tone="green",
+        mission_margin=MissionMargin(
+            1.0, -1.0, "mixed margin signals", "Low Margin"),
+        confidence=MissionConfidence("Established", "verified evidence"),
+    )
+
+    assert result.trajectory_state == "Accelerated"
+    assert result.trajectory_tone == "green"
+    assert result.mission_margin.state == "Low Margin"
+    assert result.confidence.state == "Established"
+
+
+def test_milestone_direction_and_explicit_destination_are_domain_neutral():
+    milestone = MissionMilestone(
+        id="destination", label="Destination", lower_bound=0.0,
+        upper_bound=100.0, completion=.25,
+        destination_direction="lower_is_better", destination_value=12.0)
+
+    assert milestone.target_value == 12.0
+    assert MissionPhaseAssessment is MissionMilestone
 
 
 def test_core_assessment_contract_imports_no_product_domain():

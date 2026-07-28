@@ -288,12 +288,17 @@ def test_apollo_mission_card_shows_status_progress_and_drill_down(tmp_path):
 def test_apollo_programme_shows_four_honest_mission_lanes(tmp_path):
     _seed(tmp_path)
     html = client().get("/").text
-    for title in ("Mortgage Freedom", "Financial Independence", "Retirement"):
+    for title in (
+        "Financial Resilience",
+        "Financial Independence",
+        "Pension Independence",
+        "Mortgage Freedom",
+    ):
         assert title in html
-    assert "Children" in html and "Future" in html
+    assert "Children" not in html
     assert html.count('class="card mission live"') == 1
-    assert html.count('class="card mission planned"') == 3
-    assert html.count("TARGET NOT DECLARED") == 3
+    assert html.count('class="card mission planned"') == 4
+    assert html.count("TARGET NOT DECLARED") == 4
 
 
 def test_flight_director_says_so_when_nothing_needs_doing(tmp_path):
@@ -554,6 +559,131 @@ def test_financial_independence_route_renders_assessment_not_calculations(tmp_pa
     assert html.count('src="/static/earthrise.webp"') == 1
 
 
+@pytest.mark.parametrize("slug,label", [
+    ("financial-resilience", "Financial Resilience"),
+    ("pension-independence", "Pension Independence"),
+    ("mortgage-freedom", "Mortgage Freedom"),
+])
+def test_generic_planned_mission_routes_invent_no_policy(
+        tmp_path, slug, label):
+    _seed_financial_independence(tmp_path)
+
+    response = client().get(f"/missions/{slug}")
+
+    assert response.status_code == 200
+    assert label in response.text
+    assert "PLANNED" in response.text
+    assert "No assessment policy is implemented" in response.text
+    assert "No target, threshold, evidence, or mission state has" \
+        in response.text
+
+
+def test_unknown_generic_mission_route_fails_safely_without_reflection(tmp_path):
+    _seed_financial_independence(tmp_path)
+
+    response = client().get("/missions/%3Cscript%3E")
+
+    assert response.status_code == 404
+    assert "MISSION NOT FOUND" in response.text
+    assert "<script>" not in response.text
+
+
+def test_malformed_provider_degrades_only_its_defined_mission(
+        monkeypatch, tmp_path):
+    from foundry.core.mission_assessment import MissionAssessmentRegistry
+    from foundry.finance.mission_assessment import POLICY_ID
+    from foundry.finance.missions import register_finance_mission_definitions
+
+    _seed_financial_independence(tmp_path)
+
+    class BrokenProvider:
+        def owned_policy_ids(self):
+            return frozenset({POLICY_ID})
+
+        def assess(self, request):
+            raise ValueError("provider-private failure")
+
+    def broken_console():
+        console = _build_console()
+        assessments = MissionAssessmentRegistry()
+        register_finance_mission_definitions(assessments)
+        assessments.register(BrokenProvider())
+        console.assessments = assessments
+        return console
+
+    monkeypatch.setattr(app.state, "console_factory", broken_console)
+
+    failed = client().get("/missions/financial-independence")
+    unaffected = client().get("/missions/mortgage-freedom")
+
+    assert failed.status_code == 200
+    assert "NOT EVALUABLE" in failed.text
+    assert "assessment provider failed safely" in failed.text
+    assert "provider-private failure" not in failed.text
+    assert unaffected.status_code == 200
+    assert "PLANNED" in unaffected.text
+
+
+def test_malformed_nested_provider_data_cannot_break_shared_rendering(
+        monkeypatch, tmp_path):
+    from foundry.core.metrics import MetricResult
+    from foundry.core.mission_assessment import (
+        ForecastPoint, MissionAssessment, MissionAssessmentRegistry,
+        TrajectoryPoint,
+    )
+    from foundry.finance.mission_assessment import POLICY_ID
+    from foundry.finance.missions import register_finance_mission_definitions
+
+    _seed_financial_independence(tmp_path)
+
+    class MalformedNestedProvider:
+        def owned_policy_ids(self):
+            return frozenset({POLICY_ID})
+
+        def assess(self, request):
+            return MissionAssessment(
+                mission_id=request.mission_id,
+                policy_id=request.policy_id,
+                scope=request.scope,
+                as_of=request.as_of,
+                status="green",
+                calculation_version="malformed-v1",
+                current_value=MetricResult(
+                    "finance.accessible_assets", 100.0, "GBP",
+                    request.scope, request.as_of, "available",
+                    "malformed-v1"),
+                forecast=(
+                    ForecastPoint(
+                        request.as_of - 1.0, 90.0, 100.0, 110.0),
+                ),
+                trajectory=(
+                    TrajectoryPoint(request.as_of + 1.0, 100.0),
+                ),
+            )
+
+    def malformed_console():
+        console = _build_console()
+        assessments = MissionAssessmentRegistry()
+        register_finance_mission_definitions(assessments)
+        assessments.register(MalformedNestedProvider())
+        console.assessments = assessments
+        return console
+
+    monkeypatch.setattr(app.state, "console_factory", malformed_console)
+
+    home = client().get("/")
+    failed = client().get("/missions/financial-independence")
+    unaffected = client().get("/missions/mortgage-freedom")
+
+    assert home.status_code == 200
+    assert failed.status_code == 200
+    assert "NOT EVALUABLE" in failed.text
+    assert "assessment provider failed safely" in failed.text
+    assert "malformed-v1" not in failed.text
+    assert unaffected.status_code == 200
+    assert "PLANNED" in unaffected.text
+
+
 def test_financial_independence_trajectory_is_integrated_into_hero(tmp_path):
     _seed_financial_independence(tmp_path)
     html = client().get("/missions/financial-independence").text
@@ -567,7 +697,7 @@ def test_financial_independence_trajectory_is_integrated_into_hero(tmp_path):
     assert 'class="actual-path"' in hero
     assert 'class="forecast-path"' in hero
     assert "MISSION MARGIN" in hero
-    assert "FLIGHT STATUS" in hero
+    assert "TRAJECTORY" in hero
     assert "ETA · INDEPENDENT" in hero
     assert "low to high sensitivity" in hero
     assert "trajectory-legend" not in hero
@@ -583,13 +713,13 @@ def test_financial_independence_analysis_reduces_duplication(tmp_path):
     analysis = html[analysis_start:analysis_end]
 
     assert "Δv · LAST" in analysis
-    assert "PHASE COMPLETION" in analysis
+    assert "MILESTONE COMPLETION" in analysis
     assert "NEXT BURN" in analysis
     assert "Increase ISA contribution" in analysis
     assert "£250 per month" in analysis
     assert "ESTIMATED Δv" in analysis
     assert "Scenario " not in analysis
-    assert "FLIGHT STATUS" not in analysis
+    assert "TRAJECTORY" not in analysis
     assert "ETA · INDEPENDENT" not in analysis
     assert "MISSION MARGIN" not in analysis
     assert '<details class="mission-drilldown">' in html
@@ -612,7 +742,7 @@ def test_financial_independence_milestones_are_keyboard_and_text_accessible(tmp_
     assert 'role="group" aria-label="Escape Velocity.' in html
     assert 'role="group" aria-label="Independent.' in html
     assert 'role="group" aria-label="Abundance.' in html
-    assert "Current phase." in html
+    assert "Current milestone." in html
     assert "Mission completion milestone." in html
     assert "Estimated " in html
     assert 'aria-describedby="trajectory-summary"' in html
@@ -655,22 +785,22 @@ def test_financial_independence_mobile_keeps_briefing_and_trajectory_distinct(tm
 def _synthetic_assessment(forecast=(), phases=None):
     from foundry.core.metrics import MetricResult
     from foundry.core.mission_assessment import (
-        MissionAssessment, MissionPhaseAssessment, TrajectoryPoint,
+        MissionAssessment, MissionMilestone, TrajectoryPoint,
     )
     from foundry.core.scope import Subject
 
     scope = Subject("party", "household-test")
     phase_values = phases or (
-        MissionPhaseAssessment(
+        MissionMilestone(
             "capital", "Capital Assembly", 0.0, 400.0, .75,
             order=0, unit_or_currency="USD", is_current=True),
-        MissionPhaseAssessment(
+        MissionMilestone(
             "velocity", "Velocity Gate", 400.0, 900.0, 0.0,
             order=1, unit_or_currency="USD"),
-        MissionPhaseAssessment(
+        MissionMilestone(
             "free", "Choice Point", 900.0, 1_700.0, 0.0,
             order=2, unit_or_currency="USD", completes_mission=True),
-        MissionPhaseAssessment(
+        MissionMilestone(
             "surplus", "Surplus Orbit", 1_700.0, None, 0.0,
             order=3, unit_or_currency="USD"),
     )
@@ -682,8 +812,8 @@ def _synthetic_assessment(forecast=(), phases=None):
             metric_id="domain.capacity", value=300.0,
             unit_or_currency="USD", scope=scope, as_of=4.0,
             status="available", calculation_version="domain-v1"),
-        flight_status_id="nominal", flight_status_label="Nominal",
-        phase=phase_values[0], phases=phase_values,
+        trajectory_state="Nominal",
+        current_milestone=phase_values[0], milestones=phase_values,
         trajectory=(
             TrajectoryPoint(1.0, 100.0),
             TrajectoryPoint(2.0, 200.0),
@@ -801,6 +931,47 @@ def test_milestone_policy_presentation_comes_from_assessment_contract():
         assert forbidden not in source
 
 
+def test_lower_is_better_milestones_advance_without_renderer_branching():
+    from foundry.core.mission_assessment import MissionMilestone
+    from foundry.mission_control import _mission_trajectory_geometry
+
+    milestones = (
+        MissionMilestone(
+            "current", "Current", 250.0, 400.0, .5,
+            is_current=True, destination_direction="lower_is_better",
+            destination_value=250.0),
+        MissionMilestone(
+            "destination", "Destination", 0.0, 250.0, 0.0,
+            order=1, completes_mission=True,
+            destination_direction="lower_is_better",
+            destination_value=100.0),
+    )
+    geometry = _mission_trajectory_geometry(
+        _synthetic_assessment((), phases=milestones))
+    points = dict(
+        (milestone.id, point)
+        for milestone, point in geometry["phase_points"]
+    )
+
+    assert points["destination"][0] > geometry["current_point"][0]
+
+
+def test_mission_control_has_no_defined_mission_name_branch():
+    import inspect
+
+    import foundry.mission_control as mission_control
+
+    source = inspect.getsource(mission_control)
+    for forbidden in (
+        "financial-independence",
+        "Financial Independence",
+        "Mortgage Freedom",
+        "Pension Independence",
+        "Financial Resilience",
+    ):
+        assert forbidden not in source
+
+
 def _replace_demo_scenario(log, *, name, amount, structured=True,
                            unit_or_currency="GBP"):
     from foundry.finance import entities as finance
@@ -882,17 +1053,77 @@ def test_financial_independence_home_and_detail_use_same_status_vocabulary(tmp_p
     card_end = home.index("</a>", card_start)
     card = home[card_start:card_end]
 
-    assert "CURRENT PHASE BUILDING CAPITAL" in card
-    assert "FLIGHT STATUS · AHEAD" in card
-    assert "MISSION MARGIN +" in card
+    assert "CURRENT MILESTONE BUILDING CAPITAL" in card
+    assert "TRAJECTORY · ACCELERATED" in card
+    assert "MISSION MARGIN HIGH MARGIN" in card
     assert "FROM TARGET" not in card
     assert "TARGET £" not in card
 
     detail = client().get("/missions/financial-independence").text
-    assert "<p class=\"k\">CURRENT PHASE</p>" in detail
-    assert "<p class=\"k\">FLIGHT STATUS</p>" in detail
+    assert "<p class=\"k\">CURRENT MILESTONE</p>" in detail
+    assert "<p class=\"k\">TRAJECTORY</p>" in detail
     assert "MISSION MARGIN" in detail
+    assert "MISSION CONFIDENCE · SUPPORTED" in detail
     assert "% above required pace" in detail
+
+
+def test_margin_presentation_does_not_reuse_trajectory_status_colour(
+        monkeypatch, tmp_path):
+    from foundry.core.metrics import MetricResult
+    from foundry.core.mission_assessment import (
+        MissionAssessment, MissionAssessmentRegistry, MissionConfidence,
+        MissionMargin, MissionMilestone,
+    )
+    from foundry.finance.mission_assessment import POLICY_ID
+    from foundry.finance.missions import register_finance_mission_definitions
+
+    _seed_financial_independence(tmp_path)
+
+    class IndependentDimensionsProvider:
+        def owned_policy_ids(self):
+            return frozenset({POLICY_ID})
+
+        def assess(self, request):
+            milestone = MissionMilestone(
+                "current", "Current", 0.0, 200.0, .5,
+                is_current=True, destination_value=0.0)
+            return MissionAssessment(
+                mission_id=request.mission_id,
+                policy_id=request.policy_id,
+                scope=request.scope,
+                as_of=request.as_of,
+                status="red",
+                calculation_version="independent-v1",
+                current_value=MetricResult(
+                    "finance.accessible_assets", 100.0, "GBP",
+                    request.scope, request.as_of, "available",
+                    "independent-v1"),
+                trajectory_state="Accelerated",
+                trajectory_tone="green",
+                confidence=MissionConfidence(
+                    "Established", "independently verified"),
+                mission_margin=MissionMargin(
+                    10.0, 10.0, "strong operating buffer", "High Margin"),
+                current_milestone=milestone,
+                milestones=(milestone,),
+            )
+
+    def independent_console():
+        console = _build_console()
+        assessments = MissionAssessmentRegistry()
+        register_finance_mission_definitions(assessments)
+        assessments.register(IndependentDimensionsProvider())
+        console.assessments = assessments
+        return console
+
+    monkeypatch.setattr(app.state, "console_factory", independent_console)
+
+    detail = client().get("/missions/financial-independence").text
+
+    assert '<p class="v green">ACCELERATED</p>' in detail
+    assert '<p class="v red">ACCELERATED</p>' not in detail
+    assert '<p class="v num">HIGH MARGIN</p>' in detail
+    assert '<p class="v num red">HIGH MARGIN</p>' not in detail
 
 
 @pytest.mark.parametrize("months,direction,expected", [
@@ -924,3 +1155,29 @@ def test_financial_independence_without_policy_fails_honestly(tmp_path):
     html = client().get("/missions/financial-independence").text
     assert "No active Financial Independence Mission is declared." in html
     assert "will not invent policy" in html
+
+
+def test_duplicate_active_missions_for_one_definition_fail_closed(tmp_path):
+    from foundry.core.entities import EntityProjection
+
+    log = _seed_financial_independence(tmp_path)
+    existing = next(iter(EntityProjection(log).missions.values()))
+    declare_mission(
+        log,
+        "Duplicate policy claim",
+        target_metric=existing.target_metric,
+        target_value=existing.target_value,
+        target_date=existing.target_date,
+        tolerance=existing.tolerance,
+        assessment_policy_id=existing.assessment_policy_id,
+        assumption_set_id=existing.assumption_set_id,
+    )
+
+    detail = client().get("/missions/financial-independence")
+    home = client().get("/")
+
+    assert detail.status_code == 200
+    assert "Multiple active Missions claim this definition." in detail.text
+    assert "No Mission was selected and no assessment was run." in detail.text
+    assert "AMBIGUOUS ACTIVE MISSION" in home.text
+    assert "Duplicate policy claim · tracked" not in home.text
