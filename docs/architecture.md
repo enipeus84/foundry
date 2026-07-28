@@ -75,5 +75,7 @@ contradiction and collapses the system to one storage primitive.
 
 - [Design Constitution](design/design-constitution.md) — product and
   visual design decisions; independent of the invariants above.
+- [Security threat model](security/threat-model.md) — how the current
+  architecture changes Foundry's threats and residual risks.
 - [Roadmap](roadmap.md) — what's deliberately not built yet.
 - [RFC index](rfcs/index.md) — how each RFC changed this system.
