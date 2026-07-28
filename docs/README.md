@@ -20,6 +20,18 @@ location for each rather than restating their content.
 - [`roadmap.md`](roadmap.md) — living record of what's deliberately not
   built yet, and why.
 
+## Security
+
+- [`../SECURITY.md`](../SECURITY.md) — public reporting,
+  supported-version and current-security-model document.
+- [`security/`](security/) — canonical security documentation index.
+- [`security/threat-model.md`](security/threat-model.md) — assets, trust
+  boundaries, architectural threats and residual risks.
+- [`security/security-assurance.md`](security/security-assurance.md) —
+  evidence-backed register of current and missing controls.
+- [`security/security-checklist.md`](security/security-checklist.md) —
+  reusable review prompt for RFCs and non-trivial pull requests.
+
 ## Engineering process
 
 - [`engineering/review-gates.md`](engineering/review-gates.md) — the

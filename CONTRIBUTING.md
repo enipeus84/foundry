@@ -23,7 +23,10 @@ contribution.
   the code, rewrite the code, then keep the comment for the *why*.
 - Every behavioural change needs a test. Tests are named for the
   architectural claim they defend.
-- Run `./validate.sh` before submitting; all 34+ tests must pass and
+- Every RFC and non-trivial PR answers the
+  [Security by Design checklist](docs/security/security-checklist.md).
+  `N/A` is an answer; silence is not.
+- Run `./validate.sh` before submitting; the full test suite must pass and
   the transcript must generate.
 - New model adapter? Subclass `_RealAdapter`, implement `_complete`,
   ~15 lines. If it needs more, raise an issue first.

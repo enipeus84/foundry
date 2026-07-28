@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+### Documentation and process
+
+- Added the repository security documentation structure: public security
+  document, threat model, assurance register and Security by Design
+  checklist.
+- Wired security documentation into the existing documentation and
+  engineering review navigation without changing runtime behaviour.
+- Added stdlib-only documentation validation that distinguishes missing,
+  placeholder, in-progress and complete documents, fails only on missing
+  required structure, and checks relative Markdown links through pytest.
+
 ## [v1.5.1-information-honesty] — 2026-07-20
 
 RFC-004B: the Flight Deck's final presentation review. Three places

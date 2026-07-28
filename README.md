@@ -24,7 +24,7 @@ ANTHROPIC_API_KEY=... ./validate.sh        # real-model validation
 ./validate.sh mynotes.md conversations.json  # over your own documents
 ```
 
-One command creates a venv, installs, runs 34 tests, executes the full
+One command creates a venv, installs, runs the full test suite, executes the
 validation workflow, and writes `v1_transcript.md` demonstrating
 immutable events, provenance, claim extraction, cross-model
 compatibility and deterministic replay.
@@ -202,6 +202,10 @@ Start at [`docs/README.md`](docs/README.md) for the full map. Highlights:
   (Core, Finance) that RFC-001 and RFC-002 implemented
 - [Engineering review gates](docs/engineering/review-gates.md) — the
   process every change goes through before merge
+- [Security](SECURITY.md) — reporting and current security model, with
+  the [threat model](docs/security/threat-model.md),
+  [assurance register](docs/security/security-assurance.md) and
+  [engineering checklist](docs/security/security-checklist.md)
 - [RFC index](docs/rfcs/index.md) — every RFC, its status, and links to
   its spec, implementation report(s), and technical-debt register
 - [Historical record](docs/history/) — point-in-time documents from

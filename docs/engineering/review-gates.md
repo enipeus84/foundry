@@ -145,6 +145,13 @@ Implemented by:
 
 `security-reviewer`
 
+Input:
+
+The change's completed
+[Security by Design checklist](../security/security-checklist.md).
+An omitted or unanswered checklist is a process failure that must be
+resolved before approval.
+
 Reviews:
 
 -   authentication
@@ -193,6 +200,9 @@ The project maintainer retains final responsibility for every merge.
 ## Secure by Design
 
 Security is designed into the platform rather than added later.
+Foundry's current threat model, assurance register and reusable checklist
+are indexed in [`../security/`](../security/); the public security
+document remains at [`../../SECURITY.md`](../../SECURITY.md).
 
 ## Models are Replaceable
 

@@ -14,7 +14,7 @@ Usage
 -----
     export ANTHROPIC_API_KEY=...        # and/or
     export OPENAI_API_KEY=...
-    python3 run_v1.py [file1.md file2.txt export.json ...]
+    python scripts/validate.py [file1.md file2.txt export.json ...]
 
 With both keys set, the harness swaps between Anthropic and OpenAI
 mid-session — the strongest form of the demonstration. With one key it
@@ -22,7 +22,7 @@ swaps between two model sizes from the same vendor. With no keys it
 refuses to claim validation and falls back to mocks with a loud warning.
 
 If no files are given, it ingests its own repository documents
-(README.md, ASSESSMENT.md) — real documents by any definition.
+(README.md and docs/architecture.md) — real documents by any definition.
 
 Output: a validation transcript written to v1_transcript.md, suitable
 for archiving as evidence.
