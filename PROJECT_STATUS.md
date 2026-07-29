@@ -5,15 +5,15 @@
 Foundry is a durable, model-independent memory substrate — an append-only,
 hash-chained event log with a deterministic projection layer (the Canon)
 — now carrying two shipped product domains, Core and Finance, and a
-single-page product surface, the Flight Deck. Six major RFCs have
-landed since the V1.0 substrate milestone; a seventh is implemented for
-draft-PR review. Each is built on the same three
+single-page product surface, the Flight Deck. Seven major RFCs have
+landed since the V1.0 substrate milestone. Each is built on the same three
 substrate files (`eventlog.py`, `canon.py`, `kernel.py`) without ever
 modifying them. RFC-006 generalised the domain-neutral Mission Assessment
 seam with definition discovery, direction-aware milestones, isolated
-providers and generic mission routes. The current RFC (RFC-007) proves that
+providers and generic mission routes. RFC-007 proves that
 seam by adding Mortgage Freedom as the second assessment wholly within
-Finance. Financial Resilience and Pension Independence remain honest planned
+Finance and is the authoritative Mortgage Freedom implementation. Financial
+Resilience and Pension Independence remain honest planned
 metadata. Authentication,
 review-gate process,
 and CI are in place but scoped to a single named user and two of six
@@ -31,9 +31,8 @@ incomplete in places.
 ## Current Release
 
 - **Current version:** `1.5.1` ([`pyproject.toml`](pyproject.toml)) — unchanged since RFC-004.2; RFC-005 shipped without a version bump (see [Documentation Status](#documentation-status))
-- **Latest merged RFC:** RFC-006 — Mission Assessment Framework ([PR #16](https://github.com/enipeus84/foundry/pull/16), merged 2026-07-29); RFC-007 is implemented for draft-PR review
+- **Latest merged RFC:** RFC-007 — Mortgage Freedom Mission ([PR #17](https://github.com/enipeus84/foundry/pull/17), merged 2026-07-29)
 - **Latest release/tag:** `v1.5-flight-deck` (git tag) — no tag exists for RFC-004.2 or RFC-005; see [`docs/rfcs/index.md`](docs/rfcs/index.md)
-- **RFC-007 base:** `main`, at commit `3a7b929`
 
 ---
 
@@ -53,7 +52,7 @@ incomplete in places.
 
 ## Engineering Status
 
-- **RFC process:** 6 major RFCs plus sub-RFCs (003.3, 004.1, 004.2, 004A, 004B) shipped via branch-per-RFC + PR; RFC-007 is in draft review. Depth is inconsistent — RFC-001/003/003.3 have no dedicated implementation report (see [`docs/rfcs/index.md`](docs/rfcs/index.md)).
+- **RFC process:** 7 major RFCs plus sub-RFCs (003.3, 004.1, 004.2, 004A, 004B) shipped via branch-per-RFC + PR. Depth is inconsistent — RFC-001/003/003.3 have no dedicated implementation report (see [`docs/rfcs/index.md`](docs/rfcs/index.md)).
 - **Documentation:** reorganized into a cross-referenced tree (see [Documentation Status](#documentation-status)).
 - **Testing:** RFC-007 baseline was 393 collected / 393 passing and the
   implementation finishes at 453 collected / 453 passing in the declared
@@ -151,7 +150,7 @@ comes next.
 | **RFC-004 — Flight Deck** | 2026-07-20 to 2026-07-21 | [PR #7](https://github.com/enipeus84/foundry/pull/7), tag `v1.5-flight-deck`; refined by RFC-004.2, [PR #8](https://github.com/enipeus84/foundry/pull/8) |
 | **RFC-005 — Mission Assessment** | 2026-07-27 | [PR #9](https://github.com/enipeus84/foundry/pull/9) — no corresponding tag or CHANGELOG entry (tracked as the open gap above) |
 | **RFC-006 — Mission Assessment Framework** | 2026-07-29 | Merged via [PR #16](https://github.com/enipeus84/foundry/pull/16) |
-| **RFC-007 — Mortgage Freedom Mission** | 2026-07-29 | Implemented on `rfc-007-mortgage-freedom-mission`; [draft PR #17](https://github.com/enipeus84/foundry/pull/17) open |
+| **RFC-007 — Mortgage Freedom Mission** | 2026-07-29 | Merged via [PR #17](https://github.com/enipeus84/foundry/pull/17) |
 | **Engineering Review Gates** | 2026-07-27 | [PR #10](https://github.com/enipeus84/foundry/pull/10), [PR #11](https://github.com/enipeus84/foundry/pull/11) — `docs/engineering/review-gates.md` |
 | **Documentation Architecture** | 2026-07-27 | [PR #12](https://github.com/enipeus84/foundry/pull/12) — docs index, RFC index, versioned Design Constitution |
 | **PROJECT_STATUS.md** | 2026-07-27 | This document — the first executive-dashboard artifact, opened as its own PR |
@@ -161,5 +160,5 @@ comes next.
 ## Last Updated
 
 - **Date:** 2026-07-29
-- **Branch:** `rfc-007-mortgage-freedom-mission`
-- **Base commit:** `3a7b929baad10f4860110c90116407fe33def949`
+- **Branch:** `main`
+- **Merged RFC head:** `3b2d414f3247c050d3d740b22e538ee014635603`
