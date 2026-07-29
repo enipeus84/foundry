@@ -32,6 +32,10 @@ optimisation engine, persisted assessment or action workflow was added.
 
 The demo event stream records every supplied mortgage/property value through a
 manual evidence envelope with effective date, confidence, source and lineage.
+It distinguishes the £450,000 purchase price from the £436,638.42 HPI dated
+valuation reference for March 2025. The latter preserves its HPI provenance
+and effective month and is not described as live or current valuation
+evidence.
 Low/expected/high paths are deterministic rate sensitivities, observations
 remain separate from projections, and exact zero is the only completion state.
 
@@ -67,8 +71,9 @@ replay after the writer is removed. Exact removal criteria are in
   reported “architecture exercised — not real-model V1.0 validation” and
   returned its documented non-zero mock-only verdict.
 - `git diff --check`: clean
-- Architecture Gate: **APPROVE (Beta)** — 0 open Critical, High or Medium
-  findings; three documentation-only Low findings corrected before commit
+- Architecture Gate: **APPROVE (Beta)** — 0 open Critical, High, Medium or Low
+  findings; the correction review's locale-dependent month rendering and
+  over-broad recommendation-provenance findings were corrected before commit
 - Security Gate: **APPROVE** — 0 open Critical, High, Medium or Low findings
 
 The pull request must remain draft and must not be merged by the

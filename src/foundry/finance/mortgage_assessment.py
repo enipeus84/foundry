@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import math
+import time
 
 from foundry.core.entities import EntityProjection
 from foundry.core.metrics import MetricRegistry, MetricRequest, MetricResult
@@ -37,6 +38,15 @@ DAY = 86_400.0
 YEAR = 365.2425 * DAY
 MONTH = YEAR / 12.0
 MONTH_DAYS = MONTH / DAY
+MONTH_NAMES = (
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December",
+)
+
+
+def _month_year(timestamp: float) -> str:
+    utc = time.gmtime(timestamp)
+    return f"{MONTH_NAMES[utc.tm_mon - 1]} {utc.tm_year}"
 
 
 @dataclass(frozen=True)
@@ -399,16 +409,41 @@ class MortgageFreedomAssessor:
             if record.field == "recorded_overpayment"
         )
         overpayments = all_overpayments
+        purchase_price_record = self.evidence.latest(
+            obligation.id, "purchase_price", request.as_of)
+        purchase_date_record = self.evidence.latest(
+            obligation.id, "purchase_date", request.as_of)
+        purchase_records = ()
+        purchase_detail = None
+        if purchase_price_record is not None \
+                and purchase_date_record is not None:
+            try:
+                purchase_price = self._numeric(
+                    purchase_price_record, "purchase_price")
+                purchase_date = self._numeric(
+                    purchase_date_record, "purchase_date")
+            except ValueError:
+                pass
+            else:
+                purchase_records = (
+                    purchase_price_record, purchase_date_record)
+                purchase_detail = (
+                    f"Purchase evidence: £{purchase_price:,.0f} purchase "
+                    f"price · {_month_year(purchase_date)}.")
         confidence = self._confidence(
             request.as_of, records, inputs, overpayments)
         assessment_input_refs = tuple(sorted({
             *mortgage_input_refs,
             *(runway.input_references if runway_value is not None else ()),
         }))
-        assessment_evidence_refs = tuple(sorted({
+        recommendation_evidence_refs = tuple(sorted({
             *mortgage_evidence_refs,
             *(record.event_id for record in all_overpayments),
             *(runway.evidence_references if runway_value is not None else ()),
+        }))
+        assessment_evidence_refs = tuple(sorted({
+            *recommendation_evidence_refs,
+            *(record.event_id for record in purchase_records),
         }))
         margin = self._mission_margin(
             ltv, runway_value, fixed_months, overpayments)
@@ -427,20 +462,25 @@ class MortgageFreedomAssessor:
         recommendations = self._recommendation(
             balance, request, inputs, assumption_set, current_rate,
             payment, fixed_expiry, projected, runway_value,
-            assessment_evidence_refs)
+            recommendation_evidence_refs)
 
         valuation_status = (
             "stale" if self._is_stale(
                 request.as_of, records["property_valuation"],
                 inputs.valuation_stale_after_days)
             else "available")
+        valuation_record = records["property_valuation"]
+        valuation_reference = (
+            f"DATED VALUATION REFERENCE · "
+            f"{valuation_record.source.upper()} · "
+            f"{_month_year(valuation_record.effective_at).upper()}")
         telemetry = (
             TelemetryItem(current, "MORTGAGE BALANCE", "currency"),
             TelemetryItem(self._metric(
                 "finance.mortgage_ltv", ltv, None, request,
                 valuation_status, mortgage_input_refs,
                 mortgage_evidence_refs, assumption_refs),
-                "LOAN TO VALUE", "percent"),
+                "LOAN TO VALUE", "percent", valuation_reference),
             TelemetryItem(self._metric(
                 "finance.mortgage_payment", payment,
                 self.policy.unit_or_currency, request, "available",
@@ -460,8 +500,10 @@ class MortgageFreedomAssessor:
                 "PROJECTED · EXPECTED PATH"),
         )
         limitations = [
-            f"Primary residence evidence: supplied valuation "
-            f"£{valuation:,.2f}; mortgage held with {text['lender']}.",
+            f"Primary residence dated valuation reference: "
+            f"£{valuation:,.2f} · {valuation_record.source} · "
+            f"{_month_year(valuation_record.effective_at)}; "
+            f"mortgage held with {text['lender']}.",
             f"Mortgage contract: capital repayment, fixed "
             f"{current_rate * 100:.2f}% with a £{payment:,.2f} monthly "
             "payment.",
@@ -474,11 +516,13 @@ class MortgageFreedomAssessor:
             "Low, expected and high paths are deterministic rate "
             "sensitivities, not probabilities.",
         ]
+        if purchase_detail is not None:
+            limitations.insert(1, purchase_detail)
         if balance_status == "stale":
             limitations.append("Mortgage balance evidence is stale.")
         if valuation_status == "stale":
             limitations.append(
-                "Property valuation evidence is stale; loan-to-value "
+                "The dated valuation reference is stale; loan-to-value "
                 "and margin should be treated cautiously.")
         if any(record.confidence < .5 for record in overpayments):
             limitations.append(

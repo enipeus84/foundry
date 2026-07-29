@@ -580,6 +580,13 @@ def test_mortgage_freedom_uses_the_generic_live_mission_route(tmp_path):
     assert "LOAN TO VALUE" in html
     assert "REMAINING INTEREST" in html
     assert "PROJECTED · EXPECTED PATH" in html
+    assert "dated valuation reference" in html
+    assert "HPI" in html
+    assert "March 2025" in html
+    assert "£450,000 purchase price" in html
+    assert "supplied valuation" not in html
+    assert "current valuation" not in html
+    assert "live valuation" not in html
     assert "Add mortgage overpayment" in html
     assert "projected interest" in html
     assert "OBSERVATIONS AND PROJECTIONS REMAIN DISTINCT" in html

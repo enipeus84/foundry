@@ -222,7 +222,10 @@ into an invalid-event list. Assessment requires one active household mortgage
 whose borrowers and secured-property owners are active household members.
 Missing, future-only, hostile or cross-scope evidence fails closed. Stale
 balance/property evidence remains visible as stale and lowers Mission
-Confidence independently of trajectory and margin.
+Confidence independently of trajectory and margin. The demonstration evidence
+keeps the £450,000 purchase price separate from the £436,638.42 HPI dated
+valuation reference for March 2025; the reference is neither a live nor a
+current valuation.
 
 **Evidence.** `src/foundry/finance/mortgage_evidence.py`,
 `src/foundry/finance/mortgage_assessment.py`,

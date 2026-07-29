@@ -27,6 +27,7 @@ from foundry.finance.mortgage_assessment import (
     MortgageFreedomAssessor,
     MortgageProjectionEngine,
     MortgageProjectionInputs,
+    _month_year,
 )
 from foundry.finance.mortgage_evidence import (
     MortgageEvidenceProjection,
@@ -106,6 +107,8 @@ def _fixture(path, *, runway=18.0, include_scenario=True,
 
     fields = {
         "property_role": "primary_residence",
+        "purchase_price": 450_000.0,
+        "purchase_date": NOW - 500 * DAY,
         "property_valuation": 436_638.42,
         "lender": "NatWest",
         "original_advance": 310_000.0,
@@ -129,8 +132,9 @@ def _fixture(path, *, runway=18.0, include_scenario=True,
             log, mortgage.id, field, value, effective_at=effective_at,
             unit_or_currency=(
                 "GBP" if field in {
-                    "property_valuation", "original_advance", "balance",
-                    "monthly_payment"} else None))
+                    "purchase_price", "property_valuation",
+                    "original_advance", "balance", "monthly_payment",
+                } else None))
     if include_overpayments:
         _record(log, mortgage.id, "recorded_overpayment", 30_000.0,
                 effective_at=NOW - 300 * DAY,
@@ -217,6 +221,16 @@ def test_full_assessment_is_lower_is_better_and_has_complete_output(tmp_path):
         if record.field == "recorded_overpayment"
     }
     assert overpayment_refs <= set(result.evidence_references)
+    optional_property_refs = {
+        record.event_id
+        for record in MortgageEvidenceProjection(log).for_obligation(
+            mortgage.id, request.as_of)
+        if record.field in {"purchase_price", "purchase_date"}
+    }
+    assert len(optional_property_refs) == 2
+    assert optional_property_refs <= set(result.evidence_references)
+    assert optional_property_refs.isdisjoint(
+        result.recommendations[0].evidence_references)
     assert "runway-input" in result.input_references
     assert "runway-evidence" in result.evidence_references
     assert "runway-evidence" in \
@@ -450,7 +464,7 @@ def test_stale_evidence_is_visible_and_confidence_is_provisional(tmp_path):
     assert result.current_value.status == "stale"
     assert result.confidence.state == "Provisional"
     assert "stale" in result.confidence.basis
-    assert any("valuation evidence is stale" in note
+    assert any("dated valuation reference is stale" in note
                for note in result.limitations)
 
 
@@ -702,6 +716,7 @@ def test_assessment_is_read_only_and_render_inputs_are_deterministic(tmp_path):
 
     assert path.read_bytes() == before
     assert first == second
+    assert _month_year(1_735_689_600.0) == "January 2025"
     assert log.verify()
 
 

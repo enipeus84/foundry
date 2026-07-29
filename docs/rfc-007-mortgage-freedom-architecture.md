@@ -55,10 +55,13 @@ cannot be placed safely is conservatively global. Payload and exception text
 are never exposed. Validation occurs before a supported writer appends, so
 rejected input does not partially mutate the log.
 
-The synthetic proof data records every value in the approved brief. Where the
-brief supplies only a month, lineage records that precision. Where an
-overpayment occurrence date is absent, the evidence is recorded as known at
-the assessment date; no occurrence date is invented.
+The synthetic proof data records every value in the approved brief. The
+£450,000 figure is the purchase price. The separate £436,638.42 figure is an
+HPI dated valuation reference for March 2025, with HPI provenance and that
+effective month preserved; it is not live or current valuation evidence.
+Where the brief supplies only a month, lineage records that precision. Where
+an overpayment occurrence date is absent, the evidence is recorded as known
+at the assessment date; no occurrence date is invented.
 
 This is a deprecated migration adapter, not a new integration layer. Its
 removal criteria are in

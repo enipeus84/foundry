@@ -156,6 +156,16 @@ def test_synthetic_demo_records_every_approved_mortgage_value(tmp_path):
         assert record.source
         assert record.lineage
         assert record.confidence == .9
+    purchase = evidence.latest(mortgage.id, "purchase_price", as_of)
+    valuation = evidence.latest(mortgage.id, "property_valuation", as_of)
+    assert purchase is not None
+    assert valuation is not None
+    assert purchase.effective_at == datetime(
+        2025, 5, 1, tzinfo=timezone.utc).timestamp()
+    assert valuation.effective_at == datetime(
+        2025, 3, 31, tzinfo=timezone.utc).timestamp()
+    assert valuation.source == "HPI"
+    assert "dated valuation reference" in valuation.lineage
     overpayments = tuple(
         record.value for record in evidence.for_obligation(
             mortgage.id, as_of)

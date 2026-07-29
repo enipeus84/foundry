@@ -533,12 +533,14 @@ def build(log: EventLog, as_of: float | None = None) -> MorganHousehold:
     def mortgage_evidence(
         field: str, value, effective_at: float,
         unit_or_currency: str | None = None, lineage: str | None = None,
+        source: str | None = None,
     ) -> None:
         record_mortgage_evidence(
             log, hh.mortgage_id, field, value, effective_at,
             **{
                 **evidence_common,
                 **({"lineage": lineage} if lineage is not None else {}),
+                **({"source": source} if source is not None else {}),
             },
             unit_or_currency=unit_or_currency)
 
@@ -553,8 +555,9 @@ def build(log: EventLog, as_of: float | None = None) -> MorganHousehold:
         lineage="Purchase month supplied as May 2025; day not supplied")
     mortgage_evidence(
         "property_valuation", 436_638.42, utc(2025, 3, 31), "GBP",
-        "HPI valuation supplied as March 2025; month end represents "
-        "the supplied month precision")
+        "HPI dated valuation reference for March 2025; month end "
+        "represents the supplied month precision",
+        source="HPI")
     mortgage_evidence("lender", "NatWest", as_of)
     mortgage_evidence(
         "original_advance", 310_000.0, utc(2025, 7, 1), "GBP")
