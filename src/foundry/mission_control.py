@@ -613,6 +613,17 @@ _SHELL = """<!doctype html>
 
   .empty {{ color: var(--muted); font-size: 14px; }}
   .placeholder {{ color: var(--faint); font-size: 14px; margin-top: 6px; }}
+  .mission-return {{
+    display: inline-block; margin-bottom: 22px; pointer-events: auto;
+    color: var(--muted); font-size: 9px; font-weight: 650; letter-spacing: .18em;
+  }}
+  .mission-return:hover {{ color: var(--text); }}
+  .mission-empty-state {{
+    min-height: 460px; max-width: 640px; padding-top: 112px;
+  }}
+  .mission-empty-state .status-word {{ margin-bottom: 18px; }}
+  .mission-empty-state .empty,
+  .mission-empty-state .placeholder {{ max-width: 52ch; line-height: 1.65; }}
 
   /* -------------------------------- RFC-005 Mission Assessment detail. */
   .mission-detail-hero {{
@@ -812,6 +823,7 @@ _SHELL = """<!doctype html>
     .scope-bar button {{ flex: 1 1 calc(50% - 18px); text-align: left; }}
     .scope-bar button:last-child {{ flex-basis: 100%; }}
     .mission-detail-hero {{ min-height: 780px; margin-bottom: 34px; }}
+    .mission-empty-state {{ min-height: 380px; padding-top: 92px; }}
     .mission-detail-hero img.earthrise {{
       object-position: 66% 72%; height: 58%; top: 42%;
       transform: scale(1.32); transform-origin: 66% 0;
@@ -1245,7 +1257,7 @@ def home(request: Request):
         def planned_mission_row(mission_number, definition):
             description = (
                 definition.definition or
-                "Assessment policy and target are not implemented.")
+                "Assessment and target are planned.")
             return (
                 f'<a class="card mission planned" '
                 f'href="/missions/{html.escape(definition.slug)}" '
@@ -1380,7 +1392,7 @@ def home(request: Request):
   <h2>PRIMARY TELEMETRY</h2>
   {cards}
 </section>
-<section>
+<section id="missions">
   <h2>APOLLO MISSIONS</h2>
   {missions_html}
 </section>
@@ -1589,9 +1601,12 @@ def _mission_trajectory_geometry(assessment: MissionAssessment) -> dict:
         for value in (point.low, point.base, point.high)
         if math.isfinite(value)
     ]
+    # The mission arc ends at its declared destination. Forecast values
+    # beyond it must not compress every milestone into an unreadable cluster;
+    # without milestones, the forecast itself defines the visual scale.
+    scale_values = milestone_bounds if milestone_bounds else forecast_values
     mission_scale = max(
-        [current_progress_value, *milestone_bounds, *forecast_values,
-         current_progress_value + 1.0])
+        [current_progress_value, *scale_values, current_progress_value + 1.0])
     current_transition = 0.38
 
     def progress_for(value: float) -> float:
@@ -1821,12 +1836,15 @@ def mission_detail(request: Request, slug: str):
         return _login_redirect()
     console = _console(request)
     as_of = _as_of(console)
+    mission_return = (
+        '<a class="mission-return" href="/#missions">← ALL MISSIONS</a>')
     definition = console.assessments.definition_for_slug(slug)
     if definition is None:
         response = _render(
             "Mission not found",
-            """<section><h2>MISSION NOT FOUND</h2>
-  <p class="empty">No supported mission definition matches this route.</p>
+            f"""<section class="mission-empty-state">{mission_return}
+  <h2>MISSION NOT FOUND</h2>
+  <p class="empty">This mission is not available.</p>
 </section>""" + _footer(console),
             as_of,
             "/missions",
@@ -1835,12 +1853,11 @@ def mission_detail(request: Request, slug: str):
         return response
 
     if definition.assessment_policy_id is None:
-        body = f"""<section>
+        body = f"""<section class="mission-empty-state">{mission_return}
   <h2>{html.escape(definition.label.upper())}</h2>
   <div class="status-word none">PLANNED</div>
-  <p class="empty">No assessment policy is implemented for this mission.</p>
-  <p class="placeholder">No target, threshold, evidence, or mission state has
-  been inferred.</p>
+  <p class="empty">This mission is planned. Its assessment is not available yet.</p>
+  <p class="placeholder">No target, tracking criteria, or mission status is shown.</p>
 </section>{_footer(console)}"""
         return _render(definition.label, body, as_of, "/missions")
 
@@ -1850,19 +1867,21 @@ def mission_detail(request: Request, slug: str):
         if mission.assessment_policy_id == definition.assessment_policy_id
     ]
     if len(matching_missions) > 1:
-        body = f"""<section>
+        body = f"""<section class="mission-empty-state">{mission_return}
   <h2>{html.escape(definition.label.upper())}</h2>
   <div class="status-word none">NOT EVALUABLE</div>
-  <p class="empty">Multiple active Missions claim this definition.</p>
-  <p class="placeholder">No Mission was selected and no assessment was run.</p>
+  <p class="empty">We cannot assess this mission because more than one active
+  mission is configured.</p>
+  <p class="placeholder">No mission was selected.</p>
 </section>{_footer(console)}"""
         return _render(definition.label, body, as_of, "/missions")
     mission = matching_missions[0] if matching_missions else None
     if scope is None or mission is None:
-        body = f"""<section>
+        body = f"""<section class="mission-empty-state">{mission_return}
   <h2>{html.escape(definition.label.upper())}</h2>
-  <p class="empty">No active {html.escape(definition.label)} Mission is declared.</p>
-  <p class="placeholder">The route remains read-only and will not invent policy or household state.</p>
+  <p class="empty">This mission has not been set up yet.</p>
+  <p class="placeholder">No assessment is shown until its goal and household
+  are available.</p>
 </section>""" + _footer(console)
         return _render(definition.label, body, as_of, "/missions")
 
@@ -1872,10 +1891,11 @@ def mission_detail(request: Request, slug: str):
     if assessment.status == "unavailable" or assessment.current_value is None:
         limitations = "".join(
             f"<li>{html.escape(note)}</li>" for note in assessment.limitations)
-        body = f"""<section>
+        body = f"""<section class="mission-empty-state">{mission_return}
   <h2>{html.escape(definition.label.upper())}</h2>
   <div class="status-word none">NOT EVALUABLE</div>
-  <p class="status-sub">The assessment failed closed; no mission state was fabricated.</p>
+  <p class="status-sub">We cannot assess this mission right now. No mission
+  status is shown because the available data could not be evaluated safely.</p>
   <ul style="margin:24px 0 0 18px;color:var(--muted);">{limitations}</ul>
 </section>{_footer(console)}"""
         return _render(definition.label, body, as_of, "/missions")
@@ -1987,6 +2007,7 @@ def mission_detail(request: Request, slug: str):
   <div class="scrim"></div>
   {_mission_trajectory_svg(assessment)}
   <div class="hero-content">
+    {mission_return}
     <p class="eyebrow">MISSION</p>
     <h2 class="mission-title" id="mission-title">{html.escape(definition.label)}</h2>
     <p class="mission-definition">{html.escape(definition.definition)}</p>

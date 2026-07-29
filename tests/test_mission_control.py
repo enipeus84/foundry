@@ -538,8 +538,10 @@ def _seed_financial_independence(tmp_path):
 def test_financial_independence_home_lane_opens_mission_detail(tmp_path):
     _seed_financial_independence(tmp_path)
     html = client().get("/").text
+    assert '<section id="missions">' in html
     assert 'href="/missions/financial-independence"' in html
     assert "Coast FIRE by 2038" in html
+    assert html.count("Assessment and target are planned.") == 3
 
 
 def test_financial_independence_route_renders_assessment_not_calculations(tmp_path):
@@ -558,6 +560,7 @@ def test_financial_independence_route_renders_assessment_not_calculations(tmp_pa
     assert "NOT A PROBABILITY" in html
     assert "CONFIDENCE 78%" not in html
     assert "Confidence: 78%" not in html
+    assert 'class="mission-return" href="/#missions"' in html
     assert html.count('src="/static/earthrise.webp"') == 1
 
 
@@ -575,9 +578,12 @@ def test_generic_planned_mission_routes_invent_no_policy(
     assert response.status_code == 200
     assert label in response.text
     assert "PLANNED" in response.text
-    assert "No assessment policy is implemented" in response.text
-    assert "No target, threshold, evidence, or mission state has" \
+    assert "This mission is planned. Its assessment is not available yet." \
         in response.text
+    assert "No target, tracking criteria, or mission status is shown." \
+        in response.text
+    assert 'class="mission-empty-state"' in response.text
+    assert 'class="mission-return" href="/#missions"' in response.text
 
 
 def test_unknown_generic_mission_route_fails_safely_without_reflection(tmp_path):
@@ -902,7 +908,10 @@ def test_single_forecast_point_does_not_invent_a_corridor():
 def test_milestone_policy_presentation_comes_from_assessment_contract():
     import inspect
 
-    from foundry.mission_control import _mission_trajectory_svg
+    from foundry.core.mission_assessment import ForecastPoint
+    from foundry.mission_control import (
+        _mission_trajectory_geometry, _mission_trajectory_svg,
+    )
     import foundry.mission_control as mission_control
 
     rendered = _mission_trajectory_svg(_synthetic_assessment(()))
@@ -914,6 +923,18 @@ def test_milestone_policy_presentation_comes_from_assessment_contract():
     assert "$400 – $900" in rendered
     assert "ABOVE $1,700" in rendered
     assert "domain.policy.v9" not in rendered
+
+    # Forecasts beyond the destination must not squeeze every milestone
+    # into an unreadable cluster at the start of the mission arc.
+    geometry = _mission_trajectory_geometry(_synthetic_assessment((
+        ForecastPoint(5.0, 2_000.0, 4_000.0, 8_000.0),
+        ForecastPoint(6.0, 4_000.0, 8_000.0, 16_000.0),
+    )))
+    milestone_x = [point[0] for _, point in geometry["phase_points"]]
+    assert all(
+        following - current > 60.0
+        for current, following in zip(milestone_x, milestone_x[1:])
+    )
 
     source = inspect.getsource(mission_control)
     for forbidden in (
@@ -1146,8 +1167,8 @@ def test_financial_independence_route_is_deterministic_and_read_only(tmp_path):
 def test_financial_independence_without_policy_fails_honestly(tmp_path):
     _seed(tmp_path)  # legacy scalar Mission only
     html = client().get("/missions/financial-independence").text
-    assert "No active Financial Independence Mission is declared." in html
-    assert "will not invent policy" in html
+    assert "This mission has not been set up yet." in html
+    assert "No assessment is shown until its goal and household" in html
 
 
 def test_duplicate_active_missions_for_one_definition_fail_closed(tmp_path):
@@ -1170,7 +1191,7 @@ def test_duplicate_active_missions_for_one_definition_fail_closed(tmp_path):
     home = client().get("/")
 
     assert detail.status_code == 200
-    assert "Multiple active Missions claim this definition." in detail.text
-    assert "No Mission was selected and no assessment was run." in detail.text
+    assert "more than one active" in detail.text
+    assert "No mission was selected." in detail.text
     assert "AMBIGUOUS ACTIVE MISSION" in home.text
     assert "Duplicate policy claim · tracked" not in home.text
