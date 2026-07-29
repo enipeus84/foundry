@@ -66,6 +66,8 @@ from foundry.eventlog import EventLog
 from foundry.finance.entities import FinanceEntityProjection
 from foundry.finance.metrics import FinanceMetricProvider
 from foundry.finance.mission_assessment import FinancialIndependenceAssessor
+from foundry.finance.mortgage_assessment import MortgageFreedomAssessor
+from foundry.finance.mortgage_evidence import MortgageEvidenceProjection
 from foundry.finance.missions import register_finance_mission_definitions
 from foundry.mission_control import Console, router as mission_control_router
 
@@ -143,6 +145,9 @@ def _build_console() -> Console:
     register_finance_mission_definitions(assessments)
     assessments.register(FinancialIndependenceAssessor(
         finance_entities, core_entities, registry))
+    assessments.register(MortgageFreedomAssessor(
+        finance_entities, core_entities, registry,
+        MortgageEvidenceProjection(log)))
     return Console(log=log, registry=registry, entities=core_entities,
                    assessments=assessments,
                    evidence=EvidenceIndex(log), canon=Canon(log))

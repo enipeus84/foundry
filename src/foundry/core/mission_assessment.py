@@ -14,6 +14,7 @@ calls a model.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from dataclasses import dataclass
 import math
 from numbers import Real
@@ -47,6 +48,22 @@ def _require_finite(value, field: str, *, allow_none: bool = False) -> None:
     if isinstance(value, bool) or not isinstance(value, Real) \
             or not math.isfinite(float(value)):
         raise ValueError(f"{field} must be a finite number")
+
+
+def _require_utc_timestamp(
+    value,
+    field: str,
+    *,
+    allow_none: bool = False,
+) -> None:
+    _require_finite(value, field, allow_none=allow_none)
+    if value is None:
+        return
+    try:
+        datetime.fromtimestamp(float(value), tz=timezone.utc)
+    except (OSError, OverflowError, ValueError):
+        raise ValueError(f"{field} must be a representable UTC timestamp") \
+            from None
 
 
 @dataclass(frozen=True)
@@ -222,6 +239,57 @@ class DeltaV:
     months: int | None = None
     direction: str | None = None
     resolution: str = "month"
+    period_label: str = ""
+    reference_start_at: float | None = None
+    reference_start_label: str = ""
+    reference_destination_at: float | None = None
+    reference_destination_label: str = ""
+
+    def __post_init__(self) -> None:
+        _require_finite(self.days, "delta-v days", allow_none=True)
+        if (
+            isinstance(self.lookback_days, bool)
+            or not isinstance(self.lookback_days, int)
+            or self.lookback_days < 0
+        ):
+            raise ValueError("delta-v lookback must be a non-negative integer")
+        _require_text(self.description, "delta-v description")
+        if self.months is not None and (
+            isinstance(self.months, bool) or not isinstance(self.months, int)
+        ):
+            raise ValueError("delta-v months must be an integer")
+        if self.direction not in (None, "accelerated", "delayed"):
+            raise ValueError("unsupported delta-v direction")
+        _require_text(self.resolution, "delta-v resolution")
+        _require_text(
+            self.period_label, "delta-v period label", allow_empty=True)
+        for field, value in (
+            ("reference start", self.reference_start_at),
+            ("reference destination", self.reference_destination_at),
+        ):
+            _require_utc_timestamp(
+                value, f"delta-v {field}", allow_none=True)
+        for field, value in (
+            ("reference start", self.reference_start_label),
+            ("reference destination", self.reference_destination_label),
+        ):
+            _require_text(
+                value, f"delta-v {field} label", allow_empty=True)
+        for at, label, field in (
+            (
+                self.reference_start_at,
+                self.reference_start_label,
+                "reference start",
+            ),
+            (
+                self.reference_destination_at,
+                self.reference_destination_label,
+                "reference destination",
+            ),
+        ):
+            if (at is None) != (not label):
+                raise ValueError(
+                    f"delta-v {field} time and label must be supplied together")
 
 
 @dataclass(frozen=True)
@@ -566,9 +634,38 @@ class MissionAssessmentRegistry:
             or not isinstance(delta_v.months, int)
         ):
             raise ValueError("delta-v months must be an integer")
-        if delta_v.direction is not None:
-            _require_text(delta_v.direction, "delta-v direction")
+        if delta_v.direction not in (None, "accelerated", "delayed"):
+            raise ValueError("unsupported delta-v direction")
         _require_text(delta_v.resolution, "delta-v resolution")
+        _require_text(
+            delta_v.period_label, "delta-v period label", allow_empty=True)
+        for field, value in (
+            ("reference start", delta_v.reference_start_at),
+            ("reference destination", delta_v.reference_destination_at),
+        ):
+            _require_utc_timestamp(
+                value, f"delta-v {field}", allow_none=True)
+        for field, value in (
+            ("reference start", delta_v.reference_start_label),
+            ("reference destination", delta_v.reference_destination_label),
+        ):
+            _require_text(
+                value, f"delta-v {field} label", allow_empty=True)
+        for at, label, field in (
+            (
+                delta_v.reference_start_at,
+                delta_v.reference_start_label,
+                "reference start",
+            ),
+            (
+                delta_v.reference_destination_at,
+                delta_v.reference_destination_label,
+                "reference destination",
+            ),
+        ):
+            if (at is None) != (not label):
+                raise ValueError(
+                    f"delta-v {field} time and label must be supplied together")
 
     @staticmethod
     def _validate_recommendation(

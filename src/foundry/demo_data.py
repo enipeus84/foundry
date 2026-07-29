@@ -32,6 +32,7 @@ import os
 import random
 import time
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 
 from foundry.core import grammar as core_grammar
@@ -47,6 +48,11 @@ from foundry.core.evidence import concern, derive_claim_directly, tag_claim
 from foundry.eventlog import EventLog
 from foundry.finance import entities as fin
 from foundry.finance.mission_assessment import POLICY_ID
+from foundry.finance.mortgage_assessment import (
+    POLICY_ID as MORTGAGE_POLICY_ID,
+    TARGET_METRIC as MORTGAGE_TARGET_METRIC,
+)
+from foundry.finance.mortgage_evidence import record_mortgage_evidence
 
 logger = logging.getLogger("foundry.demo_data")
 
@@ -192,8 +198,12 @@ def build_morgan_household(log: EventLog, as_of: float | None = None) -> MorganH
     fin.link_ownership(log, "obligation", mortgage.id, "owes", alex.id, share=50.0)
     fin.link_ownership(log, "obligation", mortgage.id, "owes", sam.id, share=50.0)
     fin.link_ownership(log, "obligation", mortgage.id, "secures", family_home.id)
-    for amount in (235_000.0, 229_500.0, 223_800.0, 218_500.0):
+    for amount in (235_000.0, 229_500.0, 223_800.0):
         fin.update_obligation(log, mortgage.id, amount, reason="Scheduled capital repayment", actor="user")
+    fin.update_obligation(
+        log, mortgage.id, 242_540.09,
+        reason="Manual current balance supplied for RFC-007 proof data",
+        actor="synthetic_demo")
 
     # ------------------------------------------------------------ positions
     # Alex's ISA: a diversified tracker fund alongside a concentrated
@@ -500,6 +510,104 @@ def build(log: EventLog, as_of: float | None = None) -> MorganHousehold:
         target_value=750_000.0, target_date=as_of + 12 * 365.2425 * DAY,
         tolerance=60_000.0, assessment_policy_id=POLICY_ID,
         assumption_set_id=fi_assumptions.id,
+    )
+
+    # RFC-007 manual evidence adapter. Every supplied value is recorded
+    # outside assessment logic with attribution, effective date, confidence
+    # and lineage. Dates absent from the source are explicitly represented as
+    # "known at assessment time", never silently invented.
+    def utc(year: int, month: int, day: int) -> float:
+        return datetime(
+            year, month, day, tzinfo=timezone.utc).timestamp()
+
+    evidence_common = {
+        "confidence": .9,
+        "source": "manual household mortgage record",
+        "lineage": (
+            "Synthetic RFC-007 proof data supplied in the approved "
+            "Mortgage Freedom implementation brief"),
+        "actor": "synthetic_demo",
+    }
+
+    def mortgage_evidence(
+        field: str, value, effective_at: float,
+        unit_or_currency: str | None = None, lineage: str | None = None,
+        source: str | None = None,
+    ) -> None:
+        record_mortgage_evidence(
+            log, hh.mortgage_id, field, value, effective_at,
+            **{
+                **evidence_common,
+                **({"lineage": lineage} if lineage is not None else {}),
+                **({"source": source} if source is not None else {}),
+            },
+            unit_or_currency=unit_or_currency)
+
+    mortgage_evidence(
+        "property_role", "primary_residence", as_of)
+    mortgage_evidence(
+        "purchase_price", 450_000.0, utc(2025, 5, 1), "GBP",
+        "Purchase month supplied as May 2025; day not supplied, so "
+        "month start represents date precision")
+    mortgage_evidence(
+        "purchase_date", utc(2025, 5, 1), as_of,
+        lineage="Purchase month supplied as May 2025; day not supplied")
+    mortgage_evidence(
+        "property_valuation", 436_638.42, utc(2025, 3, 31), "GBP",
+        "HPI dated valuation reference for March 2025; month end "
+        "represents the supplied month precision",
+        source="HPI")
+    mortgage_evidence("lender", "NatWest", as_of)
+    mortgage_evidence(
+        "original_advance", 310_000.0, utc(2025, 7, 1), "GBP")
+    mortgage_evidence(
+        "mortgage_start", utc(2025, 7, 1), as_of)
+    mortgage_evidence("balance", 242_540.09, as_of, "GBP")
+    mortgage_evidence(
+        "repayment_type", "capital_repayment", as_of)
+    mortgage_evidence("interest_type", "fixed", as_of)
+    mortgage_evidence("interest_rate", .0433, as_of)
+    mortgage_evidence(
+        "monthly_payment", 1_701.47, as_of, "GBP")
+    mortgage_evidence("payment_day", 1.0, as_of)
+    mortgage_evidence(
+        "original_term_months", 300.0, utc(2025, 7, 1),
+        lineage="Original mortgage term supplied as 25 years")
+    mortgage_evidence("remaining_term_months", 201.0, as_of)
+    mortgage_evidence(
+        "fixed_rate_expiry", utc(2027, 7, 31), as_of)
+    for _ in range(2):
+        mortgage_evidence(
+            "recorded_overpayment", 30_000.0, as_of, "GBP",
+            "Two £30,000 overpayments supplied without occurrence dates; "
+            "recorded as known at assessment time")
+    mortgage_evidence("reported_ltv", .56, as_of)
+
+    mortgage_assumptions = fin.declare_assumption_set(
+        log, "Mortgage Freedom rate sensitivities", "v1", {
+            "low_post_fix_rate": .0333,
+            "base_post_fix_rate": .0433,
+            "high_post_fix_rate": .0533,
+            "forecast_horizon_months": 480.0,
+            "balance_stale_after_days": 120.0,
+            "valuation_stale_after_days": 365.0,
+            "liquidity_floor_months": 12.0,
+        })
+    fin.declare_scenario(
+        log, "Test a £250 monthly mortgage overpayment",
+        mortgage_assumptions.id,
+        {"monthly_mortgage_overpayment": 250.0},
+        action_type="increase_mortgage_payment",
+        action_label="Add mortgage overpayment",
+        unit_or_currency="GBP",
+        cadence="month")
+    declare_mission(
+        log, "Mortgage free ahead of the original contractual term",
+        target_metric=MORTGAGE_TARGET_METRIC,
+        target_value=0.0,
+        target_date=utc(2050, 7, 1),
+        assessment_policy_id=MORTGAGE_POLICY_ID,
+        assumption_set_id=mortgage_assumptions.id,
     )
 
     _, claim_id = derive_claim_directly(

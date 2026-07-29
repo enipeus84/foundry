@@ -603,7 +603,8 @@ class FinancialIndependenceAssessor:
                     cadence=scenario.cadence,
                     adjustment_key="monthly_contribution_delta",
                     limitations=(
-                        "structured Scenario presentation metadata is incomplete",
+                        "Declared recommendation presentation details "
+                        "are incomplete",
                     ),
                     assumption_references=tuple(
                         [*assumption_set.provenance, *scenario.provenance]),

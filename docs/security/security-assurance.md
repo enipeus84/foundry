@@ -210,6 +210,43 @@ read-only application.
 signature system. Scope validation is not household/member authorisation;
 multi-user ownership and object-level permission policy remain absent.
 
+## Manual mortgage evidence
+
+**Objective.** Preserve the basis of Mortgage Freedom observations and prevent
+malformed or cross-household evidence from becoming rendered mission state.
+
+**Current implementation.** Finance records governed manual mortgage fields
+with obligation id, value, optional unit, effective date, asserted confidence,
+source and lineage. The projection rejects unsupported or malformed envelopes
+into an invalid-event list. Assessment requires one active household mortgage
+whose borrowers and secured-property owners are active household members.
+Missing, future-only, hostile or cross-scope evidence fails closed. Stale
+balance/property evidence remains visible as stale and lowers Mission
+Confidence independently of trajectory and margin. The demonstration evidence
+keeps the £450,000 purchase price separate from the £436,638.42 HPI dated
+valuation reference for March 2025; the reference is neither a live nor a
+current valuation. The original 300-month term is governed evidence and must
+match the Mission destination exactly; missing, fractional, subtly shifted or
+otherwise conflicting values fail closed. The current 201-month term cannot
+replace the original contractual destination. Optional schedule presentation
+metadata is validated again at the provider boundary; non-finite or unpaired
+values and calendar-unrepresentable timestamps isolate that provider to an
+unavailable assessment. Provider-controlled current-value units are escaped at
+every shared SVG insertion point.
+
+**Evidence.** `src/foundry/finance/mortgage_evidence.py`,
+`src/foundry/finance/mortgage_assessment.py`,
+`tests/test_mortgage_evidence.py`,
+`tests/test_mortgage_assessment.py`, and Mortgage generic-route/isolation cases
+in `tests/test_mission_control.py`.
+
+**Maturity.** Beta for the explicit synthetic/manual proof-data scope.
+
+**Missing or future control.** Source, lineage, actor and confidence are
+assertions rather than authenticated attestations. There is no lender or
+valuation connector, multi-mortgage policy, object-level authorisation,
+automatic correction/supersession workflow or temporal-precision type.
+
 ## Operational logging
 
 **Objective.** Support diagnosis without copying household content,

@@ -140,9 +140,13 @@ def test_mission_status_is_evaluable(household_log):
     households = [p for p in core_entities.parties.values() if p.party_type == "household"]
     scope = Subject("party", households[0].id)
     missions = [m for m in core_entities.missions.values() if m.status == "active"]
-    assert len(missions) == 1
+    assert len(missions) == 2
+    fi_mission = next(
+        mission for mission in missions
+        if mission.target_metric == "finance.accessible_assets")
 
-    rag, result = get_mission_status(missions[0].id, core_entities, registry, scope, as_of)
+    rag, result = get_mission_status(
+        fi_mission.id, core_entities, registry, scope, as_of)
     assert rag is not None
     assert result.status in ("available", "stale")
 
@@ -209,7 +213,8 @@ def test_mission_control_renders_the_seeded_dataset_with_no_unsupported_cards(tm
     seed.build(log)
     r = _client().get("/")
     assert r.status_code == 200
-    assert "Coast FIRE by 2038" in r.text
+    assert "Financial Independence" in r.text
+    assert "Mortgage Freedom" in r.text
     assert "UNSUPPORTED" not in r.text
     assert r.text.count("£") >= 2  # net worth + cash available, at minimum
 
