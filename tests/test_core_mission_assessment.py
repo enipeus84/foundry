@@ -12,7 +12,7 @@ from foundry.core.mission_assessment import (
     DeltaV, ForecastPoint, MissionAssessment, MissionAssessmentRegistry,
     MissionAssessmentRequest, MissionConfidence, MissionDefinition,
     MissionMargin, MissionMilestone, MissionPhaseAssessment,
-    RecommendationAssessment, TrajectoryPoint,
+    InstrumentApplicability, RecommendationAssessment, TrajectoryPoint,
 )
 from foundry.core.scope import Subject
 from foundry.errors import DuplicateMissionAssessmentError
@@ -29,7 +29,13 @@ class _Provider:
         return MissionAssessment(
             mission_id=request.mission_id, policy_id=request.policy_id,
             scope=request.scope, as_of=request.as_of, status="green",
-            calculation_version="test-v1")
+            calculation_version="test-v1",
+            eta=request.as_of + 1.0,
+            delta_v=DeltaV(1.0, 1, "test schedule change"),
+            trajectory=(TrajectoryPoint(request.as_of, 1.0),),
+            forecast=(
+                ForecastPoint(request.as_of, 1.0, 1.0, 1.0),
+            ))
 
 
 def _request(policy_id="alpha.mission.v1"):
@@ -373,6 +379,12 @@ def test_definition_direction_is_authoritative_for_provider_milestones():
                 calculation_version="test-v1",
                 current_milestone=milestone,
                 milestones=(milestone,),
+                eta=request.as_of + 1.0,
+                delta_v=DeltaV(1.0, 1, "test schedule change"),
+                trajectory=(TrajectoryPoint(request.as_of, 50.0),),
+                forecast=(
+                    ForecastPoint(request.as_of, 50.0, 50.0, 50.0),
+                ),
             )
 
     definition = MissionDefinition(
@@ -505,3 +517,136 @@ def test_delta_v_reference_schedule_metadata_is_explicit_and_paired():
             reference_destination_at=1e300,
             reference_destination_label="REFERENCE DESTINATION",
         )
+
+
+def test_instrument_applicability_is_closed_and_defaults_to_applicable():
+    applicability = InstrumentApplicability()
+    assert (
+        applicability.eta,
+        applicability.delta_v,
+        applicability.trajectory,
+        applicability.forecast,
+    ) == ("applicable",) * 4
+
+    with pytest.raises(ValueError, match="unsupported eta applicability"):
+        InstrumentApplicability(eta="sometimes")
+
+
+@pytest.mark.parametrize(
+    "applicability,overrides",
+    [
+        (InstrumentApplicability(eta="applicable"), {"eta": None}),
+        (
+            InstrumentApplicability(delta_v="not_applicable"),
+            {"delta_v": DeltaV(1.0, 1, "must be absent")},
+        ),
+        (
+            InstrumentApplicability(trajectory="unavailable"),
+            {"trajectory": (TrajectoryPoint(1.0, 1.0),)},
+        ),
+    ],
+)
+def test_applicability_and_instrument_presence_must_be_consistent(
+    applicability, overrides
+):
+    class Provider(_Provider):
+        def assess(self, request):
+            values = {
+                "mission_id": request.mission_id,
+                "policy_id": request.policy_id,
+                "scope": request.scope,
+                "as_of": request.as_of,
+                "status": "green",
+                "calculation_version": "test-v1",
+                "eta": request.as_of + 1.0,
+                "delta_v": DeltaV(1.0, 1, "test schedule change"),
+                "trajectory": (TrajectoryPoint(request.as_of, 1.0),),
+                "forecast": (
+                    ForecastPoint(request.as_of, 1.0, 1.0, 1.0),
+                ),
+                "applicability": applicability,
+            }
+            values.update(overrides)
+            return MissionAssessment(**values)
+
+    registry = MissionAssessmentRegistry()
+    registry.register(Provider())
+    result = registry.dispatch(_request())
+
+    assert result.status == "unavailable"
+    assert result.limitations == ("assessment provider failed safely",)
+
+
+def test_unavailable_instrument_may_use_renderer_fallback_explanation():
+    class Provider(_Provider):
+        def assess(self, request):
+            return MissionAssessment(
+                mission_id=request.mission_id,
+                policy_id=request.policy_id,
+                scope=request.scope,
+                as_of=request.as_of,
+                status="green",
+                calculation_version="test-v1",
+                eta=request.as_of + 1.0,
+                delta_v=DeltaV(1.0, 1, "test schedule change"),
+                trajectory=(),
+                forecast=(
+                    ForecastPoint(request.as_of, 1.0, 1.0, 1.0),
+                ),
+                applicability=InstrumentApplicability(
+                    trajectory="unavailable"),
+            )
+
+    registry = MissionAssessmentRegistry()
+    registry.register(Provider())
+    result = registry.dispatch(_request())
+
+    assert result.status == "green"
+    assert result.limitations == ()
+
+
+def test_fail_closed_assessment_declares_its_empty_instruments_unavailable():
+    registry = MissionAssessmentRegistry()
+    registry.register(_Provider())
+    request = _request(policy_id="missing.policy.v1")
+
+    result = registry.dispatch(request)
+
+    assert result.status == "unavailable"
+    assert result.applicability == InstrumentApplicability(
+        eta="unavailable",
+        delta_v="unavailable",
+        trajectory="unavailable",
+        forecast="unavailable",
+    )
+    assert result.eta is None
+    assert result.delta_v is None
+    assert result.trajectory == ()
+    assert result.forecast == ()
+
+
+def test_applicability_metadata_does_not_mutate_assessment_state():
+    from dataclasses import replace
+
+    request = _request()
+    original = _Provider().assess(request)
+    changed = replace(
+        original,
+        eta=None,
+        delta_v=None,
+        trajectory=(),
+        forecast=(),
+        applicability=InstrumentApplicability(
+            eta="not_applicable",
+            delta_v="not_applicable",
+            trajectory="not_applicable",
+            forecast="not_applicable",
+        ),
+    )
+
+    presentation_fields = {
+        "eta", "delta_v", "trajectory", "forecast", "applicability",
+    }
+    for field in original.__dataclass_fields__:
+        if field not in presentation_fields:
+            assert getattr(changed, field) == getattr(original, field)

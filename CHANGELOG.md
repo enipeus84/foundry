@@ -1,5 +1,43 @@
 # Changelog
 
+## [v1.6.0-financial-resilience] — 2026-07-29
+
+RFC-008 adds Financial Resilience as the third live Mission Assessment and
+completes the domain-neutral applicability amendment checkpointed separately
+in Phase 1.
+
+### Added
+
+- A steady-state Financial Resilience assessment over the existing liquidity
+  runway metric, with Exposed, Fragile, Buffered, Secure and Fortified reserve
+  bands; only the eighteen-month Fortified destination completes the mission.
+- Four Finance metrics publishing the existing essential-outflow basis,
+  eighteen-month reserve target, signed reserve gap and conservative
+  deployable-surplus stock.
+- Attributed manual resilience evidence for income sources, outflow
+  cross-checks and explicitly dated near-term commitments, with strict append
+  validation and tolerant deterministic replay.
+- Worst-factor margin, Supported confidence cap, deterministic non-probability
+  stress telemetry, reversible completion and a mission-local reserve
+  recommendation that omits Delta-v.
+
+### Changed
+
+- Mission instruments now declare applicability explicitly. Financial
+  Resilience omits ETA, Delta-v and forecast and explains unavailable
+  trajectory without mission-name branching or missing-value inference.
+- Legitimately absent FI and Mortgage ETAs declare that instrument unavailable
+  without discarding the rest of the assessment.
+- Mortgage Freedom's low-liquidity recommendation now exposes the observed
+  runway and its human-labelled declared floor using the approved RFC-008 D7
+  wording.
+- Package and health metadata now report version 1.6.0.
+
+### Verification
+
+- Full suite: 529 passed.
+- Architecture and Security Gates: APPROVE; no Critical or High findings.
+
 ## [v1.5.1-information-honesty] — 2026-07-20
 
 RFC-004B: the Flight Deck's final presentation review. Three places

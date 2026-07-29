@@ -53,6 +53,7 @@ PREFIX = "finance"
 _ADJUSTMENT_CADENCE = {
     "monthly_contribution_delta": "month",
     "monthly_mortgage_overpayment": "month",
+    "monthly_reserve_contribution": "month",
 }
 
 

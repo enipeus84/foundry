@@ -19,6 +19,7 @@ from foundry.core.metrics import MetricRegistry, MetricRequest, MetricResult
 from foundry.core.mission_assessment import (
     DeltaV,
     ForecastPoint,
+    InstrumentApplicability,
     MissionAssessment,
     MissionAssessmentRequest,
     MissionConfidence,
@@ -584,8 +585,12 @@ class MortgageFreedomAssessor:
                 "recommendation is made.")
         elif runway_value < inputs.liquidity_floor_months:
             limitations.append(
-                "Financial Resilience takes precedence: liquidity runway "
-                "is below the declared recommendation floor.")
+                f"Overpayment is not recommended because current liquidity "
+                f"runway is {runway_value:.1f} months, below Mortgage "
+                f"Freedom's declared "
+                f"{inputs.liquidity_floor_months:g}-month recommendation "
+                "floor. Preserve emergency liquidity before deploying "
+                "additional capital.")
         elif runway.limitations:
             limitations.extend(
                 f"Liquidity runway: {note}" for note in runway.limitations)
@@ -607,6 +612,13 @@ class MortgageFreedomAssessor:
             current_value=current,
             mission_complete=complete,
             eta=projected.payoff_base,
+            applicability=InstrumentApplicability(
+                eta=(
+                    "applicable"
+                    if projected.payoff_base is not None
+                    else "unavailable"
+                ),
+            ),
             trajectory_state=trajectory_state,
             trajectory_tone=tone,
             confidence=confidence,

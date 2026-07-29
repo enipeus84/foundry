@@ -26,15 +26,14 @@ undocumented elsewhere.
 | RFC-006 | Mission Assessment Framework | Merged | — | [`rfc-006-mission-assessment-framework.md`](../rfc-006-mission-assessment-framework.md) | [`rfc-006-mission-assessment-framework-implementation-report.md`](../rfc-006-mission-assessment-framework-implementation-report.md) | [`rfc-006-technical-debt.md`](../rfc-006-technical-debt.md) | [#16](https://github.com/enipeus84/foundry/pull/16) | No release |
 | RFC-007 | Mortgage Freedom Mission | Merged | — | [`rfc-007-mortgage-freedom-architecture.md`](../rfc-007-mortgage-freedom-architecture.md) | [`rfc-007-mortgage-freedom-implementation-report.md`](../rfc-007-mortgage-freedom-implementation-report.md) | [`rfc-007-technical-debt.md`](../rfc-007-technical-debt.md) | [#17](https://github.com/enipeus84/foundry/pull/17) | No release |
 
-## Approved, not yet implemented
+## Implemented, not yet merged
 
-Architecture approved and governed, with no source code, tests or framework
-changes in the repository. These RFCs are not in the table above because
-nothing has shipped for them.
+These RFCs have governed implementations on their named branches but have not
+shipped. They remain outside the merged table until a pull request lands.
 
 | RFC | Title | Status | Architecture / decision doc | Implementation report(s) | Technical debt | PR | Tag / release |
 |---|---|---|---|---|---|---|---|
-| RFC-008 | Financial Resilience Mission | **Approved — not implemented** | [`rfc-008-financial-resilience-architecture.md`](../rfc-008-financial-resilience-architecture.md) | *Not written — not implemented* | Recorded inside the architecture document; a dedicated register is written at implementation time | — | — |
+| RFC-008 | Financial Resilience Mission | **Implemented on branch — not merged** | [`rfc-008-financial-resilience-architecture.md`](../rfc-008-financial-resilience-architecture.md) | [`rfc-008-financial-resilience-implementation-report.md`](../rfc-008-financial-resilience-implementation-report.md) | [`rfc-008-technical-debt.md`](../rfc-008-technical-debt.md) | — | `1.6.0` metadata on branch; no tag |
 
 ## Pre-RFC infrastructure
 

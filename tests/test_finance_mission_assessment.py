@@ -6,7 +6,10 @@ import pytest
 
 from foundry.core.entities import EntityProjection, declare_party, join_household
 from foundry.core.metrics import MetricRegistry, MetricRequest
-from foundry.core.mission_assessment import MissionAssessmentRequest
+from foundry.core.mission_assessment import (
+    MissionAssessmentRegistry,
+    MissionAssessmentRequest,
+)
 from foundry.core.scope import Subject
 from foundry.demo_data import build
 from foundry.eventlog import EventLog
@@ -15,7 +18,8 @@ from foundry.finance.entities import FinanceEntityProjection
 from foundry.finance.metrics import FinanceMetricProvider
 from foundry.finance.mission_assessment import (
     FinanceProjectionEngine, FinancialIndependenceAssessor,
-    FinancialIndependencePolicy, ProjectionInputs, DAY, MONTH, MONTH_DAYS, YEAR,
+    FinancialIndependencePolicy, ProjectionInputs, DAY, MONTH, MONTH_DAYS,
+    POLICY_ID, YEAR,
 )
 
 
@@ -28,6 +32,18 @@ def _registry(log):
     registry = MetricRegistry()
     registry.register(FinanceMetricProvider(finance, core))
     return core, finance, registry
+
+
+def _fi_mission(core):
+    return next(
+        mission for mission in core.missions.values()
+        if mission.assessment_policy_id == POLICY_ID)
+
+
+def _fi_scenario(finance):
+    return next(
+        scenario for scenario in finance.scenarios.values()
+        if "monthly_contribution_delta" in scenario.adjustments)
 
 
 @pytest.mark.parametrize("value,phase", [
@@ -273,9 +289,7 @@ def _assessment_with_replacement_scenario(path, amount, *,
     log = EventLog(path)
     household = build(log, as_of=NOW)
     initial = FinanceEntityProjection(log)
-    original = next(
-        scenario for scenario in initial.scenarios.values()
-        if scenario.status == "active")
+    original = _fi_scenario(initial)
     fin.archive_scenario(log, original.id, "test replacement")
     presentation = {}
     if structured:
@@ -290,7 +304,7 @@ def _assessment_with_replacement_scenario(path, amount, *,
         {"monthly_contribution_delta": amount}, **presentation)
 
     core, finance, registry = _registry(log)
-    mission = next(iter(core.missions.values()))
+    mission = _fi_mission(core)
     as_of = max(event["ts"] for event in log.events())
     return FinancialIndependenceAssessor(
         finance, core, registry).assess(MissionAssessmentRequest(
@@ -358,11 +372,11 @@ def test_malformed_structured_adjustment_fails_honestly(tmp_path):
     household = build(log, as_of=NOW)
     core = EntityProjection(log)
     finance = FinanceEntityProjection(log)
-    scenario = next(iter(finance.scenarios.values()))
+    scenario = _fi_scenario(finance)
     scenario.adjustments["monthly_contribution_delta"] = "not-a-number"
     registry = MetricRegistry()
     registry.register(FinanceMetricProvider(finance, core))
-    mission = next(iter(core.missions.values()))
+    mission = _fi_mission(core)
     result = FinancialIndependenceAssessor(
         finance, core, registry).assess(MissionAssessmentRequest(
             mission.id, mission.assessment_policy_id,
@@ -373,6 +387,36 @@ def test_malformed_structured_adjustment_fails_honestly(tmp_path):
     assert recommendation.amount is None
     assert recommendation.estimated_delta_v_days is None
     assert "adjustment is invalid" in recommendation.limitations[0]
+
+
+def test_absent_eta_survives_registry_validation_with_provenance(tmp_path):
+    log = EventLog(tmp_path / "events.jsonl")
+    household = build(log, as_of=NOW)
+    core, finance, metrics = _registry(log)
+    mission = _fi_mission(core)
+    finance.assumption_sets[
+        mission.assumption_set_id
+    ].assumptions["horizon_years"] = 1.0
+    assessor = FinancialIndependenceAssessor(finance, core, metrics)
+    registry = MissionAssessmentRegistry()
+    registry.register(assessor)
+    request = MissionAssessmentRequest(
+        mission.id,
+        mission.assessment_policy_id,
+        Subject("party", household.household_id),
+        NOW,
+    )
+
+    result = registry.dispatch(request)
+
+    assert result.status != "unavailable"
+    assert result.eta is None
+    assert result.applicability.eta == "unavailable"
+    assert result.current_value is not None
+    assert result.milestones
+    assert result.telemetry
+    assert result.input_references
+    assert "assessment provider failed safely" not in result.limitations
 
 
 @pytest.mark.parametrize("complete,low_offset,base_offset,expected", [
@@ -432,7 +476,7 @@ def test_full_financial_independence_assessment_is_read_only(tmp_path):
     log = EventLog(path)
     household = build(log, as_of=NOW)
     core, finance, registry = _registry(log)
-    mission = next(iter(core.missions.values()))
+    mission = _fi_mission(core)
     as_of = max(event["ts"] for event in log.events())
     before = path.read_bytes()
 
@@ -503,7 +547,7 @@ def test_stale_and_absent_current_evidence_are_not_treated_as_supported(
     log = EventLog(tmp_path / f"{evidence_status}.jsonl")
     household = build(log, as_of=NOW)
     core, finance, registry = _registry(log)
-    mission = next(iter(core.missions.values()))
+    mission = _fi_mission(core)
     as_of = max(event["ts"] for event in log.events())
 
     result = FinancialIndependenceAssessor(

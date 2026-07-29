@@ -4,6 +4,9 @@ from foundry.core.mission_assessment import MissionAssessmentRegistry
 from foundry.finance.mission_assessment import POLICY_ID
 from foundry.finance.mortgage_assessment import POLICY_ID as MORTGAGE_POLICY_ID
 from foundry.finance.missions import register_finance_mission_definitions
+from foundry.finance.resilience_assessment import (
+    POLICY_ID as RESILIENCE_POLICY_ID,
+)
 
 
 def _registry():
@@ -37,7 +40,15 @@ def test_only_implemented_missions_declare_assessment_policies():
         definition.label
         for definition in definitions
         if definition.assessment_policy_id is not None
-    ] == ["Financial Independence", "Mortgage Freedom"]
+    ] == [
+        "Financial Resilience",
+        "Financial Independence",
+        "Mortgage Freedom",
+    ]
+    assert (
+        _registry().definition_for_policy(RESILIENCE_POLICY_ID).slug
+        == "financial-resilience"
+    )
     assert (
         _registry().definition_for_policy(POLICY_ID).slug
         == "financial-independence"

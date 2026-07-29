@@ -138,6 +138,11 @@ TELEMETRY_FORMAT = ClosedVocabulary(
     {"currency", "percent", "months", "number", "plain"},
 )
 
+INSTRUMENT_APPLICABILITY = ClosedVocabulary(
+    "instrument_applicability",
+    {"applicable", "not_applicable", "unavailable"},
+)
+
 # tag_type -> the vocabulary its value must belong to.
 TAG_VALUE_VOCAB: dict[str, ExtensibleVocabulary] = {
     "insight_type": INSIGHT_TYPE,

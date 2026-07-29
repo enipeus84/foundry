@@ -1788,17 +1788,28 @@ def _mission_trajectory_geometry(assessment: MissionAssessment) -> dict:
 
 def _milestone_range_text(milestone) -> str:
     unit = milestone.unit_or_currency
+    format_kind = "months" if unit == "months" else "currency"
     if milestone.upper_bound is None:
-        return f"ABOVE {_format_value(milestone.lower_bound, unit, 'currency')}"
+        return (
+            f"ABOVE "
+            f"{_format_value(milestone.lower_bound, unit, format_kind)}")
     if milestone.lower_bound <= 0:
-        return f"BELOW {_format_value(milestone.upper_bound, unit, 'currency')}"
+        return (
+            f"BELOW "
+            f"{_format_value(milestone.upper_bound, unit, format_kind)}")
     return (
-        f"{_format_value(milestone.lower_bound, unit, 'currency')} – "
-        f"{_format_value(milestone.upper_bound, unit, 'currency')}"
+        f"{_format_value(milestone.lower_bound, unit, format_kind)} – "
+        f"{_format_value(milestone.upper_bound, unit, format_kind)}"
     )
 
 
 def _mission_trajectory_svg(assessment: MissionAssessment) -> str:
+    if assessment.applicability.trajectory == "not_applicable":
+        return ""
+    if assessment.applicability.trajectory == "unavailable":
+        return (
+            '<p class="empty">Trajectory unavailable. '
+            'Trajectory history is not available for this mission.</p>')
     geometry = _mission_trajectory_geometry(assessment)
     if not geometry["actual_path"] and not geometry["forecast_path"]:
         return '<p class="empty">Trajectory unavailable.</p>'
@@ -2081,21 +2092,39 @@ def mission_detail(request: Request, slug: str):
         recommendation_impact = _format_month_delta(
             recommendation.estimated_delta_v_months,
             recommendation.delta_v_direction)
-        recommendation_lineage = (
-            f"Declared scenario with "
-            f"{len(recommendation.assumption_references)} "
-            "assumption reference(s)")
-        raw_impact = (
-            f"{recommendation.estimated_delta_v_days:.1f} days"
-            if recommendation.estimated_delta_v_days is not None
-            else "not available")
-        recommendation_detail = (
-            f"<li>Evidence basis: {html.escape(recommendation_lineage)}.</li>"
-            f"<li>Declared action: {html.escape(recommendation.action)}</li>"
-            f"<li>Modelled adjustment: {html.escape(amount)} per "
-            f"{html.escape(recommendation.cadence or 'declared cadence')}.</li>"
-            f"<li>Modelled ETA change: {html.escape(raw_impact)}; "
-            f"displayed at month resolution.</li>")
+        if assessment.applicability.delta_v == "not_applicable":
+            recommendation_lineage = (
+                f"Declared scenario with "
+                f"{len(recommendation.assumption_references)} "
+                "assumption reference(s) and "
+                f"{len(recommendation.evidence_references)} "
+                "evidence reference(s)")
+            recommendation_detail = (
+                f"<li>Evidence basis: "
+                f"{html.escape(recommendation_lineage)}.</li>"
+                f"<li>Declared action and constraint: "
+                f"{html.escape(recommendation.action)}</li>"
+                f"<li>Declared adjustment: {html.escape(amount)} per "
+                f"{html.escape(recommendation.cadence or 'declared cadence')}."
+                "</li>")
+        else:
+            recommendation_lineage = (
+                f"Declared scenario with "
+                f"{len(recommendation.assumption_references)} "
+                "assumption reference(s)")
+            raw_impact = (
+                f"{recommendation.estimated_delta_v_days:.1f} days"
+                if recommendation.estimated_delta_v_days is not None
+                else "not available")
+            recommendation_detail = (
+                f"<li>Evidence basis: "
+                f"{html.escape(recommendation_lineage)}.</li>"
+                f"<li>Declared action: "
+                f"{html.escape(recommendation.action)}</li>"
+                f"<li>Modelled adjustment: {html.escape(amount)} per "
+                f"{html.escape(recommendation.cadence or 'declared cadence')}."
+                f"</li><li>Modelled ETA change: {html.escape(raw_impact)}; "
+                f"displayed at month resolution.</li>")
 
     telemetry_cards = []
     for item in assessment.telemetry:
@@ -2160,7 +2189,10 @@ def mission_detail(request: Request, slug: str):
       <p class="v">{html.escape(_month_year(
           delta_v.reference_destination_at))}</p>
       <p class="sub">{html.escape(achieved_delta)}</p></div>
-  </div>""" if has_reference_schedule else ""
+  </div>""" if (
+        has_reference_schedule
+        and assessment.applicability.eta == "applicable"
+    ) else ""
     schedule_summary = (
         f" Expected destination is {_month_year(assessment.eta)}; "
         f"{delta_v.reference_destination_label.lower()} is "
@@ -2168,12 +2200,93 @@ def mission_detail(request: Request, slug: str):
         f"{achieved_delta}."
         if has_reference_schedule else
         f" Expected destination is {_month_year(assessment.eta)}."
-    )
+    ) if assessment.applicability.eta == "applicable" else (
+        " Expected destination is not available."
+        if assessment.applicability.eta == "unavailable" else "")
     delta_period = (
         delta_v.period_label
         if delta_v is not None and delta_v.period_label else
         f"LAST {delta_v.lookback_days if delta_v else 0} DAYS"
     )
+    eta_tile = (
+        f"""<div><p class="k">ETA · {html.escape(completion_label)}</p>
+        <p class="v">{html.escape(eta)}</p></div>"""
+        if assessment.applicability.eta == "applicable" else
+        """<div><p class="k">ETA</p>
+        <p class="v">NOT AVAILABLE</p>
+        <p class="sub">An arrival estimate is not available for this mission.</p></div>"""
+        if assessment.applicability.eta == "unavailable" else ""
+    )
+    trajectory_tile = (
+        f"""<div><p class="k">TRAJECTORY</p>
+        <p class="v {trajectory_class}">{html.escape(trajectory_label)}</p></div>"""
+        if assessment.applicability.trajectory == "applicable" else
+        """<div><p class="k">TRAJECTORY</p>
+        <p class="v none">NOT AVAILABLE</p>
+        <p class="sub">Trajectory history is not available for this mission.</p></div>"""
+        if assessment.applicability.trajectory == "unavailable" else ""
+    )
+    delta_instrument = (
+        f"""<div class="instrument"><p class="k">Δv · {html.escape(delta_period)}</p>
+      <p class="v num">{html.escape(delta_value)}</p>
+      <p class="sub">{html.escape(delta_sub)}</p></div>"""
+        if assessment.applicability.delta_v == "applicable" else
+        """<div class="instrument"><p class="k">Δv</p>
+      <p class="v num">NOT AVAILABLE</p>
+      <p class="sub">Schedule change is not available for this mission.</p></div>"""
+        if assessment.applicability.delta_v == "unavailable" else ""
+    )
+    recommendation_delta_instrument = (
+        f"""<div class="instrument"><p class="k">ESTIMATED Δv</p>
+      <p class="v num green">{html.escape(recommendation_impact)}</p>
+      <p class="sub">Month-level model resolution</p></div>"""
+        if assessment.applicability.delta_v != "not_applicable" else ""
+    )
+    if (
+        assessment.applicability.trajectory == "applicable"
+        and assessment.applicability.forecast == "applicable"
+        and assessment.applicability.eta == "applicable"
+    ):
+        accessible_summary = f"""<p class="sr-only" id="trajectory-summary">The solid historical path reaches
+    {html.escape(current_label)} {html.escape(_format_value(
+        assessment.current_value.value,
+        assessment.current_value.unit_or_currency,
+        current_format_kind))}.
+    The dashed expected forecast continues through a widening low to high sensitivity
+    range toward the configured milestones.{html.escape(schedule_summary)}
+    Current milestone is
+    {html.escape(milestone_label)}; trajectory is
+    {html.escape(trajectory_label)}.</p>"""
+    else:
+        summary_clauses = [
+            (
+                f"Current position is {current_label} "
+                f"{_format_value(assessment.current_value.value, assessment.current_value.unit_or_currency, current_format_kind)}."
+            ),
+            f"Current milestone is {milestone_label}.",
+        ]
+        if assessment.applicability.trajectory == "applicable":
+            summary_clauses.append(
+                f"Historical trajectory is {trajectory_label}.")
+        elif assessment.applicability.trajectory == "unavailable":
+            summary_clauses.append(
+                "Trajectory history is not available for this mission.")
+        if assessment.applicability.forecast == "applicable":
+            summary_clauses.append(
+                "An expected low to high sensitivity forecast is shown.")
+        elif assessment.applicability.forecast == "unavailable":
+            summary_clauses.append(
+                "Forecast evidence is not available for this mission.")
+        if assessment.applicability.eta == "applicable":
+            summary_clauses.append(
+                f"Expected destination is {_month_year(assessment.eta)}.")
+        elif assessment.applicability.eta == "unavailable":
+            summary_clauses.append(
+                "An arrival estimate is not available for this mission.")
+        accessible_summary = (
+            '<p class="sr-only" id="trajectory-summary">'
+            + html.escape(" ".join(summary_clauses))
+            + "</p>")
     body = f"""<section class="hero mission-detail-hero phase-{_sun_phase(as_of)}"
   aria-labelledby="mission-title" aria-describedby="trajectory-summary">
   <img class="earthrise" src="{_EARTHRISE_PATH}"
@@ -2188,42 +2301,27 @@ def mission_detail(request: Request, slug: str):
     <p class="mission-definition">{html.escape(definition.definition)}</p>
     <div class="mission-hero-meta">
       <div><p class="k">CURRENT MILESTONE</p><p class="v">{html.escape(milestone_label)}</p></div>
-      <div><p class="k">TRAJECTORY</p>
-        <p class="v {trajectory_class}">{html.escape(trajectory_label)}</p></div>
-      <div><p class="k">ETA · {html.escape(completion_label)}</p>
-        <p class="v">{html.escape(eta)}</p></div>
+      {trajectory_tile}
+      {eta_tile}
       <div class="margin-stat"><p class="k">MISSION MARGIN</p>
         <p class="v num">{html.escape(margin_value)}</p>
         <p class="sub">{html.escape(margin_sub)}</p></div>
     </div>
   </div>
   {timeline_lane}
-  <p class="sr-only" id="trajectory-summary">The solid historical path reaches
-    {html.escape(current_label)} {html.escape(_format_value(
-        assessment.current_value.value,
-        assessment.current_value.unit_or_currency,
-        current_format_kind))}.
-    The dashed expected forecast continues through a widening low to high sensitivity
-    range toward the configured milestones.{html.escape(schedule_summary)}
-    Current milestone is
-    {html.escape(milestone_label)}; trajectory is
-    {html.escape(trajectory_label)}.</p>
+  {accessible_summary}
 </section>
 <section aria-labelledby="analysis-heading">
   <h2 id="analysis-heading">FLIGHT ANALYSIS</h2>
   <div class="analysis-rail">
-    <div class="instrument"><p class="k">Δv · {html.escape(delta_period)}</p>
-      <p class="v num">{html.escape(delta_value)}</p>
-      <p class="sub">{html.escape(delta_sub)}</p></div>
+    {delta_instrument}
     <div class="instrument"><p class="k">MILESTONE COMPLETION</p>
       <p class="v num">{milestone_completion:.1f}%</p>
       <p class="sub">{html.escape(milestone_label)}</p></div>
     <div class="instrument recommendation-action"><p class="k">NEXT BURN</p>
       <p class="v">{html.escape(recommendation_action)}</p>
       <p class="sub">{html.escape(recommendation_amount)}</p></div>
-    <div class="instrument"><p class="k">ESTIMATED Δv</p>
-      <p class="v num green">{html.escape(recommendation_impact)}</p>
-      <p class="sub">Month-level model resolution</p></div>
+    {recommendation_delta_instrument}
   </div>
 </section>
 <section>

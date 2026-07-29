@@ -25,6 +25,7 @@ from .metrics import MetricResult
 from .scope import Subject
 from .vocab import (
     DESTINATION_DIRECTION,
+    INSTRUMENT_APPLICABILITY,
     MISSION_CONFIDENCE,
     MISSION_MARGIN,
     MISSION_TRAJECTORY,
@@ -114,6 +115,27 @@ class ForecastPoint:
     low: float
     base: float
     high: float
+
+
+@dataclass(frozen=True)
+class InstrumentApplicability:
+    """Declared meaning and availability of optional mission instruments."""
+
+    eta: str = "applicable"
+    delta_v: str = "applicable"
+    trajectory: str = "applicable"
+    forecast: str = "applicable"
+
+    def __post_init__(self) -> None:
+        for field, value in (
+            ("eta", self.eta),
+            ("delta_v", self.delta_v),
+            ("trajectory", self.trajectory),
+            ("forecast", self.forecast),
+        ):
+            _require_text(value, f"{field} applicability")
+            if value not in INSTRUMENT_APPLICABILITY:
+                raise ValueError(f"unsupported {field} applicability")
 
 
 @dataclass(frozen=True)
@@ -343,6 +365,7 @@ class MissionAssessment:
     limitations: tuple[str, ...] = ()
     confidence_basis: str = ""
     forecast_resolution: str = "month"
+    applicability: InstrumentApplicability = InstrumentApplicability()
     # Backward-compatible V1 field. New renderers use `phases`, which
     # carries complete bounds, unit, order, completion and ETA metadata.
     phase_thresholds: tuple[tuple[str, float], ...] = ()
@@ -365,6 +388,12 @@ class MissionAssessment:
             calculation_version=calculation_version,
             confidence=MissionConfidence("Insufficient", reason),
             limitations=(reason,),
+            applicability=InstrumentApplicability(
+                eta="unavailable",
+                delta_v="unavailable",
+                trajectory="unavailable",
+                forecast="unavailable",
+            ),
         )
 
 
@@ -490,6 +519,8 @@ class MissionAssessmentRegistry:
         if result.mission_margin is not None \
                 and not isinstance(result.mission_margin, MissionMargin):
             raise TypeError("provider returned unsupported mission margin")
+        if not isinstance(result.applicability, InstrumentApplicability):
+            raise TypeError("provider returned unsupported instrument applicability")
 
         for field, values in (
             ("milestones", result.milestones),
@@ -532,6 +563,7 @@ class MissionAssessmentRegistry:
             raise ValueError("milestone ids and orders must be unique")
 
         self._validate_series(result)
+        self._validate_applicability(result)
         if any(not isinstance(item, TelemetryItem) for item in result.telemetry):
             raise TypeError("provider returned unsupported telemetry")
         metric_results = tuple(item.result for item in result.telemetry)
@@ -557,6 +589,34 @@ class MissionAssessmentRegistry:
             allow_empty=True,
         )
         _require_text(result.forecast_resolution, "forecast resolution")
+
+    @staticmethod
+    def _validate_applicability(result: MissionAssessment) -> None:
+        instruments = (
+            ("eta", result.applicability.eta, result.eta is not None),
+            (
+                "delta-v",
+                result.applicability.delta_v,
+                result.delta_v is not None,
+            ),
+            (
+                "trajectory",
+                result.applicability.trajectory,
+                len(result.trajectory) > 0,
+            ),
+            (
+                "forecast",
+                result.applicability.forecast,
+                len(result.forecast) > 0,
+            ),
+        )
+        for name, applicability, present in instruments:
+            if applicability == "applicable" and not present:
+                raise ValueError(
+                    f"applicable {name} instrument must be present")
+            if applicability in ("not_applicable", "unavailable") and present:
+                raise ValueError(
+                    f"{applicability} {name} instrument must be absent")
 
     @staticmethod
     def _validate_series(result: MissionAssessment) -> None:

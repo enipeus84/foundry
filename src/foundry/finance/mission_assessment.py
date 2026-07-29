@@ -17,8 +17,8 @@ import math
 from foundry.core.entities import EntityProjection
 from foundry.core.metrics import MetricRegistry, MetricRequest, MetricResult
 from foundry.core.mission_assessment import (
-    DeltaV, ForecastPoint, MissionAssessment, MissionAssessmentRequest,
-    MissionConfidence, MissionMargin, MissionMilestone,
+    DeltaV, ForecastPoint, InstrumentApplicability, MissionAssessment,
+    MissionAssessmentRequest, MissionConfidence, MissionMargin, MissionMilestone,
     RecommendationAssessment, TelemetryItem, TrajectoryPoint,
 )
 
@@ -356,6 +356,13 @@ class FinancialIndependenceAssessor:
             scope=request.scope, as_of=request.as_of, status=status,
             calculation_version=CALCULATION_VERSION, current_value=current,
             mission_complete=complete, eta=base_eta,
+            applicability=InstrumentApplicability(
+                eta=(
+                    "applicable"
+                    if base_eta is not None
+                    else "unavailable"
+                ),
+            ),
             trajectory_state=trajectory_state,
             trajectory_tone=trajectory_tone,
             confidence=confidence,
