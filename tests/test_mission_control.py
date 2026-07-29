@@ -621,6 +621,36 @@ def test_mortgage_freedom_route_renders_deterministically(tmp_path):
         c.get("/missions/mortgage-freedom").text
 
 
+def test_shipped_assessors_default_every_instrument_to_applicable(tmp_path):
+    from foundry.core.mission_assessment import (
+        InstrumentApplicability, MissionAssessmentRequest,
+    )
+    from foundry.mission_control import (
+        _active_missions, _as_of, _household_scope,
+    )
+
+    _seed_financial_independence(tmp_path)
+    console = _build_console()
+    scope = _household_scope(console)
+    as_of = _as_of(console)
+    assessed = [
+        console.assessments.dispatch(MissionAssessmentRequest(
+            mission.id,
+            mission.assessment_policy_id,
+            scope,
+            as_of,
+        ))
+        for mission in _active_missions(console)
+        if mission.assessment_policy_id
+    ]
+
+    assert len(assessed) == 2
+    assert all(
+        assessment.applicability == InstrumentApplicability()
+        for assessment in assessed
+    )
+
+
 def test_malformed_mortgage_provider_does_not_degrade_fi(
         monkeypatch, tmp_path):
     from foundry.core.mission_assessment import MissionAssessmentRegistry
@@ -682,6 +712,263 @@ def test_generic_planned_mission_routes_invent_no_policy(
         in response.text
     assert 'class="mission-empty-state"' in response.text
     assert 'class="mission-return" href="/#missions"' in response.text
+
+
+def _render_shape_neutral_mission(monkeypatch, tmp_path, applicability):
+    """Render one Core-only mock provider through the generic detail route."""
+    from foundry.core.entities import declare_party
+    from foundry.core.metrics import MetricResult
+    from foundry.core.mission_assessment import (
+        DeltaV, ForecastPoint, MissionAssessment, MissionAssessmentRegistry,
+        MissionDefinition, MissionMilestone, TrajectoryPoint,
+    )
+
+    policy_id = "domain.shape-neutral.v1"
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("FOUNDRY_DATA_PATH", str(tmp_path / "events.jsonl"))
+    log = EventLog(tmp_path / "events.jsonl")
+    declare_party(log, "household")
+    declare_mission(
+        log,
+        "Shape-neutral mission",
+        assessment_policy_id=policy_id,
+    )
+
+    class ShapeNeutralProvider:
+        def owned_policy_ids(self):
+            return frozenset({policy_id})
+
+        def assess(self, request):
+            milestone = MissionMilestone(
+                "operating", "Operating", 0.0, 10.0, .6,
+                unit_or_currency="months", is_current=True,
+                completes_mission=True, destination_value=10.0,
+            )
+            return MissionAssessment(
+                mission_id=request.mission_id,
+                policy_id=request.policy_id,
+                scope=request.scope,
+                as_of=request.as_of,
+                status="green",
+                calculation_version="shape-neutral-v1",
+                current_value=MetricResult(
+                    "domain.operating_capacity", 6.0, "months",
+                    request.scope, request.as_of, "available",
+                    "shape-neutral-v1",
+                ),
+                trajectory_state="Nominal",
+                trajectory_tone="green",
+                current_milestone=milestone,
+                milestones=(milestone,),
+                eta=(
+                    request.as_of + 2_592_000.0
+                    if applicability.eta == "applicable" else None
+                ),
+                delta_v=(
+                    DeltaV(
+                        30.0, 30, "one month ahead",
+                        months=1, direction="accelerated",
+                    )
+                    if applicability.delta_v == "applicable" else None
+                ),
+                trajectory=(
+                    (
+                        TrajectoryPoint(request.as_of - 1.0, 5.0),
+                        TrajectoryPoint(request.as_of, 6.0),
+                    )
+                    if applicability.trajectory == "applicable" else ()
+                ),
+                forecast=(
+                    (
+                        ForecastPoint(
+                            request.as_of + 1.0, 6.5, 7.0, 7.5),
+                        ForecastPoint(
+                            request.as_of + 2.0, 7.0, 8.0, 9.0),
+                    )
+                    if applicability.forecast == "applicable" else ()
+                ),
+                applicability=applicability,
+            )
+
+    def shape_neutral_console():
+        console = _build_console()
+        assessments = MissionAssessmentRegistry()
+        assessments.register_definition(MissionDefinition(
+            slug="shape-neutral",
+            label="Shape Neutral",
+            order=0,
+            destination_direction="higher_is_better",
+            definition="Maintain an honestly represented operating state.",
+            assessment_policy_id=policy_id,
+        ))
+        assessments.register(ShapeNeutralProvider())
+        console.assessments = assessments
+        return console
+
+    monkeypatch.setattr(app.state, "console_factory", shape_neutral_console)
+    response = client().get("/missions/shape-neutral")
+    assert response.status_code == 200
+    assert "NOT EVALUABLE" not in response.text
+    return response.text
+
+
+def _mission_detail_regions(rendered):
+    hero_start = rendered.index('<section class="hero mission-detail-hero')
+    hero_end = rendered.index("</section>", hero_start)
+    analysis_start = rendered.index(
+        '<section aria-labelledby="analysis-heading">')
+    analysis_end = rendered.index("</section>", analysis_start)
+    summary_start = rendered.index(
+        '<p class="sr-only" id="trajectory-summary">', hero_start)
+    summary_end = rendered.index("</p>", summary_start)
+    return (
+        rendered[hero_start:hero_end],
+        rendered[analysis_start:analysis_end],
+        rendered[summary_start:summary_end],
+    )
+
+
+def test_not_applicable_instruments_are_omitted_visually_and_accessibly(
+        monkeypatch, tmp_path):
+    from foundry.core.mission_assessment import InstrumentApplicability
+
+    rendered = _render_shape_neutral_mission(
+        monkeypatch,
+        tmp_path,
+        InstrumentApplicability(
+            eta="not_applicable",
+            delta_v="not_applicable",
+            trajectory="not_applicable",
+            forecast="not_applicable",
+        ),
+    )
+    hero, analysis, summary = _mission_detail_regions(rendered)
+
+    assert '<p class="k">ETA' not in hero
+    assert '<p class="k">TRAJECTORY</p>' not in hero
+    assert 'class="trajectory-svg hero-trajectory"' not in hero
+    assert "Trajectory unavailable" not in hero
+    assert "NOT IN HORIZON" not in hero
+    assert "Δv" not in analysis
+    assert "solid historical path" not in summary
+    assert "Historical trajectory" not in summary
+    assert "forecast" not in summary.lower()
+    assert "Expected destination" not in summary
+    assert "arrival estimate" not in summary
+
+
+def test_unavailable_instruments_render_deterministic_absence_explanations(
+        monkeypatch, tmp_path):
+    from foundry.core.mission_assessment import InstrumentApplicability
+
+    rendered = _render_shape_neutral_mission(
+        monkeypatch,
+        tmp_path,
+        InstrumentApplicability(
+            eta="unavailable",
+            delta_v="unavailable",
+            trajectory="unavailable",
+            forecast="unavailable",
+        ),
+    )
+    hero, analysis, summary = _mission_detail_regions(rendered)
+
+    assert "Trajectory history is not available for this mission." in hero
+    assert "An arrival estimate is not available for this mission." in hero
+    assert "Schedule change is not available for this mission." in analysis
+    assert "ESTIMATED Δv" in analysis
+    assert "Trajectory history is not available for this mission." in summary
+    assert "Forecast evidence is not available for this mission." in summary
+    assert "An arrival estimate is not available for this mission." in summary
+    assert "solid historical path" not in summary
+    assert "dashed expected forecast" not in summary
+    assert "widening low to high sensitivity range" not in summary
+
+
+def test_unavailable_and_not_applicable_trajectory_render_differently(
+        monkeypatch, tmp_path):
+    from foundry.core.mission_assessment import InstrumentApplicability
+
+    unavailable = _render_shape_neutral_mission(
+        monkeypatch,
+        tmp_path / "unavailable",
+        InstrumentApplicability(
+            eta="not_applicable",
+            delta_v="not_applicable",
+            trajectory="unavailable",
+            forecast="not_applicable",
+        ),
+    )
+    not_applicable = _render_shape_neutral_mission(
+        monkeypatch,
+        tmp_path / "not-applicable",
+        InstrumentApplicability(
+            eta="not_applicable",
+            delta_v="not_applicable",
+            trajectory="not_applicable",
+            forecast="not_applicable",
+        ),
+    )
+
+    unavailable_hero, _, unavailable_summary = _mission_detail_regions(
+        unavailable)
+    omitted_hero, _, omitted_summary = _mission_detail_regions(not_applicable)
+    assert "Trajectory history is not available for this mission." \
+        in unavailable_hero
+    assert "Trajectory history is not available for this mission." \
+        in unavailable_summary
+    assert "Trajectory" not in omitted_hero
+    omitted_summary_text = omitted_summary.split(">", 1)[1]
+    assert "trajectory" not in omitted_summary_text.lower()
+
+
+def test_forecast_prose_follows_declared_applicability(
+        monkeypatch, tmp_path):
+    from foundry.core.mission_assessment import InstrumentApplicability
+
+    rendered = _render_shape_neutral_mission(
+        monkeypatch,
+        tmp_path,
+        InstrumentApplicability(forecast="not_applicable"),
+    )
+    hero, _, summary = _mission_detail_regions(rendered)
+
+    assert 'class="actual-path"' in hero
+    assert 'class="forecast-path"' not in hero
+    assert "forecast" not in summary.lower()
+    assert "solid historical path" not in summary
+    assert "Historical trajectory is NOMINAL." in summary
+
+
+def test_detail_renderer_uses_declared_applicability_not_mission_identity():
+    import inspect
+    import re
+
+    import foundry.mission_control as mission_control
+
+    source = inspect.getsource(mission_control.mission_detail)
+    assert "assessment.applicability.eta" in source
+    assert "assessment.applicability.delta_v" in source
+    assert "assessment.applicability.trajectory" in source
+    assert "assessment.applicability.forecast" in source
+    for instrument in (
+        "eta",
+        "delta_v",
+        "trajectory",
+        "forecast",
+    ):
+        assert re.search(
+            rf"\bif\s+(?:not\s+)?assessment\.{instrument}\b",
+            source,
+        ) is None
+    for identity in (
+        "shape-neutral",
+        "domain.shape-neutral.v1",
+        "Financial Independence",
+        "Mortgage Freedom",
+        "Financial Resilience",
+    ):
+        assert identity not in source
 
 
 def test_unknown_generic_mission_route_fails_safely_without_reflection(tmp_path):
@@ -1248,8 +1535,9 @@ def test_margin_presentation_does_not_reuse_trajectory_status_colour(
         monkeypatch, tmp_path):
     from foundry.core.metrics import MetricResult
     from foundry.core.mission_assessment import (
-        MissionAssessment, MissionAssessmentRegistry, MissionConfidence,
-        MissionMargin, MissionMilestone,
+        DeltaV, ForecastPoint, MissionAssessment,
+        MissionAssessmentRegistry, MissionConfidence, MissionMargin,
+        MissionMilestone, TrajectoryPoint,
     )
     from foundry.finance.mission_assessment import POLICY_ID
     from foundry.finance.missions import register_finance_mission_definitions
@@ -1283,6 +1571,12 @@ def test_margin_presentation_does_not_reuse_trajectory_status_colour(
                     10.0, 10.0, "strong operating buffer", "High Margin"),
                 current_milestone=milestone,
                 milestones=(milestone,),
+                eta=request.as_of + 1.0,
+                delta_v=DeltaV(1.0, 1, "test schedule change"),
+                trajectory=(TrajectoryPoint(request.as_of, 100.0),),
+                forecast=(
+                    ForecastPoint(request.as_of, 100.0, 100.0, 100.0),
+                ),
             )
 
     def independent_console():
