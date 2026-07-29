@@ -6,6 +6,9 @@ RFC-002 established deterministic entities and registered metrics.
 RFC-005 adds Assumption Set, Scenario, the first Financial Projection
 engine, and Financial Independence as the first implementation of
 Core's domain-neutral Mission Assessment contract.
+RFC-007 adds Mortgage Freedom as the second provider and the first
+proof that the RFC-006 seam accepts a new mission without shared UI
+or routing branches.
 
 Finance never redefines a Core concept and never duplicates a Core
 primitive (`000` §3): Party, Employer, Mission, the Decision lifecycle,
@@ -48,10 +51,21 @@ from .missions import (
     FINANCE_MISSION_DEFINITIONS,
     register_finance_mission_definitions,
 )
+from .mortgage_assessment import (
+    MortgageFreedomAssessor,
+    MortgageFreedomPolicy,
+    MortgageProjectionEngine,
+)
+from .mortgage_evidence import (
+    MortgageEvidenceProjection,
+    record_mortgage_evidence,
+)
 
 __all__ = [
     "FinanceEntityProjection", "FinanceMetricProvider",
     "FinanceProjectionEngine", "FinancialIndependenceAssessor",
     "FinancialIndependencePolicy", "FINANCE_MISSION_DEFINITIONS",
-    "register_finance_mission_definitions",
+    "register_finance_mission_definitions", "MortgageFreedomAssessor",
+    "MortgageFreedomPolicy", "MortgageProjectionEngine",
+    "MortgageEvidenceProjection", "record_mortgage_evidence",
 ]

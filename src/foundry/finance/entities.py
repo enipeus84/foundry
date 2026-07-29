@@ -48,9 +48,11 @@ PREFIX = "finance"
 
 
 # Finance owns the meaning of each supported adjustment key. Presentation
-# metadata may describe that meaning, but it cannot redefine it.
+# metadata may describe that meaning, but it cannot redefine it. These keys
+# remain domain data; Mission Control never branches on them.
 _ADJUSTMENT_CADENCE = {
     "monthly_contribution_delta": "month",
+    "monthly_mortgage_overpayment": "month",
 }
 
 

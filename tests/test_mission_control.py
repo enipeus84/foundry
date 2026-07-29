@@ -188,6 +188,7 @@ def test_authentication_still_protects_every_surface(tmp_path):
     for path in ("/", "/metrics/finance.net_worth", "/finance",
                  "/decisions", "/missions",
                  "/missions/financial-independence",
+                 "/missions/mortgage-freedom",
                  "/missions/financial-resilience",
                  "/missions/not-a-definition", "/settings"):
         r = anonymous.get(path)
@@ -540,8 +541,9 @@ def test_financial_independence_home_lane_opens_mission_detail(tmp_path):
     html = client().get("/").text
     assert '<section id="missions">' in html
     assert 'href="/missions/financial-independence"' in html
-    assert "Coast FIRE by 2038" in html
-    assert html.count("Assessment and target are planned.") == 3
+    assert "Financial Independence" in html
+    assert 'href="/missions/mortgage-freedom"' in html
+    assert html.count("Assessment and target are planned.") == 2
 
 
 def test_financial_independence_route_renders_assessment_not_calculations(tmp_path):
@@ -564,10 +566,80 @@ def test_financial_independence_route_renders_assessment_not_calculations(tmp_pa
     assert html.count('src="/static/earthrise.webp"') == 1
 
 
+def test_mortgage_freedom_uses_the_generic_live_mission_route(tmp_path):
+    _seed_financial_independence(tmp_path)
+
+    response = client().get("/missions/mortgage-freedom")
+
+    assert response.status_code == 200
+    html = response.text
+    assert "Mortgage Freedom" in html
+    assert "Mission trajectory" in html
+    assert "REPAYMENT UNDERWAY" in html
+    assert "MORTGAGE BALANCE" in html
+    assert "LOAN TO VALUE" in html
+    assert "REMAINING INTEREST" in html
+    assert "PROJECTED · EXPECTED PATH" in html
+    assert "Add mortgage overpayment" in html
+    assert "projected interest" in html
+    assert "OBSERVATIONS AND PROJECTIONS REMAIN DISTINCT" in html
+    assert "PLANNED" not in html
+    assert "<script>alert" not in html
+
+
+def test_mortgage_freedom_route_renders_deterministically(tmp_path):
+    _seed_financial_independence(tmp_path)
+    c = client()
+
+    assert c.get("/missions/mortgage-freedom").text == \
+        c.get("/missions/mortgage-freedom").text
+
+
+def test_malformed_mortgage_provider_does_not_degrade_fi(
+        monkeypatch, tmp_path):
+    from foundry.core.mission_assessment import MissionAssessmentRegistry
+    from foundry.finance.mission_assessment import (
+        FinancialIndependenceAssessor, POLICY_ID as FI_POLICY_ID)
+    from foundry.finance.missions import register_finance_mission_definitions
+    from foundry.finance.mortgage_assessment import (
+        POLICY_ID as MORTGAGE_POLICY_ID)
+
+    _seed_financial_independence(tmp_path)
+
+    class BrokenMortgageProvider:
+        def owned_policy_ids(self):
+            return frozenset({MORTGAGE_POLICY_ID})
+
+        def assess(self, request):
+            raise ValueError("mortgage-private failure")
+
+    def broken_console():
+        console = _build_console()
+        assessments = MissionAssessmentRegistry()
+        register_finance_mission_definitions(assessments)
+        assessments.register(FinancialIndependenceAssessor(
+            console.registry.provider_for("finance.net_worth").finance,
+            console.entities, console.registry))
+        assessments.register(BrokenMortgageProvider())
+        assert FI_POLICY_ID in assessments.owned_policy_ids()
+        console.assessments = assessments
+        return console
+
+    monkeypatch.setattr(app.state, "console_factory", broken_console)
+
+    failed = client().get("/missions/mortgage-freedom")
+    unaffected = client().get("/missions/financial-independence")
+
+    assert "NOT EVALUABLE" in failed.text
+    assert "assessment provider failed safely" in failed.text
+    assert "mortgage-private failure" not in failed.text
+    assert "Mission trajectory" in unaffected.text
+    assert "NOT EVALUABLE" not in unaffected.text
+
+
 @pytest.mark.parametrize("slug,label", [
     ("financial-resilience", "Financial Resilience"),
     ("pension-independence", "Pension Independence"),
-    ("mortgage-freedom", "Mortgage Freedom"),
 ])
 def test_generic_planned_mission_routes_invent_no_policy(
         tmp_path, slug, label):
@@ -622,7 +694,7 @@ def test_malformed_provider_degrades_only_its_defined_mission(
     monkeypatch.setattr(app.state, "console_factory", broken_console)
 
     failed = client().get("/missions/financial-independence")
-    unaffected = client().get("/missions/mortgage-freedom")
+    unaffected = client().get("/missions/pension-independence")
 
     assert failed.status_code == 200
     assert "NOT EVALUABLE" in failed.text
@@ -672,7 +744,7 @@ def test_malformed_nested_provider_data_cannot_break_shared_rendering(
 
     home = client().get("/")
     failed = client().get("/missions/financial-independence")
-    unaffected = client().get("/missions/mortgage-freedom")
+    unaffected = client().get("/missions/pension-independence")
 
     assert home.status_code == 200
     assert failed.status_code == 200

@@ -1798,7 +1798,7 @@ def _mission_trajectory_svg(assessment: MissionAssessment) -> str:
       preserveAspectRatio="xMidYMid meet">
   <title id="trajectory-title">Mission trajectory</title>
   <desc id="trajectory-description">A solid historical path reaches the current position
-  at {_format_value(current_value, current_unit, "currency")}. A dashed base forecast
+  at {_format_value(current_value, current_unit, "currency")}. A dashed expected forecast
   continues along the mission arc. {html.escape(range_description)}</desc>
   <defs>
     <linearGradient id="mission-range-gradient" x1="0" y1="0" x2="1" y2="0">
@@ -2024,7 +2024,7 @@ def mission_detail(request: Request, slug: str):
   </div>
   <p class="sr-only" id="trajectory-summary">The solid historical path reaches
     {_format_value(assessment.current_value.value, assessment.current_value.unit_or_currency, "currency")}.
-    The dashed base forecast continues through a widening low to high sensitivity
+    The dashed expected forecast continues through a widening low to high sensitivity
     range toward the configured milestones. Current milestone is
     {html.escape(milestone_label)}; trajectory is
     {html.escape(trajectory_label)}.</p>

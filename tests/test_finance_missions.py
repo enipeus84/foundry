@@ -2,6 +2,7 @@
 
 from foundry.core.mission_assessment import MissionAssessmentRegistry
 from foundry.finance.mission_assessment import POLICY_ID
+from foundry.finance.mortgage_assessment import POLICY_ID as MORTGAGE_POLICY_ID
 from foundry.finance.missions import register_finance_mission_definitions
 
 
@@ -29,22 +30,26 @@ def test_children_is_outside_the_fixed_finance_hierarchy():
     )
 
 
-def test_only_financial_independence_declares_an_assessment_policy():
+def test_only_implemented_missions_declare_assessment_policies():
     definitions = _registry().definitions()
 
     assert [
         definition.label
         for definition in definitions
         if definition.assessment_policy_id is not None
-    ] == ["Financial Independence"]
+    ] == ["Financial Independence", "Mortgage Freedom"]
     assert (
         _registry().definition_for_policy(POLICY_ID).slug
         == "financial-independence"
     )
+    assert (
+        _registry().definition_for_policy(MORTGAGE_POLICY_ID).slug
+        == "mortgage-freedom"
+    )
 
 
-def test_mortgage_freedom_proves_lower_destination_direction_without_policy():
+def test_mortgage_freedom_keeps_lower_destination_direction_with_policy():
     definition = _registry().definition_for_slug("mortgage-freedom")
 
     assert definition.destination_direction == "lower_is_better"
-    assert definition.assessment_policy_id is None
+    assert definition.assessment_policy_id == MORTGAGE_POLICY_ID

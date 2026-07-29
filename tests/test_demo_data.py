@@ -197,7 +197,7 @@ ensure_demo_data({str(path)!r})
                   and e["payload"].get("party_type") == "household"]
     missions = [e for e in events if e["kind"] == "core.mission.declared"]
     assert len(households) == 1, "concurrent seeding produced a doubled dataset"
-    assert len(missions) == 1
+    assert len(missions) == 2
     assert log.verify(), "concurrent seeding corrupted the hash chain"
 
 
@@ -282,15 +282,17 @@ def test_seeded_log_carries_a_permanent_synthetic_marker(tmp_path):
 
 def test_synthetic_marker_does_not_pollute_flight_director(monkeypatch, tmp_path):
     """The marker is tagged `observation`, so the Flight Deck's
-    Flight Director panel (recommendations only) must still surface the
-    real recommendation, not the marker."""
+    Flight Director must show neither the marker nor an unrelated standing
+    recommendation as a correction for a deviating Mortgage mission."""
     path = tmp_path / "events.jsonl"
     monkeypatch.setenv("FOUNDRY_DATA_PATH", str(path))
     monkeypatch.setenv("FOUNDRY_DEMO_DATA", "true")
     _maybe_seed_demo_data()
     html = _client().get("/").text
     assert "SYNTHETIC DEMO DATA" not in html
-    assert "standing quarterly check" in html  # the actual recommendation
+    assert "standing quarterly check" not in html
+    assert "No course correction on file for Mortgage free" in html
+    assert "nothing is invented" in html
 
 
 # ------------------------------------------------------------- fail closed
@@ -351,7 +353,8 @@ def test_seeded_log_renders_populated_mission_control(monkeypatch, tmp_path):
 
     r = _client().get("/")
     assert r.status_code == 200
-    assert "Coast FIRE by 2038" in r.text
+    assert "Financial Independence" in r.text
+    assert "Mortgage Freedom" in r.text
     assert "UNSUPPORTED" not in r.text
     assert r.text.count("£") >= 2
 
