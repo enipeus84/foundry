@@ -55,7 +55,7 @@ incomplete in places.
 - **RFC process:** 5 major RFCs plus sub-RFCs (003.3, 004.1, 004.2, 004A, 004B) shipped via branch-per-RFC + PR. Depth is inconsistent — RFC-001/003/003.3 have no dedicated implementation report (see [`docs/rfcs/index.md`](docs/rfcs/index.md)).
 - **Documentation:** reorganized into a cross-referenced tree (see [Documentation Status](#documentation-status)).
 - **Testing:** RFC-006 baseline was 345 collected / 345 passing and the
-  framework finishes at 391 collected / 391 passing in the declared
+  framework finishes at 393 collected / 393 passing in the declared
   `.[dev,web]` environment.
 - **Architecture Gate:** implemented (`adversarial-architect`); active.
 - **Security Gate:** implemented (`security-reviewer`); active.
@@ -126,7 +126,7 @@ Scored Emerging / Developing / Established / Mature.
 | **Architecture** | Established | Five RFCs built on one unmodified substrate, invariants enforced and tested. Not Mature: concurrency, truncation-anchoring, and semantic retrieval remain unbuilt. |
 | **Engineering** | Established | Review-gate process and RFC branch/PR pattern followed consistently from RFC-002 onward. Not Mature: only 2 of 6 planned gates exist; RFC-001/003/003.3 skip the deeper report pattern. |
 | **Documentation** | Developing | Just reorganized into an indexed, cross-referenced tree with a versioned Design Constitution. Not Established: 3 missing implementation reports and 1 open changelog/version gap remain live. |
-| **Testing** | Established | 391 tests after RFC-006 (345-test authoritative baseline), CI-enforced across 4 Python versions, deterministic replay-parity discipline. Not Mature: real model adapters aren't tested in CI (a declared, deliberate choice) and no fuzzing exists. |
+| **Testing** | Established | 393 tests after RFC-006 (345-test authoritative baseline), CI-enforced across 4 Python versions, deterministic replay-parity discipline. Not Mature: real model adapters aren't tested in CI (a declared, deliberate choice) and no fuzzing exists. |
 | **Governance** | Developing | Merge policy is defined and two gates are active. Not Established: Data Integrity, Performance, Product Design, and Release gates are all still unbuilt. |
 
 ---
@@ -149,7 +149,7 @@ comes next.
 | **RFC-003 — Mission Control** | 2026-07-19 | [PR #5](https://github.com/enipeus84/foundry/pull/5), tag `v1.4-mission-control`; extended same day by RFC-003.3 demo mode, [PR #6](https://github.com/enipeus84/foundry/pull/6), tag `v1.4.1-demo-mode` |
 | **RFC-004 — Flight Deck** | 2026-07-20 to 2026-07-21 | [PR #7](https://github.com/enipeus84/foundry/pull/7), tag `v1.5-flight-deck`; refined by RFC-004.2, [PR #8](https://github.com/enipeus84/foundry/pull/8) |
 | **RFC-005 — Mission Assessment** | 2026-07-27 | [PR #9](https://github.com/enipeus84/foundry/pull/9) — no corresponding tag or CHANGELOG entry (tracked as the open gap above) |
-| **RFC-006 — Mission Assessment Framework** | 2026-07-28 | Implemented on `rfc-006-mission-assessment-framework`; draft PR pending |
+| **RFC-006 — Mission Assessment Framework** | 2026-07-28 | Implemented on `rfc-006-mission-assessment-framework`; [draft PR #16](https://github.com/enipeus84/foundry/pull/16) under review |
 | **Engineering Review Gates** | 2026-07-27 | [PR #10](https://github.com/enipeus84/foundry/pull/10), [PR #11](https://github.com/enipeus84/foundry/pull/11) — `docs/engineering/review-gates.md` |
 | **Documentation Architecture** | 2026-07-27 | [PR #12](https://github.com/enipeus84/foundry/pull/12) — docs index, RFC index, versioned Design Constitution |
 | **PROJECT_STATUS.md** | 2026-07-27 | This document — the first executive-dashboard artifact, opened as its own PR |
@@ -158,6 +158,6 @@ comes next.
 
 ## Last Updated
 
-- **Date:** 2026-07-28
+- **Date:** 2026-07-29
 - **Branch:** `rfc-006-mission-assessment-framework`
 - **Base commit:** `452fa3fc1ec6da4f0bb484fb30b76a340b336783`

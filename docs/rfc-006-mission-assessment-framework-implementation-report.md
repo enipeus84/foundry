@@ -1,6 +1,6 @@
 # RFC-006 — Mission Assessment Framework Implementation Report
 
-Status: implementation complete; final review gates pending.
+Status: implementation complete; maintainer corrections applied in draft PR #16.
 
 ## Scope
 
@@ -25,7 +25,7 @@ assessment, target, threshold, evidence rule or provider was added.
 | Closed Core vocabularies | Core trajectory, margin and confidence vocabularies with exact approved labels; trajectory tone is explicit presentation metadata, never inferred |
 | Presentation metadata | `TelemetryItem` supplies label, format and qualifier |
 | Generic route | Authenticated `/missions/{slug}` resolved from definitions |
-| Provider isolation | Registry validates identity/scope/type and returns a generic unavailable envelope on provider failure |
+| Provider isolation | Registry validates identity, scope, type and availability/value consistency, then returns a generic unavailable envelope on provider failure |
 | FI migration | Existing calculations retained; new trajectory/margin/confidence/milestone/telemetry fields added |
 | Shared-renderer cleanup | Removed fixed lanes, mission-name classifier, fixed FI route/title/definition, FI link branch, metric-label override and RFC-005 phase/flight terminology |
 
@@ -57,16 +57,17 @@ deterministic output and safe generic routes.
 
 ## Verification
 
-- Final focused Core/Finance/Mission Control suite: **134 passed**
-- Full suite: **391 collected, 391 passed** with the existing Starlette
+- Final focused Core/Finance/Mission Control suite: **136 passed**
+- Full suite: **393 collected, 393 passed** with the existing Starlette
   TestClient deprecation warning
 - `./validate.sh`: security documentation COMPLETE; repository documentation
-  COMPLETE; 391 tests passed; deterministic replay/model replacement exercised
+  COMPLETE; 393 tests passed; deterministic replay/model replacement exercised
   with repository mocks. With no provider keys present, the harness correctly
   reported “architecture exercised — not real-model V1.0 validation” and
   returned its documented non-zero mock-only verdict.
 - Architecture Gate: **APPROVE (Beta)** — 0 Critical, High, Medium or Low
-  findings after temporal-boundary and explicit-tone remediation
+  findings after temporal-boundary, explicit-tone and availability/value
+  remediation
 - Security Gate: **APPROVE** — 0 Critical, High, Medium or Low findings
 
 The PR must remain draft and must not be merged by the implementation agent.

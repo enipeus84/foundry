@@ -233,6 +233,25 @@ class _WrongTimestampMetricProvider(_Provider):
         )
 
 
+class _MissingMetricValueProvider(_Provider):
+    def __init__(self, evidence_status):
+        super().__init__()
+        self.evidence_status = evidence_status
+
+    def assess(self, request):
+        return MissionAssessment(
+            mission_id=request.mission_id,
+            policy_id=request.policy_id,
+            scope=request.scope,
+            as_of=request.as_of,
+            status="green",
+            calculation_version="test-v1",
+            current_value=MetricResult(
+                "alpha.metric", None, None, request.scope,
+                request.as_of, self.evidence_status, "test-v1"),
+        )
+
+
 class _FutureObservationProvider(_Provider):
     def assess(self, request):
         return MissionAssessment(
@@ -271,6 +290,8 @@ class _PastForecastProvider(_Provider):
     _MalformedForecastProvider(),
     _CrossScopeMetricProvider(),
     _WrongTimestampMetricProvider(),
+    _MissingMetricValueProvider("available"),
+    _MissingMetricValueProvider("stale"),
     _FutureObservationProvider(),
     _PastForecastProvider(),
 ])

@@ -187,7 +187,9 @@ def test_authentication_still_protects_every_surface(tmp_path):
     anonymous = TestClient(app, follow_redirects=False)
     for path in ("/", "/metrics/finance.net_worth", "/finance",
                  "/decisions", "/missions",
-                 "/missions/financial-independence", "/settings"):
+                 "/missions/financial-independence",
+                 "/missions/financial-resilience",
+                 "/missions/not-a-definition", "/settings"):
         r = anonymous.get(path)
         assert r.status_code == 303, path
         assert r.headers["location"] == "/login", path
@@ -628,9 +630,7 @@ def test_malformed_nested_provider_data_cannot_break_shared_rendering(
         monkeypatch, tmp_path):
     from foundry.core.metrics import MetricResult
     from foundry.core.mission_assessment import (
-        ForecastPoint, MissionAssessment, MissionAssessmentRegistry,
-        TrajectoryPoint,
-    )
+        MissionAssessment, MissionAssessmentRegistry)
     from foundry.finance.mission_assessment import POLICY_ID
     from foundry.finance.missions import register_finance_mission_definitions
 
@@ -649,16 +649,9 @@ def test_malformed_nested_provider_data_cannot_break_shared_rendering(
                 status="green",
                 calculation_version="malformed-v1",
                 current_value=MetricResult(
-                    "finance.accessible_assets", 100.0, "GBP",
+                    "finance.accessible_assets", None, "GBP",
                     request.scope, request.as_of, "available",
                     "malformed-v1"),
-                forecast=(
-                    ForecastPoint(
-                        request.as_of - 1.0, 90.0, 100.0, 110.0),
-                ),
-                trajectory=(
-                    TrajectoryPoint(request.as_of + 1.0, 100.0),
-                ),
             )
 
     def malformed_console():

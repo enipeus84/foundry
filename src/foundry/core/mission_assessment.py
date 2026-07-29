@@ -536,6 +536,9 @@ class MissionAssessmentRegistry:
             raise ValueError("provider returned evidence for another timestamp")
         _require_text(metric.metric_id, "metric id")
         _require_finite(metric.value, "metric value", allow_none=True)
+        if metric.status in ("available", "stale") and metric.value is None:
+            raise ValueError(
+                "available or stale metric evidence must carry a value")
         if metric.unit_or_currency is not None:
             _require_text(metric.unit_or_currency, "metric unit")
         _require_text(metric.calculation_version, "metric calculation version",

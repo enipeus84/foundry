@@ -190,9 +190,11 @@ lowercase-kebab definitions registered at composition time. Unknown routes
 return a generic non-reflective 404. Provider results must match the request's
 mission, policy, timestamp and `Subject`; nested milestones, series,
 recommendations, references and metric evidence receive runtime type,
-finiteness, ordering, direction, timestamp and scope validation before
-rendering. Current values and telemetry must retain the same household/member
-scope. Exceptions and malformed envelopes degrade only the requested mission
+finiteness, availability/value consistency, ordering, direction, timestamp and
+scope validation before rendering. Current values and telemetry must retain
+the same household/member scope. `available` and `stale` metric evidence must
+carry a finite value. Exceptions and malformed envelopes degrade only the
+requested mission
 to a deterministic unavailable result with Insufficient confidence and no
 private exception detail.
 

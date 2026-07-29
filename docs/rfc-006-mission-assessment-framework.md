@@ -40,8 +40,9 @@ policy dispatch and the provider envelope. It validates result identity and
 scope plus nested renderer-consumed values. Milestone direction must agree
 with the registered definition. An exception, unsupported result, forged
 request identity, malformed nested value or cross-scope metric result
-degrades only that request to deterministic
-`unavailable` / `Insufficient`; private exception text is not rendered.
+degrades only that request to deterministic `unavailable` / `Insufficient`;
+`available` and `stale` metric evidence must carry a finite value. Private
+exception text is not rendered.
 
 Finance owns this fixed definition order:
 
