@@ -8,7 +8,9 @@ probabilities, and assessment never appends an event.
 
 from __future__ import annotations
 
+from calendar import monthrange
 from dataclasses import dataclass
+from datetime import datetime, timezone
 import math
 import time
 
@@ -42,11 +44,36 @@ MONTH_NAMES = (
     "January", "February", "March", "April", "May", "June",
     "July", "August", "September", "October", "November", "December",
 )
+EVIDENCE_LABELS = {
+    "property_role": "property role",
+    "property_valuation": "dated valuation reference",
+    "lender": "mortgage lender",
+    "original_advance": "original mortgage advance",
+    "mortgage_start": "first mortgage payment date",
+    "balance": "mortgage balance",
+    "repayment_type": "repayment type",
+    "interest_type": "interest type",
+    "interest_rate": "mortgage interest rate",
+    "monthly_payment": "monthly mortgage payment",
+    "original_term_months": "original mortgage term",
+    "remaining_term_months": "remaining mortgage term",
+    "fixed_rate_expiry": "fixed-rate expiry",
+}
 
 
 def _month_year(timestamp: float) -> str:
     utc = time.gmtime(timestamp)
     return f"{MONTH_NAMES[utc.tm_mon - 1]} {utc.tm_year}"
+
+
+def _add_calendar_months(timestamp: float, months: int) -> float:
+    """Advance a UTC timestamp by whole calendar months deterministically."""
+    value = datetime.fromtimestamp(timestamp, timezone.utc)
+    month_index = value.year * 12 + value.month - 1 + months
+    year, zero_based_month = divmod(month_index, 12)
+    month = zero_based_month + 1
+    day = min(value.day, monthrange(year, month)[1])
+    return value.replace(year=year, month=month, day=day).timestamp()
 
 
 @dataclass(frozen=True)
@@ -246,6 +273,7 @@ class MortgageFreedomAssessor:
         "interest_type",
         "interest_rate",
         "monthly_payment",
+        "original_term_months",
         "remaining_term_months",
         "fixed_rate_expiry",
     })
@@ -323,8 +351,12 @@ class MortgageFreedomAssessor:
         missing = sorted(field for field, record in records.items()
                          if record is None)
         if missing:
+            missing_labels = sorted(
+                EVIDENCE_LABELS.get(field, "required mortgage evidence")
+                for field in missing)
             return self._unavailable(
-                request, f"Mortgage evidence missing: {', '.join(missing)}")
+                request,
+                f"Mortgage evidence missing: {', '.join(missing_labels)}")
         evidence_records = tuple(
             record for record in records.values() if record is not None)
         if any(record.confidence < .5 for record in evidence_records):
@@ -341,6 +373,7 @@ class MortgageFreedomAssessor:
                     "balance",
                     "interest_rate",
                     "monthly_payment",
+                    "original_term_months",
                     "remaining_term_months",
                     "fixed_rate_expiry",
                 )
@@ -361,6 +394,19 @@ class MortgageFreedomAssessor:
         if records["balance"].effective_at < numeric["mortgage_start"]:
             return self._unavailable(
                 request, "Mortgage balance evidence predates mortgage start")
+        try:
+            original_contractual_eta = _add_calendar_months(
+                numeric["mortgage_start"],
+                int(numeric["original_term_months"]))
+        except (OSError, OverflowError, ValueError):
+            return self._unavailable(
+                request,
+                "Original contractual term cannot be represented safely")
+        if mission.target_date != original_contractual_eta:
+            return self._unavailable(
+                request,
+                "Mission destination does not match the original "
+                "contractual term evidence")
 
         balance = numeric["balance"]
         original = numeric["original_advance"]
@@ -386,7 +432,7 @@ class MortgageFreedomAssessor:
         complete = balance == 0.0
         status, trajectory_state, tone = self._schedule_assessment(
             complete, projected.payoff_low, projected.payoff_base,
-            projected.payoff_high, mission.target_date)
+            projected.payoff_high, original_contractual_eta)
         balance_status = (
             "stale" if self._is_stale(
                 request.as_of, records["balance"],
@@ -452,12 +498,8 @@ class MortgageFreedomAssessor:
         current_milestone = next(
             item for item in milestones if item.is_current)
 
-        baseline = self.projection.project(
-            original, numeric["mortgage_start"], inputs,
-            current_rate=current_rate, monthly_payment=payment,
-            fixed_rate_expiry=fixed_expiry)
         delta_v = self._delta_v(
-            baseline.payoff_base, projected.payoff_base,
+            original_contractual_eta, projected.payoff_base,
             numeric["mortgage_start"], request.as_of, complete)
         recommendations = self._recommendation(
             balance, request, inputs, assumption_set, current_rate,
@@ -507,6 +549,10 @@ class MortgageFreedomAssessor:
             f"Mortgage contract: capital repayment, fixed "
             f"{current_rate * 100:.2f}% with a £{payment:,.2f} monthly "
             "payment.",
+            f"Original contractual mortgage-free date: "
+            f"{_month_year(original_contractual_eta)}, based on a "
+            f"{int(numeric['original_term_months'])}-month term beginning "
+            f"{_month_year(numeric['mortgage_start'])}.",
             f"Projected remaining interest sensitivity: low "
             f"£{projected.interest_low:,.0f}, expected "
             f"£{projected.interest_base:,.0f}, high "
@@ -518,6 +564,10 @@ class MortgageFreedomAssessor:
         ]
         if purchase_detail is not None:
             limitations.insert(1, purchase_detail)
+        if overpayments:
+            limitations.append(
+                f"The observed balance follows {len(overpayments)} recorded "
+                "historical one-off overpayments; no recurrence is assumed.")
         if balance_status == "stale":
             limitations.append("Mortgage balance evidence is stale.")
         if valuation_status == "stale":
@@ -651,14 +701,16 @@ class MortgageFreedomAssessor:
         if record is None or isinstance(record.value, bool) \
                 or not isinstance(record.value, (int, float)) \
                 or not math.isfinite(float(record.value)):
-            raise ValueError(f"Mortgage evidence {field} must be numeric")
+            label = EVIDENCE_LABELS.get(field, "required mortgage evidence")
+            raise ValueError(f"Mortgage evidence {label} must be numeric")
         return float(record.value)
 
     @staticmethod
     def _string(record: MortgageEvidence | None, field: str) -> str:
         if record is None or not isinstance(record.value, str) \
                 or not record.value.strip():
-            raise ValueError(f"Mortgage evidence {field} must be text")
+            label = EVIDENCE_LABELS.get(field, "required mortgage evidence")
+            raise ValueError(f"Mortgage evidence {label} must be text")
         return record.value
 
     @staticmethod
@@ -677,6 +729,9 @@ class MortgageFreedomAssessor:
             raise ValueError("Monthly payment must be positive")
         if numeric["remaining_term_months"] < 0:
             raise ValueError("Remaining term must be non-negative")
+        if numeric["original_term_months"] <= 0 \
+                or not numeric["original_term_months"].is_integer():
+            raise ValueError("Original term must be a positive whole month")
         if text["property_role"] != "primary_residence":
             raise ValueError("Mortgage must secure the primary residence")
         if text["repayment_type"] != "capital_repayment":
@@ -701,7 +756,9 @@ class MortgageFreedomAssessor:
             record = records[field]
             if record is None or record.unit_or_currency != "GBP":
                 raise ValueError(
-                    f"Mortgage evidence {field} must be denominated in GBP")
+                    f"Mortgage evidence "
+                    f"{EVIDENCE_LABELS.get(field, 'required value')} "
+                    "must be denominated in GBP")
 
     @staticmethod
     def _is_stale(
@@ -752,17 +809,22 @@ class MortgageFreedomAssessor:
         complete: bool,
         low_eta: float | None,
         base_eta: float | None,
-        high_eta: float | None,
+        _high_eta: float | None,
         target_date: float,
     ) -> tuple[str, str, str]:
-        """Return status, Core trajectory, and explicit presentation tone."""
+        """Compare the expected payoff with the original contract schedule.
+
+        Sensitivity paths remain visible evidence, but neither the pessimistic
+        rate path nor a resilience-constrained recommendation can erase
+        material acceleration already present in the expected path.
+        """
         if complete:
             return "green", "Complete", "green"
-        if high_eta is not None and high_eta <= target_date:
+        if base_eta is not None and base_eta <= target_date - MONTH:
             return "green", "Accelerated", "green"
-        if base_eta is not None and base_eta <= target_date:
+        if base_eta is not None and base_eta <= target_date + DAY:
             return "amber", "Nominal", "amber"
-        if low_eta is not None and low_eta <= target_date:
+        if low_eta is not None and low_eta <= target_date + DAY:
             return "amber", "Constrained", "amber"
         if base_eta is None:
             return "red", "Critical", "red"
@@ -887,32 +949,45 @@ class MortgageFreedomAssessor:
 
     @staticmethod
     def _delta_v(
-        baseline_eta: float | None,
+        contractual_eta: float | None,
         current_eta: float | None,
         mortgage_start: float,
         as_of: float,
         complete: bool,
     ) -> DeltaV:
         lookback = max(0, int(round((as_of - mortgage_start) / DAY)))
+        schedule_metadata = {
+            "period_label": "SINCE FIRST PAYMENT",
+            "reference_start_at": mortgage_start,
+            "reference_start_label": "ORIGINAL START",
+        }
+        if contractual_eta is not None:
+            schedule_metadata.update({
+                "reference_destination_at": contractual_eta,
+                "reference_destination_label": "ORIGINAL DESTINATION",
+            })
         if complete:
             return DeltaV(
                 None, lookback,
-                "Mission complete; payoff acceleration no longer applies")
-        if baseline_eta is None or current_eta is None:
+                "Mission complete; payoff acceleration no longer applies",
+                **schedule_metadata)
+        if contractual_eta is None or current_eta is None:
             return DeltaV(
                 None, lookback,
-                "Payoff acceleration is unavailable within the model horizon")
-        days = (baseline_eta - current_eta) / DAY
+                "Payoff acceleration is unavailable within the model horizon",
+                **schedule_metadata)
+        days = (contractual_eta - current_eta) / DAY
         months = (
             0 if abs(days) < MONTH_DAYS
             else int(round(days / MONTH_DAYS)))
         direction = "accelerated" if days >= 0 else "delayed"
         return DeltaV(
             days, lookback,
-            f"Payoff ETA {direction} versus the contractual payment path "
-            "since mortgage start",
+            f"Estimated time {direction} against the original contractual "
+            "mortgage-free date",
             months=months,
             direction=direction,
+            **schedule_metadata,
         )
 
     def _recommendation(

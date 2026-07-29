@@ -544,6 +544,9 @@ def test_financial_independence_home_lane_opens_mission_detail(tmp_path):
     assert "Financial Independence" in html
     assert 'href="/missions/mortgage-freedom"' in html
     assert html.count("Assessment and target are planned.") == 2
+    assert ">FINANCE.MORTGAGE_BALANCE " not in html
+    assert "finance.mortgage_balance 242" not in html
+    assert "MORTGAGE BALANCE £242,540" in html
 
 
 def test_financial_independence_route_renders_assessment_not_calculations(tmp_path):
@@ -555,6 +558,7 @@ def test_financial_independence_route_renders_assessment_not_calculations(tmp_pa
     assert "Mission trajectory" in html
     assert "MISSION MARGIN" in html
     assert "Δv" in html
+    assert 'class="mission-time-lane"' not in html
     assert "low to high sensitivity corridor" in html
     assert "ACCESSIBLE ASSETS" in html
     assert "Increase ISA contribution" in html
@@ -576,6 +580,16 @@ def test_mortgage_freedom_uses_the_generic_live_mission_route(tmp_path):
     assert "Mortgage Freedom" in html
     assert "Mission trajectory" in html
     assert "REPAYMENT UNDERWAY" in html
+    assert '<p class="v green">ACCELERATED</p>' in html
+    assert "EXPECTED DESTINATION" in html
+    assert "APRIL 2043" in html
+    assert "ORIGINAL DESTINATION" in html
+    assert "JULY 2050" in html
+    assert "ABOUT 86 MONTHS GAINED" in html
+    assert "Δv · SINCE FIRST PAYMENT" in html
+    assert "label-lane-0" in html
+    assert "label-lane-1" in html
+    assert 'class="current-label"' in html
     assert "MORTGAGE BALANCE" in html
     assert "LOAN TO VALUE" in html
     assert "REMAINING INTEREST" in html
@@ -589,6 +603,11 @@ def test_mortgage_freedom_uses_the_generic_live_mission_route(tmp_path):
     assert "live valuation" not in html
     assert "Add mortgage overpayment" in html
     assert "projected interest" in html
+    assert "monthly_mortgage_overpayment" not in html
+    assert "original_term_months" not in html
+    assert "recorded_overpayment" not in html
+    assert "finance.mortgage_balance" not in html
+    assert "Scenario " not in html
     assert "OBSERVATIONS AND PROJECTIONS REMAIN DISTINCT" in html
     assert "PLANNED" not in html
     assert "<script>alert" not in html
@@ -803,8 +822,9 @@ def test_financial_independence_analysis_reduces_duplication(tmp_path):
     assert '<details class="mission-drilldown">' in html
     assert "<summary>DEEPER MISSION DATA" in html
     drilldown = html[html.index('<details class="mission-drilldown">'):]
-    assert "Next Burn source: Scenario " in drilldown
+    assert "Evidence basis: Declared scenario with " in drilldown
     assert "Declared action: Increase monthly ISA contribution by £250" in drilldown
+    assert "monthly_contribution_delta" not in drilldown
 
 
 def test_financial_independence_milestones_are_keyboard_and_text_accessible(tmp_path):
@@ -853,11 +873,13 @@ def test_financial_independence_mobile_keeps_briefing_and_trajectory_distinct(tm
     html = client().get("/missions/financial-independence").text
 
     assert "@media (max-width: 620px)" in html
-    assert ".mission-detail-hero { min-height: 780px;" in html
-    assert "height: 390px; justify-content: flex-start;" in html
-    assert "inset: 350px -40px 0 -70px;" in html
+    assert ".mission-detail-hero { min-height: 940px;" in html
+    assert "height: 510px; justify-content: flex-start;" in html
+    assert "inset: 510px -30px 150px -58px;" in html
     assert ".hero-trajectory .milestone-detail { opacity: 0; }" in html
     assert ".mission-milestone:focus .milestone-detail" in html
+    assert 'class="mission-time-lane"' not in html
+    assert "grid-template-columns: repeat(2, minmax(0,1fr));" in html
 
 
 def _synthetic_assessment(forecast=(), phases=None):
@@ -1024,6 +1046,64 @@ def test_milestone_policy_presentation_comes_from_assessment_contract():
         assert forbidden not in source
 
 
+def test_current_position_uses_provider_presentation_metadata():
+    from dataclasses import replace
+
+    from foundry.core.metrics import MetricResult
+    from foundry.core.mission_assessment import TelemetryItem
+    from foundry.mission_control import _mission_trajectory_svg
+
+    assessment = _synthetic_assessment(())
+    result = MetricResult(
+        metric_id="domain.capacity", value=.42,
+        unit_or_currency=None, scope=assessment.scope, as_of=4.0,
+        status="available", calculation_version="domain-v1")
+    assessment = replace(
+        assessment,
+        current_value=result,
+        telemetry=(TelemetryItem(
+            result=result,
+            label="CAPACITY UTILISATION",
+            format_kind="percent",
+        ),),
+    )
+
+    rendered = _mission_trajectory_svg(assessment)
+
+    assert "CAPACITY UTILISATION 42.0%" in rendered
+    assert ">42.0%</text>" in rendered
+    assert "$0" not in rendered
+
+
+def test_hostile_current_value_unit_is_escaped_in_svg():
+    from dataclasses import replace
+
+    from foundry.core.metrics import MetricResult
+    from foundry.core.mission_assessment import TelemetryItem
+    from foundry.mission_control import _mission_trajectory_svg
+
+    assessment = _synthetic_assessment(())
+    hostile_unit = "</text><script>alert('unit')</script><text>"
+    result = MetricResult(
+        metric_id="domain.capacity", value=300.0,
+        unit_or_currency=hostile_unit, scope=assessment.scope, as_of=4.0,
+        status="available", calculation_version="domain-v1")
+    assessment = replace(
+        assessment,
+        current_value=result,
+        telemetry=(TelemetryItem(
+            result=result,
+            label="CAPACITY",
+            format_kind="currency",
+        ),),
+    )
+
+    rendered = _mission_trajectory_svg(assessment)
+
+    assert "<script>alert('unit')</script>" not in rendered
+    assert "&lt;/text&gt;&lt;script&gt;" in rendered
+
+
 def test_lower_is_better_milestones_advance_without_renderer_branching():
     from foundry.core.mission_assessment import MissionMilestone
     from foundry.mission_control import _mission_trajectory_geometry
@@ -1126,9 +1206,13 @@ def test_missing_structured_recommendation_data_fails_honestly(tmp_path):
             '<section aria-labelledby="analysis-heading">'))
     ]
     assert "Recommendation unavailable" in analysis
-    assert "Structured Scenario data is incomplete" in analysis
+    assert "Recommendation evidence is incomplete" in analysis
     assert "£275" not in analysis
     assert "£999" not in analysis
+    assert "Scenario " not in html
+    assert "The declared recommendation evidence is incomplete." in html
+    assert "Declared recommendation presentation details are incomplete" \
+        in html
 
 
 def test_non_gbp_structured_values_are_formatted_without_rewriting():

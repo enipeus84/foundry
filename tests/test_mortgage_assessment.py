@@ -27,6 +27,7 @@ from foundry.finance.mortgage_assessment import (
     MortgageFreedomAssessor,
     MortgageProjectionEngine,
     MortgageProjectionInputs,
+    _add_calendar_months,
     _month_year,
 )
 from foundry.finance.mortgage_evidence import (
@@ -98,10 +99,13 @@ def _fixture(path, *, runway=18.0, include_scenario=True,
             action_label="Add mortgage overpayment",
             unit_or_currency="GBP",
             cadence="month")
+    mortgage_start = NOW - 365 * DAY
+    original_term_months = 300
     mission = declare_mission(
         log, "Mortgage free by contractual term",
         target_metric=TARGET_METRIC, target_value=0.0,
-        target_date=NOW + 201 * MONTH,
+        target_date=_add_calendar_months(
+            mortgage_start, original_term_months),
         assessment_policy_id=POLICY_ID,
         assumption_set_id=assumptions.id)
 
@@ -112,12 +116,13 @@ def _fixture(path, *, runway=18.0, include_scenario=True,
         "property_valuation": 436_638.42,
         "lender": "NatWest",
         "original_advance": 310_000.0,
-        "mortgage_start": NOW - 365 * DAY,
+        "mortgage_start": mortgage_start,
         "balance": balance,
         "repayment_type": "capital_repayment",
         "interest_type": "fixed",
         "interest_rate": .0433,
         "monthly_payment": 1_701.47,
+        "original_term_months": float(original_term_months),
         "remaining_term_months": 201.0,
         "fixed_rate_expiry": NOW + 367 * DAY,
     }
@@ -208,6 +213,7 @@ def test_full_assessment_is_lower_is_better_and_has_complete_output(tmp_path):
         item.destination_direction == "lower_is_better"
         for item in result.milestones)
     assert result.eta is not None
+    assert result.trajectory_state == "Accelerated"
     assert result.forecast
     assert result.delta_v.days > 0
     assert result.delta_v.direction == "accelerated"
@@ -244,6 +250,15 @@ def test_full_assessment_is_lower_is_better_and_has_complete_output(tmp_path):
     assert set(asset.history) <= set(result.input_references)
     assert set(member.history) <= set(result.input_references)
     assert "NOT A PROBABILITY" in result.confidence_basis
+    original_destination = _add_calendar_months(
+        NOW - 365 * DAY, 300)
+    assert result.eta + result.delta_v.days * DAY \
+        == pytest.approx(original_destination)
+    assert result.delta_v.months > 0
+    assert "original contractual" in result.delta_v.description
+    assert any(
+        "historical one-off overpayments; no recurrence is assumed" in note
+        for note in result.limitations)
 
 
 def test_zero_balance_is_complete_not_an_epsilon_approximation(tmp_path):
@@ -257,21 +272,87 @@ def test_zero_balance_is_complete_not_an_epsilon_approximation(tmp_path):
     assert result.current_milestone.id == "mortgage_free"
     assert result.eta == NOW
     assert result.delta_v.days is None
+    assert result.delta_v.period_label == "SINCE FIRST PAYMENT"
+    assert result.delta_v.reference_start_label == "ORIGINAL START"
+    assert result.delta_v.reference_destination_label \
+        == "ORIGINAL DESTINATION"
+
+
+def test_original_contractual_term_drives_trajectory_and_time_gained(tmp_path):
+    _, _, _, _, assessor, request = _fixture(
+        tmp_path / "events.jsonl")
+
+    result = assessor.assess(request)
+    mortgage_start = NOW - 365 * DAY
+    contractual_destination = _add_calendar_months(mortgage_start, 300)
+    calculated_days = (contractual_destination - result.eta) / DAY
+
+    mission = assessor.core.missions[request.mission_id]
+    assert mission.target_date == contractual_destination
+    assert result.eta < contractual_destination
+    assert result.trajectory_state == "Accelerated"
+    assert result.delta_v.days == pytest.approx(calculated_days)
+    assert result.delta_v.months == round(calculated_days / (MONTH / DAY))
+
+    mission.target_date += MONTH
+    forged = assessor.assess(request)
+    assert forged.status == "unavailable"
+    assert "does not match" in forged.limitations[0]
+
+    mission.target_date = contractual_destination + DAY / 2
+    subtly_forged = assessor.assess(request)
+    assert subtly_forged.status == "unavailable"
+    assert "does not match" in subtly_forged.limitations[0]
+
+
+def test_historical_overpayments_do_not_become_recurring_forecast_inputs(
+        tmp_path):
+    _, _, _, _, with_history, request = _fixture(
+        tmp_path / "with-history.jsonl")
+    _, _, _, _, without_history, request_without = _fixture(
+        tmp_path / "without-history.jsonl", include_overpayments=False)
+
+    achieved = with_history.assess(request)
+    no_history = without_history.assess(request_without)
+
+    assert achieved.eta == no_history.eta
+    assert achieved.delta_v == no_history.delta_v
+    assert achieved.trajectory_state == no_history.trajectory_state \
+        == "Accelerated"
+
+
+def test_out_of_horizon_projection_preserves_reference_schedule_metadata(
+        tmp_path):
+    _, _, _, _, assessor, request = _fixture(
+        tmp_path / "events.jsonl")
+    assumption_set = next(iter(assessor.finance.assumption_sets.values()))
+    assumption_set.assumptions["forecast_horizon_months"] = 1.0
+
+    result = assessor.assess(request)
+
+    assert result.eta is None
+    assert result.delta_v.days is None
+    assert result.delta_v.period_label == "SINCE FIRST PAYMENT"
+    assert result.delta_v.reference_start_label == "ORIGINAL START"
+    assert result.delta_v.reference_destination_label \
+        == "ORIGINAL DESTINATION"
 
 
 def test_schedule_trajectory_does_not_infer_from_margin_or_confidence():
     target = NOW + 100 * DAY
     assert MortgageFreedomAssessor._schedule_assessment(
-        False, target - DAY, target - DAY, target - DAY, target) \
+        False, target - 2 * MONTH, target - 2 * MONTH,
+        target + DAY, target) \
         == ("green", "Accelerated", "green")
     assert MortgageFreedomAssessor._schedule_assessment(
         False, target - DAY, target - DAY, target + DAY, target) \
         == ("amber", "Nominal", "amber")
     assert MortgageFreedomAssessor._schedule_assessment(
-        False, target - DAY, target + DAY, target + DAY, target) \
+        False, target - DAY, target + 2 * DAY, target + 2 * DAY, target) \
         == ("amber", "Constrained", "amber")
     assert MortgageFreedomAssessor._schedule_assessment(
-        False, target + DAY, target + DAY, target + DAY, target) \
+        False, target + 2 * DAY, target + 2 * DAY,
+        target + 2 * DAY, target) \
         == ("red", "Divergent", "red")
     assert MortgageFreedomAssessor._schedule_assessment(
         False, None, None, None, target) \
@@ -303,6 +384,7 @@ def test_financial_resilience_precedence_suppresses_recommendation(tmp_path):
     result = assessor.assess(request)
 
     assert result.recommendations == ()
+    assert result.trajectory_state == "Accelerated"
     assert any(
         "Financial Resilience takes precedence" in note
         for note in result.limitations)
@@ -342,15 +424,22 @@ def _metric_registry(runway):
     return registry
 
 
-def test_absent_required_evidence_fails_closed(tmp_path):
+@pytest.mark.parametrize("missing", ["balance", "original_term_months"])
+def test_absent_required_evidence_fails_closed(tmp_path, missing):
     _, _, _, _, assessor, request = _fixture(
-        tmp_path / "events.jsonl", omit={"balance"})
+        tmp_path / "events.jsonl", omit={missing})
 
     result = assessor.assess(request)
 
     assert result.status == "unavailable"
     assert result.confidence.state == "Insufficient"
-    assert "balance" in result.limitations[0]
+    expected_label = {
+        "balance": "mortgage balance",
+        "original_term_months": "original mortgage term",
+    }[missing]
+    assert expected_label in result.limitations[0]
+    if "_" in missing:
+        assert missing not in result.limitations[0]
 
 
 def test_future_only_evidence_is_absent_at_assessment_time(tmp_path):
@@ -366,7 +455,7 @@ def test_future_only_evidence_is_absent_at_assessment_time(tmp_path):
     result = assessor.assess(request)
 
     assert result.status == "unavailable"
-    assert "balance" in result.limitations[0]
+    assert "mortgage balance" in result.limitations[0]
 
 
 def test_missing_assumption_is_not_replaced_by_hidden_policy(tmp_path):
@@ -615,6 +704,23 @@ def test_contract_date_cannot_create_a_future_observation(tmp_path):
     assert result.status == "unavailable"
     assert result.limitations == (
         "Mortgage start cannot be after assessment time",)
+
+
+def test_unrepresentable_original_term_fails_closed(tmp_path):
+    log, _, mortgage, _, _, request = _fixture(
+        tmp_path / "events.jsonl")
+    _record(
+        log, mortgage.id, "original_term_months", 1e300,
+        effective_at=NOW)
+    assessor = MortgageFreedomAssessor(
+        FinanceEntityProjection(log), EntityProjection(log),
+        _metric_registry(18.0), MortgageEvidenceProjection(log))
+
+    result = assessor.assess(request)
+
+    assert result.status == "unavailable"
+    assert result.recommendations == ()
+    assert "represented safely" in result.limitations[0]
 
 
 @pytest.mark.parametrize(("field", "value"), [

@@ -49,7 +49,6 @@ from foundry.eventlog import EventLog
 from foundry.finance import entities as fin
 from foundry.finance.mission_assessment import POLICY_ID
 from foundry.finance.mortgage_assessment import (
-    MONTH as ASSESSMENT_MONTH,
     POLICY_ID as MORTGAGE_POLICY_ID,
     TARGET_METRIC as MORTGAGE_TARGET_METRIC,
 )
@@ -571,6 +570,9 @@ def build(log: EventLog, as_of: float | None = None) -> MorganHousehold:
     mortgage_evidence(
         "monthly_payment", 1_701.47, as_of, "GBP")
     mortgage_evidence("payment_day", 1.0, as_of)
+    mortgage_evidence(
+        "original_term_months", 300.0, utc(2025, 7, 1),
+        lineage="Original mortgage term supplied as 25 years")
     mortgage_evidence("remaining_term_months", 201.0, as_of)
     mortgage_evidence(
         "fixed_rate_expiry", utc(2027, 7, 31), as_of)
@@ -600,10 +602,10 @@ def build(log: EventLog, as_of: float | None = None) -> MorganHousehold:
         unit_or_currency="GBP",
         cadence="month")
     declare_mission(
-        log, "Mortgage free by current contractual term",
+        log, "Mortgage free ahead of the original contractual term",
         target_metric=MORTGAGE_TARGET_METRIC,
         target_value=0.0,
-        target_date=as_of + 201 * ASSESSMENT_MONTH,
+        target_date=utc(2050, 7, 1),
         assessment_policy_id=MORTGAGE_POLICY_ID,
         assumption_set_id=mortgage_assumptions.id,
     )

@@ -65,6 +65,7 @@ def test_equal_effective_dates_use_append_order_not_random_event_id(tmp_path):
     ({"confidence": 1.1}, "between zero and one"),
     ({"source": ""}, "non-empty"),
     ({"lineage": ""}, "non-empty"),
+    ({"field": "original_term_months", "value": 300.5}, "whole number"),
 ])
 def test_invalid_manual_evidence_is_rejected_before_append(
         tmp_path, changes, match):
@@ -142,6 +143,7 @@ def test_synthetic_demo_records_every_approved_mortgage_value(tmp_path):
         "interest_rate": .0433,
         "monthly_payment": 1_701.47,
         "payment_day": 1.0,
+        "original_term_months": 300.0,
         "remaining_term_months": 201.0,
         "fixed_rate_expiry": datetime(
             2027, 7, 31, tzinfo=timezone.utc).timestamp(),

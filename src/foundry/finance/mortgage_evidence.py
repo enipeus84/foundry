@@ -30,6 +30,7 @@ EVIDENCE_FIELDS = frozenset({
     "interest_rate",
     "monthly_payment",
     "payment_day",
+    "original_term_months",
     "remaining_term_months",
     "fixed_rate_expiry",
     "recorded_overpayment",
@@ -46,7 +47,7 @@ _MONEY_FIELDS = frozenset({
 _POSITIVE_FIELDS = frozenset({
     "purchase_price", "purchase_date", "property_valuation",
     "original_advance", "mortgage_start", "monthly_payment",
-    "fixed_rate_expiry", "recorded_overpayment",
+    "original_term_months", "fixed_rate_expiry", "recorded_overpayment",
 })
 _RATIO_FIELDS = frozenset({"interest_rate", "reported_ltv"})
 
@@ -103,6 +104,8 @@ def _validate_field_value(
         raise ValueError("balance must be non-negative")
     if field == "remaining_term_months" and value < 0:
         raise ValueError("remaining_term_months must be non-negative")
+    if field == "original_term_months" and not value.is_integer():
+        raise ValueError("original_term_months must be a whole number")
     if field in _RATIO_FIELDS and not 0 <= value <= 1:
         raise ValueError(f"{field} must be between zero and one")
     if field == "payment_day" and (

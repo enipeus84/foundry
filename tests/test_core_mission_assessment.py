@@ -282,6 +282,48 @@ class _PastForecastProvider(_Provider):
         )
 
 
+class _HostileDeltaVProvider(_Provider):
+    def assess(self, request):
+        delta_v = DeltaV(
+            days=30.0,
+            lookback_days=90,
+            description="hostile schedule",
+            reference_start_at=100.0,
+            reference_start_label="REFERENCE START",
+        )
+        object.__setattr__(delta_v, "reference_start_label", "")
+        return MissionAssessment(
+            mission_id=request.mission_id,
+            policy_id=request.policy_id,
+            scope=request.scope,
+            as_of=request.as_of,
+            status="green",
+            calculation_version="test-v1",
+            delta_v=delta_v,
+        )
+
+
+class _HostileDeltaVTimestampProvider(_Provider):
+    def assess(self, request):
+        delta_v = DeltaV(
+            days=30.0,
+            lookback_days=90,
+            description="hostile schedule",
+            reference_destination_at=200.0,
+            reference_destination_label="REFERENCE DESTINATION",
+        )
+        object.__setattr__(delta_v, "reference_destination_at", 1e300)
+        return MissionAssessment(
+            mission_id=request.mission_id,
+            policy_id=request.policy_id,
+            scope=request.scope,
+            as_of=request.as_of,
+            status="green",
+            calculation_version="test-v1",
+            delta_v=delta_v,
+        )
+
+
 @pytest.mark.parametrize("provider", [
     _MalformedProvider(),
     _ForgedEnvelopeProvider(),
@@ -294,6 +336,8 @@ class _PastForecastProvider(_Provider):
     _MissingMetricValueProvider("stale"),
     _FutureObservationProvider(),
     _PastForecastProvider(),
+    _HostileDeltaVProvider(),
+    _HostileDeltaVTimestampProvider(),
 ])
 def test_malformed_provider_is_isolated_to_an_unavailable_envelope(provider):
     registry = MissionAssessmentRegistry()
@@ -414,5 +458,50 @@ def test_extended_assessment_contract_is_backward_compatible_and_domain_neutral(
     assert phase.unit_or_currency is None
     assert phase.completes_mission is False
     assert delta_v.months is None
+    assert delta_v.period_label == ""
+    assert delta_v.reference_start_at is None
+    assert delta_v.reference_destination_at is None
     assert recommendation.amount is None
     assert recommendation.status == "available"
+
+
+def test_delta_v_reference_schedule_metadata_is_explicit_and_paired():
+    delta_v = DeltaV(
+        days=30.0,
+        lookback_days=365,
+        description="advanced against the declared schedule",
+        months=1,
+        direction="accelerated",
+        period_label="SINCE DECLARATION",
+        reference_start_at=100.0,
+        reference_start_label="REFERENCE START",
+        reference_destination_at=200.0,
+        reference_destination_label="REFERENCE DESTINATION",
+    )
+
+    assert delta_v.reference_start_label == "REFERENCE START"
+    assert delta_v.reference_destination_label == "REFERENCE DESTINATION"
+
+    with pytest.raises(ValueError, match="supplied together"):
+        DeltaV(
+            days=30.0,
+            lookback_days=365,
+            description="missing reference label",
+            reference_start_at=100.0,
+        )
+    with pytest.raises(ValueError, match="finite"):
+        DeltaV(
+            days=30.0,
+            lookback_days=365,
+            description="hostile timestamp",
+            reference_destination_at=float("nan"),
+            reference_destination_label="REFERENCE DESTINATION",
+        )
+    with pytest.raises(ValueError, match="representable UTC timestamp"):
+        DeltaV(
+            days=30.0,
+            lookback_days=365,
+            description="unrepresentable timestamp",
+            reference_destination_at=1e300,
+            reference_destination_label="REFERENCE DESTINATION",
+        )

@@ -56,7 +56,7 @@ incomplete in places.
 - **RFC process:** 6 major RFCs plus sub-RFCs (003.3, 004.1, 004.2, 004A, 004B) shipped via branch-per-RFC + PR; RFC-007 is in draft review. Depth is inconsistent — RFC-001/003/003.3 have no dedicated implementation report (see [`docs/rfcs/index.md`](docs/rfcs/index.md)).
 - **Documentation:** reorganized into a cross-referenced tree (see [Documentation Status](#documentation-status)).
 - **Testing:** RFC-007 baseline was 393 collected / 393 passing and the
-  implementation finishes at 442 collected / 442 passing in the declared
+  implementation finishes at 453 collected / 453 passing in the declared
   `.[dev,web]` environment.
 - **Architecture Gate:** implemented (`adversarial-architect`); active.
 - **Security Gate:** implemented (`security-reviewer`); active.
@@ -127,7 +127,7 @@ Scored Emerging / Developing / Established / Mature.
 | **Architecture** | Established | Six merged RFCs and one draft implementation built on one unmodified substrate, with invariants enforced and tested. Not Mature: concurrency, truncation-anchoring, and semantic retrieval remain unbuilt. |
 | **Engineering** | Established | Review-gate process and RFC branch/PR pattern followed consistently from RFC-002 onward. Not Mature: only 2 of 6 planned gates exist; RFC-001/003/003.3 skip the deeper report pattern. |
 | **Documentation** | Developing | Just reorganized into an indexed, cross-referenced tree with a versioned Design Constitution. Not Established: 3 missing implementation reports and 1 open changelog/version gap remain live. |
-| **Testing** | Established | 442 tests after RFC-007 (393-test authoritative baseline), CI-enforced across 4 Python versions, deterministic replay-parity discipline. Not Mature: real model adapters aren't tested in CI (a declared, deliberate choice) and no fuzzing exists. |
+| **Testing** | Established | 453 tests after RFC-007 (393-test authoritative baseline), CI-enforced across 4 Python versions, deterministic replay-parity discipline. Not Mature: real model adapters aren't tested in CI (a declared, deliberate choice) and no fuzzing exists. |
 | **Governance** | Developing | Merge policy is defined and two gates are active. Not Established: Data Integrity, Performance, Product Design, and Release gates are all still unbuilt. |
 
 ---

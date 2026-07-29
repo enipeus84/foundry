@@ -21,7 +21,10 @@ optimisation engine, persisted assessment or action workflow was added.
 
 - Finance owns the evidence adapter, assessment policy, amortisation,
   milestones, margin, confidence, telemetry and recommendation.
-- Core Mission Assessment contracts and routing are unchanged.
+- Core gains only optional, domain-neutral delta-v period and reference
+  schedule presentation metadata. Provider-envelope validation fails closed
+  for non-finite, calendar-unrepresentable or unpaired values. Routing and
+  vocabularies are unchanged.
 - Mission Control has no Mortgage Freedom branch or Finance import.
 - The existing authenticated `/missions/{slug}` route renders the mission.
 - Financial Independence remains on its existing provider and regression
@@ -36,13 +39,28 @@ It distinguishes the £450,000 purchase price from the £436,638.42 HPI dated
 valuation reference for March 2025. The latter preserves its HPI provenance
 and effective month and is not described as live or current valuation
 evidence.
+It also records the original 300-month term separately from the current
+201-month remaining term. The original term and 1 July 2025 first payment
+produce a contractual destination of 1 July 2050.
 Low/expected/high paths are deterministic rate sensitivities, observations
 remain separate from projections, and exact zero is the only completion state.
 
-Delta-v reports payoff time saved against the original contractual-payment
-path. The single recommendation reports a declared monthly overpayment,
+The expected payoff is 29 April 2043 for the correction-review evidence.
+Delta-v reports **2,619.586 model days / 86 model months gained** against the
+original contractual destination, and trajectory is **Accelerated**.
+The two historical £30,000 overpayments are reflected only through the
+observed balance and are never treated as recurring inputs.
+
+The single recommendation reports a declared monthly overpayment,
 expected payoff acceleration and projected interest avoided. It is suppressed
 when liquidity evidence is absent or below the declared resilience floor.
+Recommendation availability does not alter the achieved trajectory.
+
+Mission Control now obtains current-value labels and formats from provider
+telemetry, removes Scenario ids and adjustment keys from prose, and renders
+defined label and schedule lanes at desktop and mobile widths. The shared
+schedule lane is conditional on explicit provider metadata; Financial
+Independence does not acquire Mortgage schedule semantics.
 
 ## Security by Design
 
@@ -61,20 +79,26 @@ replay after the writer is removed. Exact removal criteria are in
 
 ## Verification
 
-- Focused Mortgage evidence/assessment/definition/Mission Control suite:
-  **117 passed**
-- Full suite: **442 collected, 442 passed**, with the existing Starlette
+- Focused Core contract/Mortgage evidence/assessment/definition/Mission
+  Control suite: **159 passed**
+- Full suite: **453 collected, 453 passed**, with the existing Starlette
   TestClient deprecation warning
 - `./validate.sh`: security documentation COMPLETE; repository documentation
-  COMPLETE; 442 tests passed; deterministic replay/model replacement exercised
+  COMPLETE; 453 tests passed; deterministic replay/model replacement exercised
   with repository mocks. With no provider keys present, the harness correctly
   reported “architecture exercised — not real-model V1.0 validation” and
   returned its documented non-zero mock-only verdict.
 - `git diff --check`: clean
+- Static Mission Control preview reviewed at desktop/tablet and 374px mobile
+  widths: no horizontal overflow, out-of-bounds labels or measured text
+  intersections; the schedule lane remains inside the hero at both widths
 - Architecture Gate: **APPROVE (Beta)** — 0 open Critical, High, Medium or Low
-  findings; the correction review's locale-dependent month rendering and
-  over-broad recommendation-provenance findings were corrected before commit
+  findings; the correction review's shared schedule semantics, provider
+  presentation formatting and provider-envelope validation findings were
+  corrected before commit
 - Security Gate: **APPROVE** — 0 open Critical, High, Medium or Low findings
+  after exact destination matching, raw-id removal, hostile-unit escaping and
+  calendar-unrepresentable timestamp isolation were verified
 
 The pull request must remain draft and must not be merged by the
 implementation agent.

@@ -59,6 +59,10 @@ The synthetic proof data records every value in the approved brief. The
 £450,000 figure is the purchase price. The separate £436,638.42 figure is an
 HPI dated valuation reference for March 2025, with HPI provenance and that
 effective month preserved; it is not live or current valuation evidence.
+The original term is separately recorded as 300 months from the first payment
+on 1 July 2025. It produces the original contractual mortgage-free destination
+of 1 July 2050. The 201-month remaining term is current evidence, not the
+original destination.
 Where the brief supplies only a month, lineage records that precision. Where
 an overpayment occurrence date is absent, the evidence is recorded as known
 at the assessment date; no occurrence date is invented.
@@ -110,12 +114,15 @@ date.
 
 These dimensions are computed independently.
 
-Trajectory compares low/expected/high payoff dates with the declared mission
-target:
+Trajectory compares the expected payoff date with the original contractual
+destination derived from the governed original-term evidence. Low and high
+paths remain visible sensitivities, but do not erase acceleration achieved on
+the expected path:
 
 - Complete at observed zero;
-- Accelerated when the high-rate path reaches the target;
-- Nominal when the expected path reaches it;
+- Accelerated when the expected path is materially earlier than the original
+  contractual destination;
+- Nominal when the expected path is within one month of that destination;
 - Constrained when only the low-rate path reaches it;
 - Critical when the expected path has no payoff inside the horizon; and
 - Divergent otherwise.
@@ -137,9 +144,12 @@ Established. Confidence is not inferred from trajectory or margin.
 
 ## Delta-v and recommendation
 
-Delta-v is payoff time saved. The expected payoff from the current observed
-balance is compared with the expected contractual-payment path from original
-advance and mortgage start.
+Delta-v is estimated payoff time gained. The expected payoff from the current
+observed balance is compared directly with the original contractual
+mortgage-free date derived from the 300-month term and mortgage start. This
+recognises progress already embodied in the observed balance, including the
+two historical £30,000 one-off overpayments, without modelling either
+overpayment as recurring.
 
 One active structured Scenario may be surfaced. It states:
 
@@ -150,8 +160,25 @@ One active structured Scenario may be surfaced. It states:
 
 No recommendation is emitted when liquidity runway is absent, unevaluable or
 below the explicit floor. Financial Resilience therefore takes precedence.
+That recommendation constraint is independent of trajectory: it can suppress
+the next burn without relabelling achieved acceleration as Constrained.
 The implementation never recommends a maximum, never writes an action and
 never persists an assessment.
+
+## Mission Control presentation
+
+The shared renderer remains domain-neutral. Provider telemetry supplies the
+human label and format for the current value, so raw metric ids and Scenario
+adjustment keys do not appear in user-facing prose. Optional Core-owned
+delta-v metadata gives any provider a domain-neutral way to declare a named
+comparison period and reference schedule. Mission Control renders the timeline
+lane only when that metadata is complete; it does not derive Mortgage meaning
+from trajectory points or delta arithmetic. Mortgage supplies original start,
+current position, expected destination and original destination. Provider
+envelope validation rejects non-finite or unpaired schedule metadata. SVG
+milestone labels use alternating lanes above the arc; mobile layout separates
+the briefing, trajectory and schedule comparison instead of relying on
+overlapping absolute offsets.
 
 ## Security Considerations
 

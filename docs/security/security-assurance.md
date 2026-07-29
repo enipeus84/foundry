@@ -225,7 +225,14 @@ balance/property evidence remains visible as stale and lowers Mission
 Confidence independently of trajectory and margin. The demonstration evidence
 keeps the £450,000 purchase price separate from the £436,638.42 HPI dated
 valuation reference for March 2025; the reference is neither a live nor a
-current valuation.
+current valuation. The original 300-month term is governed evidence and must
+match the Mission destination exactly; missing, fractional, subtly shifted or
+otherwise conflicting values fail closed. The current 201-month term cannot
+replace the original contractual destination. Optional schedule presentation
+metadata is validated again at the provider boundary; non-finite or unpaired
+values and calendar-unrepresentable timestamps isolate that provider to an
+unavailable assessment. Provider-controlled current-value units are escaped at
+every shared SVG insertion point.
 
 **Evidence.** `src/foundry/finance/mortgage_evidence.py`,
 `src/foundry/finance/mortgage_assessment.py`,

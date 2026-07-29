@@ -282,17 +282,18 @@ def test_seeded_log_carries_a_permanent_synthetic_marker(tmp_path):
 
 def test_synthetic_marker_does_not_pollute_flight_director(monkeypatch, tmp_path):
     """The marker is tagged `observation`, so the Flight Deck's
-    Flight Director must show neither the marker nor an unrelated standing
-    recommendation as a correction for a deviating Mortgage mission."""
+    Flight Director must not surface it as a recommendation. With no
+    deviating mission, the separate evidence-backed concentration check may
+    surface normally."""
     path = tmp_path / "events.jsonl"
     monkeypatch.setenv("FOUNDRY_DATA_PATH", str(path))
     monkeypatch.setenv("FOUNDRY_DEMO_DATA", "true")
     _maybe_seed_demo_data()
     html = _client().get("/").text
     assert "SYNTHETIC DEMO DATA" not in html
-    assert "standing quarterly check" not in html
-    assert "No course correction on file for Mortgage free" in html
-    assert "nothing is invented" in html
+    assert "standing quarterly check" in html
+    assert "One worthwhile course correction identified." in html
+    assert "No course correction on file for Mortgage free" not in html
 
 
 # ------------------------------------------------------------- fail closed

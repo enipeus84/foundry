@@ -66,6 +66,11 @@ from foundry.core.scope import Subject
 from foundry.eventlog import EventLog
 
 router = APIRouter()
+DAY = 86_400.0
+MONTH_NAMES = (
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December",
+)
 
 
 @dataclass
@@ -671,10 +676,34 @@ _SHELL = """<!doctype html>
   .mission-hero-meta .v.none {{ color: var(--muted); }}
   .mission-hero-meta .sub {{
     margin-top: 4px; color: #9aa8b6; font-size: 10px; letter-spacing: .04em;
+    max-width: 34ch; overflow-wrap: anywhere;
+  }}
+  .mission-time-lane {{
+    position: absolute; z-index: 4; left: clamp(460px, 46%, 610px);
+    right: 46px; bottom: 24px;
+    display: grid; grid-template-columns: repeat(4, minmax(0,1fr));
+    gap: 1px; padding: 1px; background: rgba(52,66,82,.42);
+    border: 1px solid rgba(130,148,166,.22);
+  }}
+  .mission-time-lane .time-point {{
+    min-width: 0; padding: 11px 12px; background: rgba(5,8,12,.84);
+  }}
+  .mission-time-lane .k {{
+    color: var(--faint); font-size: 7.5px; font-weight: 650;
+    letter-spacing: .16em; line-height: 1.35;
+  }}
+  .mission-time-lane .v {{
+    margin-top: 4px; color: var(--text); font-size: 12px; font-weight: 610;
+    letter-spacing: .04em; overflow-wrap: anywhere;
+  }}
+  .mission-time-lane .sub {{
+    margin-top: 3px; color: var(--green); font-size: 8px;
+    letter-spacing: .05em; line-height: 1.35; overflow-wrap: anywhere;
   }}
   .hero-trajectory {{
-    position: absolute; z-index: 2; inset: 62px max(0px, calc((100vw - 1320px) / 2)) 0;
-    width: min(1320px, 100%); height: 650px; margin-inline: auto;
+    position: absolute; z-index: 2;
+    inset: 62px 20px 104px clamp(470px, 39vw, 520px);
+    width: auto; height: auto;
     overflow: visible;
   }}
   .hero-trajectory .actual-path {{
@@ -722,9 +751,15 @@ _SHELL = """<!doctype html>
   .hero-trajectory .milestone-core {{ fill: currentColor; }}
   .hero-trajectory .milestone-label {{
     fill: currentColor; font-size: 8.2px; font-weight: 620; letter-spacing: .9px;
+    paint-order: stroke; stroke: rgba(5,8,12,.92); stroke-width: 2.4px;
   }}
   .hero-trajectory .milestone-detail {{
     fill: #8998a6; font-size: 7.4px; letter-spacing: .4px;
+    paint-order: stroke; stroke: rgba(5,8,12,.92); stroke-width: 2.2px;
+  }}
+  .hero-trajectory .current-label,
+  .hero-trajectory .current-detail {{
+    paint-order: stroke; stroke: rgba(5,8,12,.94); stroke-width: 2.8px;
   }}
   .hero-trajectory .milestone-0 {{ color: #788692; }}
   .hero-trajectory .milestone-1 {{ color: #aa9569; }}
@@ -785,7 +820,10 @@ _SHELL = """<!doctype html>
     .m-status {{ grid-column: 3; grid-row: 2; }}
     .mission-detail-hero .hero-content {{ padding-inline: 44px; }}
     .mission-detail-hero .hero-content > * {{ max-width: 340px; }}
-    .hero-trajectory {{ transform: translateX(40px); }}
+    .hero-trajectory {{
+      inset: 72px -18px 116px 390px; transform: none;
+    }}
+    .mission-time-lane {{ left: 42%; right: 28px; }}
     .analysis-rail {{ grid-template-columns: repeat(2, minmax(0,1fr)); }}
     .analysis-rail .instrument:nth-child(3) {{ border-left: 0; border-top: 1px solid var(--line); }}
     .analysis-rail .instrument:nth-child(4) {{ border-top: 1px solid var(--line); }}
@@ -822,7 +860,7 @@ _SHELL = """<!doctype html>
     .scope-label {{ flex-basis: 100%; margin: 0; }}
     .scope-bar button {{ flex: 1 1 calc(50% - 18px); text-align: left; }}
     .scope-bar button:last-child {{ flex-basis: 100%; }}
-    .mission-detail-hero {{ min-height: 780px; margin-bottom: 34px; }}
+    .mission-detail-hero {{ min-height: 940px; margin-bottom: 34px; }}
     .mission-empty-state {{ min-height: 380px; padding-top: 92px; }}
     .mission-detail-hero img.earthrise {{
       object-position: 66% 72%; height: 58%; top: 42%;
@@ -835,7 +873,7 @@ _SHELL = """<!doctype html>
         linear-gradient(90deg, rgba(1,4,8,.34), transparent);
     }}
     .mission-detail-hero .hero-content {{
-      min-height: auto; height: 390px; justify-content: flex-start;
+      min-height: auto; height: 510px; justify-content: flex-start;
       padding: 92px 24px 18px;
     }}
     .mission-detail-hero .hero-content > * {{ max-width: none; }}
@@ -848,7 +886,7 @@ _SHELL = """<!doctype html>
     .mission-hero-meta .v {{ font-size: 14px; letter-spacing: .03em; }}
     .mission-hero-meta .sub {{ display: none; }}
     .hero-trajectory {{
-      inset: 350px -40px 0 -70px; width: calc(100% + 110px); height: 430px;
+      inset: 510px -30px 150px -58px; width: auto; height: auto;
       transform: none;
     }}
     .hero-trajectory .milestone-detail {{ opacity: 0; }}
@@ -862,7 +900,15 @@ _SHELL = """<!doctype html>
     .hero-trajectory .mission-milestone:hover .milestone-label {{
       opacity: 1; paint-order: stroke; stroke: #05080c; stroke-width: 3px;
     }}
-    .hero-trajectory .milestone-label {{ font-size: 8px; }}
+    .hero-trajectory .milestone-label {{ font-size: 14px; stroke-width: 4px; }}
+    .hero-trajectory .current-label,
+    .hero-trajectory .current-detail {{ opacity: 0; }}
+    .mission-time-lane {{
+      left: 8px; right: 8px; bottom: 16px;
+      grid-template-columns: repeat(2, minmax(0,1fr));
+    }}
+    .mission-time-lane .time-point {{ padding: 10px; }}
+    .mission-time-lane .v {{ font-size: 11px; }}
     .analysis-rail {{ grid-template-columns: 1fr; }}
     .analysis-rail .instrument + .instrument {{
       border-left: 0; border-top: 1px solid var(--line);
@@ -1125,22 +1171,43 @@ def home(request: Request):
         primary_mission, _, primary_result = next(
             (row for row in evaluated if row[1] is not None and
              _RAG_TO_BANNER.get(row[1], ("", ""))[0] == banner_word), evaluated[0])
-        label, kind = _METRIC_PRESENTATION.get(
-            primary_mission.target_metric, (primary_mission.target_metric, "plain"))
+        primary_assessment = assessments_by_mission.get(primary_mission.id)
+        label, kind = (
+            _assessment_current_presentation(primary_assessment)
+            if primary_assessment is not None else
+            _METRIC_PRESENTATION.get(
+                primary_mission.target_metric, ("CURRENT VALUE", "plain"))
+        )
         unit = primary_result.unit_or_currency if primary_result else None
         current = _format_value(
             primary_result.value if primary_result else None, unit, kind)
-        primary_assessment = assessments_by_mission.get(primary_mission.id)
         if primary_assessment is not None:
             milestone = (
                 primary_assessment.current_milestone.label
                 if primary_assessment.current_milestone else "not evaluable")
-            trajectory = (
-                primary_assessment.trajectory_state or "not evaluable")
-            why = (
-                f"{primary_mission.name}: {label.lower()} {current}. "
-                f"Current milestone {milestone}; trajectory {trajectory}."
-            )
+            completion = next((
+                item for item in primary_assessment.milestones
+                if item.completes_mission), None)
+            if completion is not None and primary_assessment.eta is not None:
+                comparison = _time_gain_phrase(
+                    primary_assessment.delta_v.months
+                    if primary_assessment.delta_v else None,
+                    primary_assessment.delta_v.direction
+                    if primary_assessment.delta_v else None,
+                )
+                why = (
+                    f"{completion.label} by "
+                    f"{_month_year(primary_assessment.eta).title()}, "
+                    f"{comparison}. {label.title()} is {current}; "
+                    f"{milestone} is the current milestone. Further "
+                    "acceleration is assessed separately from the next "
+                    "recommended burn.")
+            else:
+                trajectory = (
+                    primary_assessment.trajectory_state or "not evaluable")
+                why = (
+                    f"{label.title()} is {current}. {milestone} is the "
+                    f"current milestone; trajectory is {trajectory}.")
         elif primary_mission.target_range is not None:
             lo, hi = primary_mission.target_range
             why = (f"{primary_mission.name}: {label.lower()} {current} against a "
@@ -1198,9 +1265,12 @@ def home(request: Request):
             else:
                 word, klass = (_RAG_TO_BANNER.get(rag, (rag.upper(), "none"))
                                if rag else ("NOT EVALUABLE", "none"))
-            label, kind = _METRIC_PRESENTATION.get(
-                mission.target_metric,
-                (mission.target_metric.upper() or "—", "plain"))
+            label, kind = (
+                _assessment_current_presentation(assessment)
+                if assessment is not None else
+                _METRIC_PRESENTATION.get(
+                    mission.target_metric, ("CURRENT VALUE", "plain"))
+            )
             unit = result.unit_or_currency if result else None
             value_ok = result is not None and result.status in ("available", "stale")
             value_txt = _format_value(result.value, unit, kind) if value_ok else "—"
@@ -1496,7 +1566,13 @@ def metric_drill_down(request: Request, metric_id: str):
 
 
 def _month_year(ts: float | None) -> str:
-    return time.strftime("%b %Y", time.gmtime(ts)).upper() if ts is not None else "NOT IN HORIZON"
+    if ts is None:
+        return "NOT IN HORIZON"
+    try:
+        utc = time.gmtime(ts)
+    except (OSError, OverflowError, ValueError):
+        return "NOT EVALUABLE"
+    return f"{MONTH_NAMES[utc.tm_mon - 1]} {utc.tm_year}".upper()
 
 
 def _format_month_delta(months: int | None, direction: str | None) -> str:
@@ -1508,6 +1584,35 @@ def _format_month_delta(months: int | None, direction: str | None) -> str:
         return f"LESS THAN 1 MONTH {direction.upper()}"
     noun = "MONTH" if magnitude == 1 else "MONTHS"
     return f"ABOUT {magnitude} {noun} {direction.upper()}"
+
+
+def _time_gain_phrase(months: int | None, direction: str | None) -> str:
+    """Plain-language, month-resolution comparison from provider output."""
+    if months is None or direction not in ("accelerated", "delayed"):
+        return "timing against the reference schedule is not available"
+    magnitude = abs(months)
+    years, remaining_months = divmod(magnitude, 12)
+    parts = []
+    if years:
+        parts.append(f"{years} year{'s' if years != 1 else ''}")
+    if remaining_months or not parts:
+        parts.append(
+            f"{remaining_months} month"
+            f"{'s' if remaining_months != 1 else ''}")
+    relation = "ahead of" if direction == "accelerated" else "behind"
+    return f"around {' '.join(parts)} {relation} the reference schedule"
+
+
+def _assessment_current_presentation(
+    assessment: MissionAssessment,
+) -> tuple[str, str]:
+    """Use provider presentation metadata, never a raw metric identifier."""
+    current = assessment.current_value
+    if current is not None:
+        for item in assessment.telemetry:
+            if item.result.metric_id == current.metric_id:
+                return item.label, item.format_kind
+    return "CURRENT VALUE", "plain"
 
 
 def _smooth_svg_path(points: tuple[tuple[float, float], ...]) -> str:
@@ -1706,6 +1811,8 @@ def _mission_trajectory_svg(assessment: MissionAssessment) -> str:
     current_unit = (
         assessment.current_value.unit_or_currency
         if assessment.current_value else None)
+    current_metric_label, current_format_kind = (
+        _assessment_current_presentation(assessment))
     current_milestone = (
         assessment.current_milestone.label
         if assessment.current_milestone else "Not evaluable")
@@ -1735,23 +1842,32 @@ def _mission_trajectory_svg(assessment: MissionAssessment) -> str:
         if future_milestones else None)
     milestone_svg = []
     for milestone, (x, y) in geometry["phase_points"]:
-        classes = ["mission-milestone", f"milestone-{milestone.order % 4}"]
+        label_lane = milestone.order % 2
+        classes = [
+            "mission-milestone",
+            f"milestone-{milestone.order % 4}",
+            f"label-lane-{label_lane}",
+        ]
         if milestone.id == next_milestone_id:
             classes.append("next-milestone")
         if milestone.completes_mission:
             classes.append("completion-milestone")
         if milestone.is_current:
             classes.append("current-phase")
-        below = milestone.order == 0
-        stem_end = y + 42.0 if below else y - 45.0
-        label_y = y + 58.0 if below else y - 57.0
+        stem_offset = -42.0 if label_lane == 0 else -68.0
+        stem_end = y + stem_offset
+        label_y = stem_end - 12.0
         detail_y = label_y + 13.0
         anchor = (
             "end"
-            if below or milestone.order == len(assessment.milestones) - 1
+            if milestone.order in (0, len(assessment.milestones) - 1)
             else "middle"
         )
-        label_x = x - 4.0 if anchor == "end" else x
+        label_x = (
+            x - 24.0
+            if milestone.order == len(assessment.milestones) - 1 else
+            x - 4.0 if anchor == "end" else x
+        )
         context = "Current milestone. " if milestone.is_current else ""
         completion = (
             "Mission completion milestone. "
@@ -1776,7 +1892,8 @@ def _mission_trajectory_svg(assessment: MissionAssessment) -> str:
   </g>""")
 
     current_label = (
-        f"Today. Current value {_format_value(current_value, current_unit, 'currency')}. "
+        f"Today. {current_metric_label} "
+        f"{_format_value(current_value, current_unit, current_format_kind)}. "
         f"Current milestone {current_milestone}. Trajectory "
         f"{assessment.trajectory_state or 'not evaluable'}."
     )
@@ -1798,7 +1915,8 @@ def _mission_trajectory_svg(assessment: MissionAssessment) -> str:
       preserveAspectRatio="xMidYMid meet">
   <title id="trajectory-title">Mission trajectory</title>
   <desc id="trajectory-description">A solid historical path reaches the current position
-  at {_format_value(current_value, current_unit, "currency")}. A dashed expected forecast
+  at {html.escape(_format_value(
+      current_value, current_unit, current_format_kind))}. A dashed expected forecast
   continues along the mission arc. {html.escape(range_description)}</desc>
   <defs>
     <linearGradient id="mission-range-gradient" x1="0" y1="0" x2="1" y2="0">
@@ -1821,10 +1939,13 @@ def _mission_trajectory_svg(assessment: MissionAssessment) -> str:
     <circle class="current-halo" cx="{current_x:.1f}" cy="{current_y:.1f}" r="19"/>
     <circle class="current-node" cx="{current_x:.1f}" cy="{current_y:.1f}" r="7.5"/>
     <circle cx="{current_x:.1f}" cy="{current_y:.1f}" r="2.5" fill="#e0a83c"/>
-    <text x="{current_x + 12:.1f}" y="{current_y - 17:.1f}" fill="#edf2f7"
+    <text class="current-label" x="{current_x + 17:.1f}"
+      y="{current_y - 22:.1f}" fill="#edf2f7"
       font-size="10.5" font-weight="700" letter-spacing="1.1">TODAY</text>
-    <text x="{current_x + 12:.1f}" y="{current_y - 3:.1f}" fill="#b8c3ce"
-      font-size="8.5" letter-spacing=".5">{_format_value(current_value, current_unit, "currency")}</text>
+    <text class="current-detail" x="{current_x + 17:.1f}"
+      y="{current_y - 8:.1f}" fill="#b8c3ce"
+      font-size="8.5" letter-spacing=".5">{html.escape(_format_value(
+          current_value, current_unit, current_format_kind))}</text>
   </g>
   {"".join(milestone_svg)}
 </svg>"""
@@ -1936,19 +2057,19 @@ def mission_detail(request: Request, slug: str):
         recommendation_amount = "No declared intervention"
         recommendation_impact = "NOT AVAILABLE"
         recommendation_detail = (
-            "<li>No improving recommendation Scenario is declared.</li>")
+            "<li>No improving recommendation is declared.</li>")
     elif recommendation.status != "available" \
             or recommendation.amount is None \
             or recommendation.unit_or_currency is None \
             or not recommendation.action_label:
         recommendation_action = "Recommendation unavailable"
-        recommendation_amount = "Structured Scenario data is incomplete"
+        recommendation_amount = "Recommendation evidence is incomplete"
         recommendation_impact = "NOT AVAILABLE"
         recommendation_detail = "".join(
             f"<li>{html.escape(note)}</li>"
             for note in (
                 *recommendation.limitations,
-                f"Scenario {recommendation.scenario_id}",
+                "The declared recommendation evidence is incomplete.",
             ))
     else:
         recommendation_action = recommendation.action_label
@@ -1961,20 +2082,20 @@ def mission_detail(request: Request, slug: str):
             recommendation.estimated_delta_v_months,
             recommendation.delta_v_direction)
         recommendation_lineage = (
-            f"Scenario {recommendation.scenario_id[:8]} · "
-            f"{len(recommendation.assumption_references)} assumption reference(s)")
+            f"Declared scenario with "
+            f"{len(recommendation.assumption_references)} "
+            "assumption reference(s)")
         raw_impact = (
             f"{recommendation.estimated_delta_v_days:.1f} days"
             if recommendation.estimated_delta_v_days is not None
             else "not available")
         recommendation_detail = (
-            f"<li>Next Burn source: {html.escape(recommendation_lineage)}</li>"
+            f"<li>Evidence basis: {html.escape(recommendation_lineage)}.</li>"
             f"<li>Declared action: {html.escape(recommendation.action)}</li>"
-            f"<li>Structured adjustment: "
-            f"{html.escape(recommendation.adjustment_key)} = "
-            f"{html.escape(amount)} per {html.escape(recommendation.cadence or 'declared cadence')}</li>"
-            f"<li>Raw modelled ETA delta: {html.escape(raw_impact)}; "
-            f"user-facing resolution: month</li>")
+            f"<li>Modelled adjustment: {html.escape(amount)} per "
+            f"{html.escape(recommendation.cadence or 'declared cadence')}.</li>"
+            f"<li>Modelled ETA change: {html.escape(raw_impact)}; "
+            f"displayed at month resolution.</li>")
 
     telemetry_cards = []
     for item in assessment.telemetry:
@@ -1999,6 +2120,60 @@ def mission_detail(request: Request, slug: str):
             f"{assessment.confidence.basis}",
         )
     note_items = "".join(f"<li>{html.escape(note)}</li>" for note in notes if note)
+    achieved_delta = (
+        (
+            "LESS THAN 1 MONTH GAINED"
+            if delta_v.months == 0 else
+            f"ABOUT {abs(delta_v.months)} MONTH"
+            f"{'S' if abs(delta_v.months) != 1 else ''} GAINED"
+        )
+        if delta_v is not None and delta_v.months is not None
+        and delta_v.direction == "accelerated" else
+        _format_month_delta(
+            delta_v.months if delta_v else None,
+            delta_v.direction if delta_v else None)
+    )
+    has_reference_schedule = (
+        delta_v is not None
+        and delta_v.reference_start_at is not None
+        and bool(delta_v.reference_start_label)
+        and delta_v.reference_destination_at is not None
+        and bool(delta_v.reference_destination_label)
+    )
+    current_label, current_format_kind = (
+        _assessment_current_presentation(assessment))
+    timeline_lane = f"""<div class="mission-time-lane"
+    aria-label="Mission schedule comparison">
+    <div class="time-point"><p class="k">{html.escape(
+        delta_v.reference_start_label)}</p>
+      <p class="v">{html.escape(_month_year(
+          delta_v.reference_start_at))}</p></div>
+    <div class="time-point"><p class="k">CURRENT POSITION</p>
+      <p class="v num">{html.escape(_format_value(
+          assessment.current_value.value,
+          assessment.current_value.unit_or_currency,
+          current_format_kind))}</p></div>
+    <div class="time-point"><p class="k">EXPECTED DESTINATION</p>
+      <p class="v">{html.escape(_month_year(assessment.eta))}</p></div>
+    <div class="time-point"><p class="k">{html.escape(
+        delta_v.reference_destination_label)}</p>
+      <p class="v">{html.escape(_month_year(
+          delta_v.reference_destination_at))}</p>
+      <p class="sub">{html.escape(achieved_delta)}</p></div>
+  </div>""" if has_reference_schedule else ""
+    schedule_summary = (
+        f" Expected destination is {_month_year(assessment.eta)}; "
+        f"{delta_v.reference_destination_label.lower()} is "
+        f"{_month_year(delta_v.reference_destination_at)}; achieved change is "
+        f"{achieved_delta}."
+        if has_reference_schedule else
+        f" Expected destination is {_month_year(assessment.eta)}."
+    )
+    delta_period = (
+        delta_v.period_label
+        if delta_v is not None and delta_v.period_label else
+        f"LAST {delta_v.lookback_days if delta_v else 0} DAYS"
+    )
     body = f"""<section class="hero mission-detail-hero phase-{_sun_phase(as_of)}"
   aria-labelledby="mission-title" aria-describedby="trajectory-summary">
   <img class="earthrise" src="{_EARTHRISE_PATH}"
@@ -2022,17 +2197,22 @@ def mission_detail(request: Request, slug: str):
         <p class="sub">{html.escape(margin_sub)}</p></div>
     </div>
   </div>
+  {timeline_lane}
   <p class="sr-only" id="trajectory-summary">The solid historical path reaches
-    {_format_value(assessment.current_value.value, assessment.current_value.unit_or_currency, "currency")}.
+    {html.escape(current_label)} {html.escape(_format_value(
+        assessment.current_value.value,
+        assessment.current_value.unit_or_currency,
+        current_format_kind))}.
     The dashed expected forecast continues through a widening low to high sensitivity
-    range toward the configured milestones. Current milestone is
+    range toward the configured milestones.{html.escape(schedule_summary)}
+    Current milestone is
     {html.escape(milestone_label)}; trajectory is
     {html.escape(trajectory_label)}.</p>
 </section>
 <section aria-labelledby="analysis-heading">
   <h2 id="analysis-heading">FLIGHT ANALYSIS</h2>
   <div class="analysis-rail">
-    <div class="instrument"><p class="k">Δv · LAST {delta_v.lookback_days if delta_v else 0} DAYS</p>
+    <div class="instrument"><p class="k">Δv · {html.escape(delta_period)}</p>
       <p class="v num">{html.escape(delta_value)}</p>
       <p class="sub">{html.escape(delta_sub)}</p></div>
     <div class="instrument"><p class="k">MILESTONE COMPLETION</p>
