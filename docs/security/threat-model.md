@@ -3,7 +3,7 @@
 **Scope:** the current single-user Foundry application, its append-only
 event log, derived projections, optional model adapters and web surface.
 
-**Last reviewed:** 2026-07-28.
+**Last reviewed:** 2026-07-29.
 
 This model describes the implementation that exists today. Proposed
 controls are kept separate from current mitigations, and residual risk is
@@ -61,6 +61,11 @@ untrusted files and exports       identity provider       model providers
 - **Supply-chain boundary.** Optional packages and GitHub Actions are
   trusted code. The core's empty mandatory dependency set narrows, but
   does not remove, this boundary.
+- **Manual mortgage evidence.** Governed values supplied by the operator
+  become permanent Finance events. Shape, finiteness, scope and effective
+  date are validated, but source, lineage, actor and confidence remain
+  assertions. This is an in-process input boundary, not an external
+  connector or authenticated lender feed.
 
 ## Threat actors
 
@@ -206,7 +211,10 @@ misleading permanent events or abuse future standing credentials.
 
 **Current mitigations.** Current ingestors read local files, parse known
 export shapes and append through the Kernel. They do not hold service
-credentials or make outbound requests.
+credentials or make outbound requests. The manual Mortgage Freedom adapter
+accepts only governed fields and validated finite envelopes; hostile direct
+log events make that mission not evaluable without replacing existing
+evidence or exposing payload details.
 
 **Residual risk.** Inputs have no explicit size limit. ChatGPT exports
 omit system messages and both export ingestors normalise messages into a

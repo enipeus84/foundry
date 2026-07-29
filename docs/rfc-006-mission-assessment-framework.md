@@ -1,6 +1,6 @@
 # RFC-006 — Mission Assessment Framework
 
-Status: implemented for review.
+Status: merged in PR #16.
 
 ## Decision
 

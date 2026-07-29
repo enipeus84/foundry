@@ -1,6 +1,6 @@
 # RFC-006 — Mission Assessment Framework Implementation Report
 
-Status: implementation complete; maintainer corrections applied in draft PR #16.
+Status: merged in PR #16.
 
 ## Scope
 
@@ -70,4 +70,4 @@ deterministic output and safe generic routes.
   remediation
 - Security Gate: **APPROVE** — 0 Critical, High, Medium or Low findings
 
-The PR must remain draft and must not be merged by the implementation agent.
+This report records the final pre-merge evidence accepted for PR #16.
