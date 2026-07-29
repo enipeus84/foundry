@@ -18,8 +18,8 @@ from foundry.core.entities import EntityProjection
 from foundry.core.metrics import MetricRegistry, MetricRequest, MetricResult
 from foundry.core.mission_assessment import (
     DeltaV, ForecastPoint, MissionAssessment, MissionAssessmentRequest,
-    MissionMargin, MissionPhaseAssessment, RecommendationAssessment,
-    TrajectoryPoint,
+    MissionConfidence, MissionMargin, MissionMilestone,
+    RecommendationAssessment, TelemetryItem, TrajectoryPoint,
 )
 
 from .entities import FinanceEntityProjection, AssumptionSet, Scenario
@@ -92,7 +92,7 @@ class FinancialIndependencePolicy:
                             self.abundance_threshold, None, 3),
         )
 
-    def phase_for(self, value: float) -> MissionPhaseAssessment:
+    def phase_for(self, value: float) -> MissionMilestone:
         if value < self.building_capital_threshold:
             phase = self.phases[0]
         elif value < self.independent_threshold:
@@ -107,14 +107,16 @@ class FinancialIndependencePolicy:
         else:
             span = phase.upper_bound - phase.lower_bound
             completion = max(0.0, min(1.0, (value - phase.lower_bound) / span))
-        return MissionPhaseAssessment(
+        return MissionMilestone(
             id=phase.id, label=phase.label, lower_bound=phase.lower_bound,
             upper_bound=phase.upper_bound, completion=completion,
             order=phase.order, unit_or_currency=self.unit_or_currency,
             is_current=True,
             is_complete=(
                 phase.upper_bound is not None and value >= phase.upper_bound),
-            completes_mission=phase.completes_mission)
+            completes_mission=phase.completes_mission,
+            destination_direction="higher_is_better",
+            destination_value=phase.lower_bound)
 
 
 @dataclass(frozen=True)
@@ -257,6 +259,8 @@ class FinancialIndependenceAssessor:
                 mission_id=request.mission_id, policy_id=request.policy_id,
                 scope=request.scope, as_of=request.as_of, status="unavailable",
                 calculation_version=CALCULATION_VERSION, current_value=current,
+                confidence=MissionConfidence(
+                    "Insufficient", "accessible assets are unavailable"),
                 limitations=("accessible assets are unavailable", *current.limitations),
                 assumption_references=tuple(assumption_set.provenance))
         if current.unit_or_currency != self.policy.unit_or_currency:
@@ -264,6 +268,8 @@ class FinancialIndependenceAssessor:
                 mission_id=request.mission_id, policy_id=request.policy_id,
                 scope=request.scope, as_of=request.as_of, status="unavailable",
                 calculation_version=CALCULATION_VERSION, current_value=current,
+                confidence=MissionConfidence(
+                    "Insufficient", "assessment currency is incompatible"),
                 limitations=(
                     "accessible-assets currency does not match the configured policy",
                 ),
@@ -275,10 +281,8 @@ class FinancialIndependenceAssessor:
         low_eta = self.projection.eta(
             forecasts, self.policy.independent_threshold, "low")
         complete = current.value >= self.policy.independent_threshold
-        status = self._status(
+        status, trajectory_state, trajectory_tone = self._schedule_assessment(
             complete, low_eta, base_eta, mission.target_date)
-        flight_status_id, flight_status_label = self._flight_status(
-            status, complete)
 
         trajectory = self._trajectory(request, inputs.history_months)
         prior_at = request.as_of - inputs.delta_v_lookback_days * DAY
@@ -302,11 +306,19 @@ class FinancialIndependenceAssessor:
         current_phase = next(
             (phase for phase in phases if phase.is_current), None)
 
-        telemetry = tuple(self._metric(mid, request, request.as_of) for mid in (
-            "finance.accessible_assets",
-            "finance.cash_flow",
-            "finance.liquidity_runway",
-        ))
+        telemetry = (
+            TelemetryItem(
+                self._metric(
+                    "finance.accessible_assets", request, request.as_of),
+                "ACCESSIBLE ASSETS", "currency"),
+            TelemetryItem(
+                self._metric("finance.cash_flow", request, request.as_of),
+                "NET CASH FLOW", "currency", "SINCE FIRST OBSERVATION"),
+            TelemetryItem(
+                self._metric(
+                    "finance.liquidity_runway", request, request.as_of),
+                "RUNWAY", "months"),
+        )
         limitations = list(current.limitations)
         limitations.append(
             "Historical trajectory uses as_of-filtered V1 entity state; "
@@ -326,19 +338,39 @@ class FinancialIndependenceAssessor:
         sampled_forecast = tuple(
             point for index, point in enumerate(forecasts)
             if index % 3 == 0 or index == len(forecasts) - 1)
+        if mission.target_date is None:
+            confidence = MissionConfidence(
+                "Insufficient", "mission target date is absent")
+        elif current.status == "stale":
+            confidence = MissionConfidence(
+                "Provisional", "current evidence is stale")
+        else:
+            confidence = MissionConfidence(
+                "Supported",
+                "declared inputs and active assumptions support "
+                "the deterministic assessment",
+            )
 
         return MissionAssessment(
             mission_id=mission.id, policy_id=request.policy_id,
             scope=request.scope, as_of=request.as_of, status=status,
             calculation_version=CALCULATION_VERSION, current_value=current,
             mission_complete=complete, eta=base_eta,
-            flight_status_id=flight_status_id,
-            flight_status_label=flight_status_label,
+            trajectory_state=trajectory_state,
+            trajectory_tone=trajectory_tone,
+            confidence=confidence,
+            current_milestone=current_phase, milestones=phases,
+            # Deprecated RFC-005 presentation fields, retained while
+            # external consumers migrate to Core's trajectory vocabulary.
+            flight_status_id=(
+                trajectory_state.lower() if trajectory_state else "unavailable"),
+            flight_status_label=trajectory_state or "Not Evaluable",
             phase=current_phase, phases=phases,
             mission_margin=margin, delta_v=delta_v,
             trajectory=trajectory, forecast=sampled_forecast,
             telemetry=telemetry, recommendations=recommendations,
             input_references=current.input_references,
+            evidence_references=current.evidence_references,
             assumption_references=tuple(assumption_set.provenance),
             limitations=tuple(limitations),
             confidence_basis=(
@@ -365,7 +397,7 @@ class FinancialIndependenceAssessor:
 
     def _phase_assessments(
             self, current: float, forecast: tuple[ForecastPoint, ...],
-            as_of: float) -> tuple[MissionPhaseAssessment, ...]:
+            as_of: float) -> tuple[MissionMilestone, ...]:
         current_phase = self.policy.phase_for(current)
         phases = []
         for definition in self.policy.phases:
@@ -388,7 +420,7 @@ class FinancialIndependenceAssessor:
             if definition.lower_bound > current:
                 estimated_at = self.projection.eta(
                     forecast, definition.lower_bound, "base")
-            phases.append(MissionPhaseAssessment(
+            phases.append(MissionMilestone(
                 id=definition.id,
                 label=definition.label,
                 lower_bound=definition.lower_bound,
@@ -400,31 +432,35 @@ class FinancialIndependenceAssessor:
                 is_complete=is_complete,
                 completes_mission=definition.completes_mission,
                 estimated_at=estimated_at,
+                destination_direction="higher_is_better",
+                destination_value=definition.lower_bound,
             ))
         return tuple(phases)
 
     @staticmethod
     def _status(complete: bool, low_eta: float | None,
                 base_eta: float | None, target_date: float | None) -> str:
-        if complete:
-            return "green"
-        if target_date is None:
-            return "unavailable"
-        if low_eta is not None and low_eta <= target_date:
-            return "green"
-        if base_eta is not None and base_eta <= target_date:
-            return "amber"
-        return "red"
+        """Deprecated RFC-005 scalar adapter; no new consumer should use it."""
+        return FinancialIndependenceAssessor._schedule_assessment(
+            complete, low_eta, base_eta, target_date)[0]
 
     @staticmethod
-    def _flight_status(status: str, complete: bool) -> tuple[str, str]:
+    def _schedule_assessment(
+        complete: bool,
+        low_eta: float | None,
+        base_eta: float | None,
+        target_date: float | None,
+    ) -> tuple[str, str | None, str]:
+        """Evaluate FI schedule policy into explicit independent outputs."""
         if complete:
-            return "complete", "Mission Complete"
-        return {
-            "green": ("ahead", "Ahead"),
-            "amber": ("nominal", "Nominal"),
-            "red": ("at_risk", "At Risk"),
-        }.get(status, ("unavailable", "Not Evaluable"))
+            return "green", "Complete", "green"
+        if target_date is None:
+            return "unavailable", None, "none"
+        if low_eta is not None and low_eta <= target_date:
+            return "green", "Accelerated", "green"
+        if base_eta is not None and base_eta <= target_date:
+            return "amber", "Nominal", "amber"
+        return "red", "Divergent", "red"
 
     @staticmethod
     def _months_from_days(days: float) -> int:
@@ -467,7 +503,8 @@ class FinancialIndependenceAssessor:
                 or prior_value is None:
             return MissionMargin(
                 pace_percent=None, schedule_buffer_days=buffer_days,
-                description="Insufficient schedule history for pace margin")
+                description="Insufficient schedule history for pace margin",
+                state=self._margin_state(None, buffer_days))
 
         elapsed_months = max((as_of - prior_at) / MONTH, 1e-9)
         remaining_months = max((target_date - as_of) / MONTH, 1e-9)
@@ -485,7 +522,28 @@ class FinancialIndependenceAssessor:
             description = f"{abs(pace_percent):.1f}% below required pace"
         return MissionMargin(
             pace_percent=pace_percent, schedule_buffer_days=buffer_days,
-            description=description)
+            description=description,
+            state=self._margin_state(pace_percent, buffer_days))
+
+    @staticmethod
+    def _margin_state(
+        pace_percent: float | None,
+        schedule_buffer_days: float | None,
+    ) -> str | None:
+        """Classify FI operating buffer from margin evidence alone."""
+        available = tuple(
+            value for value in (pace_percent, schedule_buffer_days)
+            if value is not None
+        )
+        if not available:
+            return None
+        if len(available) == 2 and all(value > 0 for value in available):
+            return "High Margin"
+        if len(available) == 2 and all(value < 0 for value in available):
+            return "Negative Margin"
+        if all(value >= 0 for value in available):
+            return "Adequate Margin"
+        return "Low Margin"
 
     def _recommendations(self, current: float, as_of: float,
                          inputs: ProjectionInputs,

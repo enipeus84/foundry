@@ -60,6 +60,7 @@ from foundry.core.metrics import MetricRegistry, MetricRequest
 from foundry.core.mission_evaluation import get_mission_status
 from foundry.core.mission_assessment import (
     MissionAssessment, MissionAssessmentRegistry, MissionAssessmentRequest,
+    MissionDefinition,
 )
 from foundry.core.scope import Subject
 from foundry.eventlog import EventLog
@@ -92,16 +93,6 @@ KPI_CARDS: tuple[tuple[str, str, str, str], ...] = (
     ("LIQUIDITY", "finance.cash_available", "currency", ""),
     ("CASH FLOW", "finance.cash_flow", "currency", "SINCE FIRST OBSERVATION"),
     ("RUNWAY", "finance.liquidity_runway", "months", ""),
-)
-
-# Presentation-only Mission programme. These lanes create no Mission entities
-# and carry no financial values unless an existing active Mission can be shown
-# inside them. Empty lanes are visibly labelled PLANNED / TARGET NOT DECLARED.
-_MISSION_LANES: tuple[tuple[str, str, str], ...] = (
-    ("mortgage", "Mortgage Freedom", "Own the home outright."),
-    ("independence", "Financial Independence", "Build lasting freedom of choice."),
-    ("retirement", "Retirement", "Fund the life beyond work."),
-    ("children", "Children's Future", "Create long-term optionality."),
 )
 
 # Drill-down pages for metrics no longer on the opening screen keep
@@ -191,23 +182,18 @@ def _active_missions(console: Console) -> list[Mission]:
     return [m for m in console.entities.missions.values() if m.status == "active"]
 
 
-def _mission_lane(name: str) -> str | None:
-    """Choose a visual programme lane from an existing Mission name.
+def _legacy_scalar_mission_status(
+    mission: Mission,
+    console: Console,
+    scope: Subject,
+    as_of: float,
+):
+    """Deprecated migration adapter for Missions without assessment policy.
 
-    This is display taxonomy only: it never creates or evaluates a Mission,
-    and the real Mission name remains visible. Unknown names remain visible
-    as additional live rows rather than being forced into a false category.
+    New mission definitions and routes must use MissionAssessmentRegistry.
     """
-    text = name.casefold()
-    if "mortgage" in text or "home" in text:
-        return "mortgage"
-    if "child" in text or "education" in text:
-        return "children"
-    if "retire" in text or "pension" in text:
-        return "retirement"
-    if "independ" in text or "fire" in text:
-        return "independence"
-    return None
+    return get_mission_status(
+        mission.id, console.entities, console.registry, scope, as_of)
 
 
 _CURRENCY_SYMBOL = {"GBP": "£", "USD": "$", "EUR": "€"}
@@ -627,6 +613,17 @@ _SHELL = """<!doctype html>
 
   .empty {{ color: var(--muted); font-size: 14px; }}
   .placeholder {{ color: var(--faint); font-size: 14px; margin-top: 6px; }}
+  .mission-return {{
+    display: inline-block; margin-bottom: 22px; pointer-events: auto;
+    color: var(--muted); font-size: 9px; font-weight: 650; letter-spacing: .18em;
+  }}
+  .mission-return:hover {{ color: var(--text); }}
+  .mission-empty-state {{
+    min-height: 460px; max-width: 640px; padding-top: 112px;
+  }}
+  .mission-empty-state .status-word {{ margin-bottom: 18px; }}
+  .mission-empty-state .empty,
+  .mission-empty-state .placeholder {{ max-width: 52ch; line-height: 1.65; }}
 
   /* -------------------------------- RFC-005 Mission Assessment detail. */
   .mission-detail-hero {{
@@ -729,10 +726,10 @@ _SHELL = """<!doctype html>
   .hero-trajectory .milestone-detail {{
     fill: #8998a6; font-size: 7.4px; letter-spacing: .4px;
   }}
-  .hero-trajectory .phase-0 {{ color: #788692; }}
-  .hero-trajectory .phase-1 {{ color: #aa9569; }}
-  .hero-trajectory .phase-2 {{ color: #7692aa; }}
-  .hero-trajectory .phase-3 {{ color: #79a27e; }}
+  .hero-trajectory .milestone-0 {{ color: #788692; }}
+  .hero-trajectory .milestone-1 {{ color: #aa9569; }}
+  .hero-trajectory .milestone-2 {{ color: #7692aa; }}
+  .hero-trajectory .milestone-3 {{ color: #79a27e; }}
 
   .analysis-rail {{
     display: grid; grid-template-columns: .8fr .8fr 1.7fr .8fr;
@@ -826,6 +823,7 @@ _SHELL = """<!doctype html>
     .scope-bar button {{ flex: 1 1 calc(50% - 18px); text-align: left; }}
     .scope-bar button:last-child {{ flex-basis: 100%; }}
     .mission-detail-hero {{ min-height: 780px; margin-bottom: 34px; }}
+    .mission-empty-state {{ min-height: 380px; padding-top: 92px; }}
     .mission-detail-hero img.earthrise {{
       object-position: 66% 72%; height: 58%; top: 42%;
       transform: scale(1.32); transform-origin: 66% 0;
@@ -1016,6 +1014,7 @@ def home(request: Request):
     as_of = _as_of(console)
     scope = _household_scope(console)
     missions = _active_missions(console)
+    definitions = console.assessments.definitions()
 
     # -- Core evaluates every active Mission; this page only renders.
     evaluated = []  # (mission, rag, result)
@@ -1030,8 +1029,8 @@ def home(request: Request):
                 rag = _ASSESSMENT_TO_RAG.get(assessment.status)
                 result = assessment.current_value
             else:
-                rag, result = get_mission_status(
-                    mission.id, console.entities, console.registry, scope, as_of)
+                rag, result = _legacy_scalar_mission_status(
+                    mission, console, scope, as_of)
             evaluated.append((mission, rag, result))
 
     # -- FLIGHT PLAN: worst status wins across active Missions. When
@@ -1133,14 +1132,14 @@ def home(request: Request):
             primary_result.value if primary_result else None, unit, kind)
         primary_assessment = assessments_by_mission.get(primary_mission.id)
         if primary_assessment is not None:
-            phase = (
-                primary_assessment.phase.label
-                if primary_assessment.phase else "not evaluable")
-            flight_status = (
-                primary_assessment.flight_status_label or "not evaluable")
+            milestone = (
+                primary_assessment.current_milestone.label
+                if primary_assessment.current_milestone else "not evaluable")
+            trajectory = (
+                primary_assessment.trajectory_state or "not evaluable")
             why = (
                 f"{primary_mission.name}: {label.lower()} {current}. "
-                f"Current phase {phase}; flight status {flight_status}."
+                f"Current milestone {milestone}; trajectory {trajectory}."
             )
         elif primary_mission.target_range is not None:
             lo, hi = primary_mission.target_range
@@ -1180,13 +1179,22 @@ def home(request: Request):
     if scope is None:
         missions_html = ('<p class="empty">No household declared yet.</p>')
     else:
-        def live_mission_row(mission_number, lane_title, mission, rag, result):
+        def live_mission_row(
+            mission_number,
+            title,
+            mission,
+            rag,
+            result,
+            definition: MissionDefinition | None = None,
+        ):
             assessment = assessments_by_mission.get(mission.id)
             if assessment is not None:
-                word = assessment.flight_status_label.upper() or "NOT EVALUABLE"
+                word = assessment.trajectory_state.upper() \
+                    if assessment.trajectory_state else "NOT EVALUABLE"
                 klass = (
-                    assessment.status
-                    if assessment.status in ("green", "amber", "red") else "none")
+                    assessment.trajectory_tone
+                    if assessment.trajectory_tone in ("green", "amber", "red")
+                    else "none")
             else:
                 word, klass = (_RAG_TO_BANNER.get(rag, (rag.upper(), "none"))
                                if rag else ("NOT EVALUABLE", "none"))
@@ -1198,11 +1206,13 @@ def home(request: Request):
             value_txt = _format_value(result.value, unit, kind) if value_ok else "—"
             progress = f"{label} {value_txt}"
             if assessment is not None:
-                phase = assessment.phase.label if assessment.phase else "NOT EVALUABLE"
-                progress += f" · CURRENT PHASE {phase.upper()}"
+                milestone = (
+                    assessment.current_milestone.label
+                    if assessment.current_milestone else "NOT EVALUABLE")
+                progress += f" · CURRENT MILESTONE {milestone.upper()}"
                 margin = assessment.mission_margin
-                if margin and margin.pace_percent is not None:
-                    progress += f" · MISSION MARGIN {margin.pace_percent:+.1f}%"
+                if margin and margin.state:
+                    progress += f" · MISSION MARGIN {margin.state.upper()}"
             elif mission.target_range is not None:
                 lo, hi = mission.target_range
                 progress += (f" · RANGE {_format_value(lo, unit, kind)}"
@@ -1225,55 +1235,87 @@ def home(request: Request):
             if deviation is not None and mission.tolerance:
                 bar = _deviation_gauge(
                     deviation, mission.tolerance, klass, is_range=is_range)
-            if assessment is not None and _mission_lane(mission.name) == "independence":
-                href = "/missions/financial-independence"
-            else:
-                href = (
-                    f"/metrics/{mission.target_metric}"
-                    if mission.target_metric else "/missions")
-            purpose = (f"Tracked against {label.title()}."
-                       if mission.name.casefold() == lane_title.casefold() else
-                       f"{mission.name} · tracked against {label.title()}.")
+            href = (
+                f"/missions/{definition.slug}" if definition is not None else
+                f"/metrics/{mission.target_metric}"
+                if mission.target_metric else "/missions")
+            purpose = (
+                definition.definition
+                if definition is not None and definition.definition else
+                f"{mission.name} · tracked against {label.title()}."
+            )
             return (
                 f'<a class="card mission live" href="{html.escape(href)}">'
                 f'<div class="m-number num">{mission_number:02d}</div>'
-                f'<div class="m-identity"><div class="m-name">{html.escape(lane_title)}</div>'
+                f'<div class="m-identity"><div class="m-name">{html.escape(title)}</div>'
                 f'<div class="m-purpose">{html.escape(purpose)}</div></div>'
                 f'<div class="m-telemetry"><div class="m-progress num">{html.escape(progress)}</div>'
                 f'{bar}</div>'
-                f'<div class="m-status {klass}">FLIGHT STATUS · {html.escape(word)}</div>'
+                f'<div class="m-status {klass}">TRAJECTORY · {html.escape(word)}</div>'
                 f'<div class="m-link" aria-hidden="true">›</div></a>')
 
-        def planned_mission_row(mission_number, title, description):
+        def planned_mission_row(mission_number, definition):
+            description = (
+                definition.definition or
+                "Assessment and target are planned.")
             return (
-                f'<div class="card mission planned" role="link" aria-disabled="true" '
-                f'aria-label="{html.escape(title)}, planned view; target not declared">'
+                f'<a class="card mission planned" '
+                f'href="/missions/{html.escape(definition.slug)}" '
+                f'aria-label="{html.escape(definition.label)}, planned view; '
+                f'target not declared">'
                 f'<div class="m-number num">{mission_number:02d}</div>'
-                f'<div class="m-identity"><div class="m-name">{html.escape(title)}</div>'
+                f'<div class="m-identity"><div class="m-name">'
+                f'{html.escape(definition.label)}</div>'
                 f'<div class="m-purpose">{html.escape(description)}</div></div>'
                 f'<div class="m-telemetry"><div class="m-progress">TARGET NOT DECLARED</div>'
                 f'<div class="m-gauge planned" aria-hidden="true"></div></div>'
                 f'<div class="m-status">PLANNED</div>'
-                f'<div class="m-link unavailable" aria-hidden="true">—</div></div>')
+                f'<div class="m-link unavailable" aria-hidden="true">›</div></a>')
 
-        lane_rows = {}
-        unassigned = []
+        def ambiguous_mission_row(mission_number, definition):
+            return (
+                f'<a class="card mission live" '
+                f'href="/missions/{html.escape(definition.slug)}">'
+                f'<div class="m-number num">{mission_number:02d}</div>'
+                f'<div class="m-identity"><div class="m-name">'
+                f'{html.escape(definition.label)}</div>'
+                f'<div class="m-purpose">Multiple active Missions claim this '
+                f'definition; no Mission was selected.</div></div>'
+                f'<div class="m-telemetry"><div class="m-progress">'
+                f'AMBIGUOUS ACTIVE MISSION</div></div>'
+                f'<div class="m-status none">NOT EVALUABLE</div>'
+                f'<div class="m-link unavailable" aria-hidden="true">›</div></a>')
+
+        definition_rows: dict[str, list] = {}
+        legacy_rows = []
         for row in evaluated:
-            lane = _mission_lane(row[0].name)
-            if lane is not None and lane not in lane_rows:
-                lane_rows[lane] = row
+            definition = (
+                console.assessments.definition_for_policy(
+                    row[0].assessment_policy_id)
+                if row[0].assessment_policy_id else None
+            )
+            if definition is not None:
+                definition_rows.setdefault(definition.slug, []).append(row)
             else:
-                unassigned.append(row)
+                legacy_rows.append(row)
 
         mission_cards = []
-        for mission_number, (lane, title, description) in enumerate(_MISSION_LANES, start=1):
-            row = lane_rows.get(lane)
-            if row is None:
-                mission_cards.append(planned_mission_row(mission_number, title, description))
+        for mission_number, definition in enumerate(definitions, start=1):
+            rows = definition_rows.get(definition.slug, [])
+            if not rows:
+                mission_cards.append(
+                    planned_mission_row(mission_number, definition))
+            elif len(rows) > 1:
+                mission_cards.append(
+                    ambiguous_mission_row(mission_number, definition))
             else:
-                mission_cards.append(live_mission_row(mission_number, title, *row))
-        for mission_number, row in enumerate(unassigned, start=len(_MISSION_LANES) + 1):
-            mission_cards.append(live_mission_row(mission_number, row[0].name, *row))
+                mission_cards.append(live_mission_row(
+                    mission_number, definition.label, *rows[0], definition))
+        for mission_number, row in enumerate(
+            legacy_rows, start=len(definitions) + 1
+        ):
+            mission_cards.append(
+                live_mission_row(mission_number, row[0].name, *row))
         missions_html = f'<div class="missions">{"".join(mission_cards)}</div>'
 
     # -- Flight Director: at most one evidence-backed recommendation,
@@ -1350,7 +1392,7 @@ def home(request: Request):
   <h2>PRIMARY TELEMETRY</h2>
   {cards}
 </section>
-<section>
+<section id="missions">
   <h2>APOLLO MISSIONS</h2>
   {missions_html}
 </section>
@@ -1527,32 +1569,56 @@ def _mission_trajectory_geometry(assessment: MissionAssessment) -> dict:
         if assessment.current_value and assessment.current_value.value is not None
         else 0.0
     )
+    milestones = assessment.milestones
+    direction = (
+        assessment.current_milestone.destination_direction
+        if assessment.current_milestone is not None else
+        milestones[0].destination_direction if milestones else
+        "higher_is_better"
+    )
+
+    def directed(value: float) -> float:
+        return value if direction == "higher_is_better" else -value
+
     actual_values = [
         item.value for item in assessment.trajectory
         if math.isfinite(item.value)
     ]
-    actual_start = min(actual_values or [current_value])
-    phase_bounds = [
-        bound for phase in assessment.phases
-        for bound in (phase.lower_bound, phase.upper_bound)
+    current_progress_value = directed(current_value)
+    actual_start = min(
+        [directed(value) for value in actual_values] or [current_progress_value])
+    milestone_bounds = [
+        directed(bound) for milestone in milestones
+        for bound in (
+            milestone.lower_bound,
+            milestone.upper_bound,
+            milestone.target_value,
+        )
         if bound is not None and math.isfinite(bound)
     ]
-    forecast_highs = [
-        point.high for point in assessment.forecast
-        if math.isfinite(point.high)
+    forecast_values = [
+        directed(value) for point in assessment.forecast
+        for value in (point.low, point.base, point.high)
+        if math.isfinite(value)
     ]
+    # The mission arc ends at its declared destination. Forecast values
+    # beyond it must not compress every milestone into an unreadable cluster;
+    # without milestones, the forecast itself defines the visual scale.
+    scale_values = milestone_bounds if milestone_bounds else forecast_values
     mission_scale = max(
-        [current_value, *(phase_bounds or forecast_highs), 1.0])
+        [current_progress_value, *scale_values, current_progress_value + 1.0])
     current_transition = 0.38
 
     def progress_for(value: float) -> float:
-        if value <= current_value:
-            span = max(current_value - actual_start, 1.0)
+        progress_value = directed(value)
+        if progress_value <= current_progress_value:
+            span = max(current_progress_value - actual_start, 1.0)
             return max(0.0, min(
-                (value - actual_start) / span, 1.0)) * current_transition
-        span = max(mission_scale - current_value, 1.0)
+                (progress_value - actual_start) / span, 1.0)
+            ) * current_transition
+        span = max(mission_scale - current_progress_value, 1.0)
         future_progress = max(0.0, min(
-            (value - current_value) / span, 1.06))
+            (progress_value - current_progress_value) / span, 1.06))
         return current_transition + future_progress * (1.0 - current_transition)
 
     def point_for(value: float) -> tuple[float, float]:
@@ -1609,21 +1675,21 @@ def _mission_trajectory_geometry(assessment: MissionAssessment) -> dict:
         "range_status": range_status,
         "current_point": point_for(current_value),
         "phase_points": tuple(
-            (phase, point_for(phase.lower_bound))
-            for phase in sorted(assessment.phases, key=lambda item: item.order)
+            (milestone, point_for(milestone.target_value))
+            for milestone in sorted(milestones, key=lambda item: item.order)
         ),
     }
 
 
-def _phase_range_text(phase) -> str:
-    unit = phase.unit_or_currency
-    if phase.upper_bound is None:
-        return f"ABOVE {_format_value(phase.lower_bound, unit, 'currency')}"
-    if phase.lower_bound <= 0:
-        return f"BELOW {_format_value(phase.upper_bound, unit, 'currency')}"
+def _milestone_range_text(milestone) -> str:
+    unit = milestone.unit_or_currency
+    if milestone.upper_bound is None:
+        return f"ABOVE {_format_value(milestone.lower_bound, unit, 'currency')}"
+    if milestone.lower_bound <= 0:
+        return f"BELOW {_format_value(milestone.upper_bound, unit, 'currency')}"
     return (
-        f"{_format_value(phase.lower_bound, unit, 'currency')} – "
-        f"{_format_value(phase.upper_bound, unit, 'currency')}"
+        f"{_format_value(milestone.lower_bound, unit, 'currency')} – "
+        f"{_format_value(milestone.upper_bound, unit, 'currency')}"
     )
 
 
@@ -1640,7 +1706,9 @@ def _mission_trajectory_svg(assessment: MissionAssessment) -> str:
     current_unit = (
         assessment.current_value.unit_or_currency
         if assessment.current_value else None)
-    current_phase = assessment.phase.label if assessment.phase else "Not evaluable"
+    current_milestone = (
+        assessment.current_milestone.label
+        if assessment.current_milestone else "Not evaluable")
     current_x, current_y = geometry["current_point"]
     range_path = geometry["range_path"]
     range_svg = (
@@ -1654,35 +1722,46 @@ def _mission_trajectory_svg(assessment: MissionAssessment) -> str:
         f'<path class="forecast-path" d="{geometry["forecast_path"]}" '
         f'aria-hidden="true"/>' if geometry["forecast_path"] else "")
 
-    future_phases = [
-        phase for phase in assessment.phases
-        if phase.lower_bound > (current_value or 0.0)]
-    next_phase_id = (
-        min(future_phases, key=lambda phase: phase.order).id
-        if future_phases else None)
+    future_milestones = [
+        milestone for milestone in assessment.milestones
+        if (
+            milestone.target_value > (current_value or 0.0)
+            if milestone.destination_direction == "higher_is_better"
+            else milestone.target_value < (current_value or 0.0)
+        )
+    ]
+    next_milestone_id = (
+        min(future_milestones, key=lambda milestone: milestone.order).id
+        if future_milestones else None)
     milestone_svg = []
-    for phase, (x, y) in geometry["phase_points"]:
-        classes = ["mission-milestone", f"phase-{phase.order % 4}"]
-        if phase.id == next_phase_id:
+    for milestone, (x, y) in geometry["phase_points"]:
+        classes = ["mission-milestone", f"milestone-{milestone.order % 4}"]
+        if milestone.id == next_milestone_id:
             classes.append("next-milestone")
-        if phase.completes_mission:
+        if milestone.completes_mission:
             classes.append("completion-milestone")
-        if phase.is_current:
+        if milestone.is_current:
             classes.append("current-phase")
-        below = phase.order == 0
+        below = milestone.order == 0
         stem_end = y + 42.0 if below else y - 45.0
         label_y = y + 58.0 if below else y - 57.0
         detail_y = label_y + 13.0
-        anchor = "end" if below or phase.order == len(assessment.phases) - 1 else "middle"
+        anchor = (
+            "end"
+            if below or milestone.order == len(assessment.milestones) - 1
+            else "middle"
+        )
         label_x = x - 4.0 if anchor == "end" else x
-        context = "Current phase. " if phase.is_current else ""
-        completion = "Mission completion milestone. " if phase.completes_mission else ""
+        context = "Current milestone. " if milestone.is_current else ""
+        completion = (
+            "Mission completion milestone. "
+            if milestone.completes_mission else "")
         eta = (
-            f"Estimated {_month_year(phase.estimated_at)}. "
-            if phase.estimated_at is not None else "")
+            f"Estimated {_month_year(milestone.estimated_at)}. "
+            if milestone.estimated_at is not None else "")
         accessible_name = (
-            f"{phase.label}. {context}{completion}"
-            f"{_phase_range_text(phase)}. {eta}"
+            f"{milestone.label}. {context}{completion}"
+            f"{_milestone_range_text(milestone)}. {eta}"
         )
         milestone_svg.append(f"""<g class="{" ".join(classes)}" tabindex="0"
     role="group" aria-label="{html.escape(accessible_name)}">
@@ -1691,15 +1770,15 @@ def _mission_trajectory_svg(assessment: MissionAssessment) -> str:
     <circle class="milestone-ring" cx="{x:.1f}" cy="{y:.1f}" r="5.5"/>
     <circle class="milestone-core" cx="{x:.1f}" cy="{y:.1f}" r="1.8"/>
     <text class="milestone-label" x="{label_x:.1f}" y="{label_y:.1f}"
-      text-anchor="{anchor}">{html.escape(phase.label.upper())}</text>
+      text-anchor="{anchor}">{html.escape(milestone.label.upper())}</text>
     <text class="milestone-detail" x="{label_x:.1f}" y="{detail_y:.1f}"
-      text-anchor="{anchor}">{html.escape(_phase_range_text(phase))}</text>
+      text-anchor="{anchor}">{html.escape(_milestone_range_text(milestone))}</text>
   </g>""")
 
     current_label = (
         f"Today. Current value {_format_value(current_value, current_unit, 'currency')}. "
-        f"Current phase {current_phase}. Flight status "
-        f"{assessment.flight_status_label or 'not evaluable'}."
+        f"Current milestone {current_milestone}. Trajectory "
+        f"{assessment.trajectory_state or 'not evaluable'}."
     )
     range_description = {
         "available": (
@@ -1751,59 +1830,99 @@ def _mission_trajectory_svg(assessment: MissionAssessment) -> str:
 </svg>"""
 
 
-@router.get("/missions/financial-independence", response_class=HTMLResponse)
-def financial_independence_mission(request: Request):
+@router.get("/missions/{slug}", response_class=HTMLResponse)
+def mission_detail(request: Request, slug: str):
     if session_email(request) is None:
         return _login_redirect()
     console = _console(request)
     as_of = _as_of(console)
+    mission_return = (
+        '<a class="mission-return" href="/#missions">← ALL MISSIONS</a>')
+    definition = console.assessments.definition_for_slug(slug)
+    if definition is None:
+        response = _render(
+            "Mission not found",
+            f"""<section class="mission-empty-state">{mission_return}
+  <h2>MISSION NOT FOUND</h2>
+  <p class="empty">This mission is not available.</p>
+</section>""" + _footer(console),
+            as_of,
+            "/missions",
+        )
+        response.status_code = 404
+        return response
+
+    if definition.assessment_policy_id is None:
+        body = f"""<section class="mission-empty-state">{mission_return}
+  <h2>{html.escape(definition.label.upper())}</h2>
+  <div class="status-word none">PLANNED</div>
+  <p class="empty">This mission is planned. Its assessment is not available yet.</p>
+  <p class="placeholder">No target, tracking criteria, or mission status is shown.</p>
+</section>{_footer(console)}"""
+        return _render(definition.label, body, as_of, "/missions")
+
     scope = _household_scope(console)
-    owned_policies = console.assessments.owned_policy_ids()
-    mission = next((
+    matching_missions = [
         mission for mission in _active_missions(console)
-        if _mission_lane(mission.name) == "independence"
-        and mission.assessment_policy_id in owned_policies
-    ), None)
+        if mission.assessment_policy_id == definition.assessment_policy_id
+    ]
+    if len(matching_missions) > 1:
+        body = f"""<section class="mission-empty-state">{mission_return}
+  <h2>{html.escape(definition.label.upper())}</h2>
+  <div class="status-word none">NOT EVALUABLE</div>
+  <p class="empty">We cannot assess this mission because more than one active
+  mission is configured.</p>
+  <p class="placeholder">No mission was selected.</p>
+</section>{_footer(console)}"""
+        return _render(definition.label, body, as_of, "/missions")
+    mission = matching_missions[0] if matching_missions else None
     if scope is None or mission is None:
-        body = """<section>
-  <h2>FINANCIAL INDEPENDENCE</h2>
-  <p class="empty">No active Financial Independence Mission is declared.</p>
-  <p class="placeholder">The route remains read-only and will not invent policy or household state.</p>
+        body = f"""<section class="mission-empty-state">{mission_return}
+  <h2>{html.escape(definition.label.upper())}</h2>
+  <p class="empty">This mission has not been set up yet.</p>
+  <p class="placeholder">No assessment is shown until its goal and household
+  are available.</p>
 </section>""" + _footer(console)
-        return _render("Financial Independence", body, as_of, "/missions")
+        return _render(definition.label, body, as_of, "/missions")
 
     assessment = console.assessments.dispatch(MissionAssessmentRequest(
-        mission_id=mission.id, policy_id=mission.assessment_policy_id,
+        mission_id=mission.id, policy_id=definition.assessment_policy_id,
         scope=scope, as_of=as_of))
     if assessment.status == "unavailable" or assessment.current_value is None:
         limitations = "".join(
             f"<li>{html.escape(note)}</li>" for note in assessment.limitations)
-        body = f"""<section>
-  <h2>FINANCIAL INDEPENDENCE</h2>
+        body = f"""<section class="mission-empty-state">{mission_return}
+  <h2>{html.escape(definition.label.upper())}</h2>
   <div class="status-word none">NOT EVALUABLE</div>
-  <p class="status-sub">The assessment failed closed; no mission state was fabricated.</p>
+  <p class="status-sub">We cannot assess this mission right now. No mission
+  status is shown because the available data could not be evaluated safely.</p>
   <ul style="margin:24px 0 0 18px;color:var(--muted);">{limitations}</ul>
 </section>{_footer(console)}"""
-        return _render("Financial Independence", body, as_of, "/missions")
+        return _render(definition.label, body, as_of, "/missions")
 
-    phase = assessment.phase
-    status_class = assessment.status if assessment.status in ("green", "amber", "red") else "none"
+    milestone = assessment.current_milestone
+    trajectory_class = (
+        assessment.trajectory_tone
+        if assessment.trajectory_tone in ("green", "amber", "red")
+        else "none"
+    )
     eta = _month_year(assessment.eta)
-    phase_label = phase.label.upper() if phase else "NOT EVALUABLE"
-    completion_phase = next(
-        (item for item in assessment.phases if item.completes_mission), None)
+    milestone_label = (
+        milestone.label.upper() if milestone else "NOT EVALUABLE")
+    completion_milestone = next(
+        (item for item in assessment.milestones if item.completes_mission), None)
     completion_label = (
-        completion_phase.label.upper()
-        if completion_phase else "MISSION COMPLETION")
-    flight_status_label = (
-        assessment.flight_status_label.upper()
-        if assessment.flight_status_label else "NOT EVALUABLE")
-    phase_completion = phase.completion * 100.0 if phase else 0.0
+        completion_milestone.label.upper()
+        if completion_milestone else "MISSION COMPLETION")
+    trajectory_label = (
+        assessment.trajectory_state.upper()
+        if assessment.trajectory_state else "NOT EVALUABLE")
+    milestone_completion = milestone.completion * 100.0 if milestone else 0.0
     margin = assessment.mission_margin
-    margin_value = (
-        f"{margin.pace_percent:+.1f}%"
-        if margin and margin.pace_percent is not None else "—")
+    margin_value = margin.state.upper() if margin and margin.state else "—"
     margin_sub = margin.description if margin else "Not available"
+    if margin and margin.pace_percent is not None:
+        margin_sub = f"{margin.pace_percent:+.1f}% · {margin_sub}"
     delta_v = assessment.delta_v
     delta_value = _format_month_delta(
         delta_v.months if delta_v else None,
@@ -1858,21 +1977,27 @@ def financial_independence_mission(request: Request):
             f"user-facing resolution: month</li>")
 
     telemetry_cards = []
-    for result in assessment.telemetry:
-        label, kind = _METRIC_PRESENTATION.get(
-            result.metric_id, (result.metric_id.rsplit(".", 1)[-1].replace("_", " ").upper(), "plain"))
-        if result.metric_id == "finance.accessible_assets":
-            label, kind = "ACCESSIBLE ASSETS", "currency"
+    for item in assessment.telemetry:
+        result = item.result
         value = (
-            _format_value(result.value, result.unit_or_currency, kind)
+            _format_value(
+                result.value, result.unit_or_currency, item.format_kind)
             if result.status in ("available", "stale") else result.status.upper())
+        qualifier = f" · {item.qualifier}" if item.qualifier else ""
         telemetry_cards.append(
-            f'<div class="telemetry"><p class="k">{html.escape(label)}</p>'
+            f'<div class="telemetry"><p class="k">{html.escape(item.label)}</p>'
             f'<p class="value num">{html.escape(value)}</p>'
             f'<p class="sub">{html.escape(result.status.upper())} · '
-            f'{len(result.input_references)} INPUT EVENT(S)</p></div>')
+            f'{len(result.input_references)} INPUT EVENT(S)'
+            f'{html.escape(qualifier)}</p></div>')
 
     notes = [assessment.confidence_basis, *assessment.limitations]
+    if assessment.confidence is not None:
+        notes.insert(
+            0,
+            f"MISSION CONFIDENCE · {assessment.confidence.state.upper()} · "
+            f"{assessment.confidence.basis}",
+        )
     note_items = "".join(f"<li>{html.escape(note)}</li>" for note in notes if note)
     body = f"""<section class="hero mission-detail-hero phase-{_sun_phase(as_of)}"
   aria-labelledby="mission-title" aria-describedby="trajectory-summary">
@@ -1882,26 +2007,27 @@ def financial_independence_mission(request: Request):
   <div class="scrim"></div>
   {_mission_trajectory_svg(assessment)}
   <div class="hero-content">
+    {mission_return}
     <p class="eyebrow">MISSION</p>
-    <h2 class="mission-title" id="mission-title">Financial Independence</h2>
-    <p class="mission-definition">The ability to choose whether you work because your accessible
-    assets can indefinitely support your desired lifestyle.</p>
+    <h2 class="mission-title" id="mission-title">{html.escape(definition.label)}</h2>
+    <p class="mission-definition">{html.escape(definition.definition)}</p>
     <div class="mission-hero-meta">
-      <div><p class="k">CURRENT PHASE</p><p class="v">{html.escape(phase_label)}</p></div>
-      <div><p class="k">FLIGHT STATUS</p>
-        <p class="v {status_class}">{html.escape(flight_status_label)}</p></div>
+      <div><p class="k">CURRENT MILESTONE</p><p class="v">{html.escape(milestone_label)}</p></div>
+      <div><p class="k">TRAJECTORY</p>
+        <p class="v {trajectory_class}">{html.escape(trajectory_label)}</p></div>
       <div><p class="k">ETA · {html.escape(completion_label)}</p>
         <p class="v">{html.escape(eta)}</p></div>
       <div class="margin-stat"><p class="k">MISSION MARGIN</p>
-        <p class="v num {status_class}">{html.escape(margin_value)}</p>
+        <p class="v num">{html.escape(margin_value)}</p>
         <p class="sub">{html.escape(margin_sub)}</p></div>
     </div>
   </div>
   <p class="sr-only" id="trajectory-summary">The solid historical path reaches
     {_format_value(assessment.current_value.value, assessment.current_value.unit_or_currency, "currency")}.
     The dashed base forecast continues through a widening low to high sensitivity
-    range toward the configured phases. Current phase is {html.escape(phase_label)};
-    flight status is {html.escape(flight_status_label)}.</p>
+    range toward the configured milestones. Current milestone is
+    {html.escape(milestone_label)}; trajectory is
+    {html.escape(trajectory_label)}.</p>
 </section>
 <section aria-labelledby="analysis-heading">
   <h2 id="analysis-heading">FLIGHT ANALYSIS</h2>
@@ -1909,9 +2035,9 @@ def financial_independence_mission(request: Request):
     <div class="instrument"><p class="k">Δv · LAST {delta_v.lookback_days if delta_v else 0} DAYS</p>
       <p class="v num">{html.escape(delta_value)}</p>
       <p class="sub">{html.escape(delta_sub)}</p></div>
-    <div class="instrument"><p class="k">PHASE COMPLETION</p>
-      <p class="v num">{phase_completion:.1f}%</p>
-      <p class="sub">{html.escape(phase_label)}</p></div>
+    <div class="instrument"><p class="k">MILESTONE COMPLETION</p>
+      <p class="v num">{milestone_completion:.1f}%</p>
+      <p class="sub">{html.escape(milestone_label)}</p></div>
     <div class="instrument recommendation-action"><p class="k">NEXT BURN</p>
       <p class="v">{html.escape(recommendation_action)}</p>
       <p class="sub">{html.escape(recommendation_amount)}</p></div>
@@ -1937,7 +2063,7 @@ def financial_independence_mission(request: Request):
   </details>
 </section>
 {_footer(console)}"""
-    return _render("Financial Independence", body, as_of, "/missions")
+    return _render(definition.label, body, as_of, "/missions")
 
 
 def _placeholder(request: Request, path: str, title: str, note: str):

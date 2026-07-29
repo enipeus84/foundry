@@ -55,6 +55,13 @@ class ExtensibleVocabulary:
         return f"ExtensibleVocabulary({self.name!r}, {sorted(self._values)!r})"
 
 
+class ClosedVocabulary(ExtensibleVocabulary):
+    """A vocabulary whose values are owned and closed by Core."""
+
+    def extend(self, *new_values: str) -> None:
+        raise TypeError(f"{self.name} is a closed vocabulary")
+
+
 PARTY_TYPE = ExtensibleVocabulary("party_type", {"person", "household"})
 
 PARTY_RELATIONSHIP = ExtensibleVocabulary(
@@ -87,6 +94,48 @@ MISSION_STATUS = ExtensibleVocabulary(
 METRIC_STATUS = ExtensibleVocabulary(
     "metric_status",
     {"available", "unavailable", "unsupported", "stale", "error"},
+)
+
+MISSION_TRAJECTORY = ClosedVocabulary(
+    "mission_trajectory",
+    {
+        "Accelerated",
+        "Nominal",
+        "Constrained",
+        "Divergent",
+        "Critical",
+        "Complete",
+    },
+)
+
+MISSION_MARGIN = ClosedVocabulary(
+    "mission_margin",
+    {
+        "High Margin",
+        "Adequate Margin",
+        "Low Margin",
+        "Negative Margin",
+    },
+)
+
+MISSION_CONFIDENCE = ClosedVocabulary(
+    "mission_confidence",
+    {
+        "Established",
+        "Supported",
+        "Provisional",
+        "Insufficient",
+    },
+)
+
+DESTINATION_DIRECTION = ClosedVocabulary(
+    "destination_direction",
+    {"higher_is_better", "lower_is_better"},
+)
+
+TELEMETRY_FORMAT = ClosedVocabulary(
+    "telemetry_format",
+    {"currency", "percent", "months", "number", "plain"},
 )
 
 # tag_type -> the vocabulary its value must belong to.

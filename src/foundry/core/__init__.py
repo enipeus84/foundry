@@ -39,8 +39,10 @@ from .flight_deck import Tile, compose_flight_deck, compose_tile
 from .mission_evaluation import evaluate_mission_status, get_mission_status
 from .mission_assessment import (
     DeltaV, ForecastPoint, MissionAssessment, MissionAssessmentProvider,
-    MissionAssessmentRegistry, MissionAssessmentRequest, MissionMargin,
-    MissionPhaseAssessment, RecommendationAssessment, TrajectoryPoint,
+    MissionAssessmentRegistry, MissionAssessmentRequest, MissionConfidence,
+    MissionDefinition, MissionMargin, MissionMilestone,
+    MissionPhaseAssessment, RecommendationAssessment, TelemetryItem,
+    TrajectoryPoint,
 )
 
 __all__ = [
@@ -52,6 +54,8 @@ __all__ = [
     "Tile", "compose_flight_deck", "compose_tile",
     "evaluate_mission_status", "get_mission_status",
     "DeltaV", "ForecastPoint", "MissionAssessment", "MissionAssessmentProvider",
-    "MissionAssessmentRegistry", "MissionAssessmentRequest", "MissionMargin",
-    "MissionPhaseAssessment", "RecommendationAssessment", "TrajectoryPoint",
+    "MissionAssessmentRegistry", "MissionAssessmentRequest", "MissionConfidence",
+    "MissionDefinition", "MissionMargin", "MissionMilestone",
+    "MissionPhaseAssessment", "RecommendationAssessment", "TelemetryItem",
+    "TrajectoryPoint",
 ]

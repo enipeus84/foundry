@@ -1,11 +1,13 @@
-# Foundry Design Constitution v1.0
+# Foundry Design Constitution v1.1
 
 > **Provenance.** Migrated verbatim from the authoritative Google Doc
 > `Foundry_Design_Constitution_v1.0` (Drive, last modified 2026-07-20) into
 > version control on 2026-07-27, so that RFCs which cite it — RFC-004,
 > RFC-004.1, RFC-004.2 — can be verified by anyone reading this repository,
 > not only someone with Drive access. Content is unchanged from the source
-> document; only the file's location has moved. Future revisions to the
+> document; only the file's location moved in v1.0. RFC-006 revised the
+> Finance mission hierarchy and vocabulary under maintainer approval.
+> Future revisions to the
 > Design Constitution should be made here, in git, rather than in Drive.
 >
 > This document governs **product and visual design** decisions. It is
@@ -67,10 +69,12 @@ Runway
 
 Finance should be presented as missions, not accounts:
 
-- Mortgage Freedom
-- Retirement
-- Children's Future
-- Legacy
+1. Financial Resilience
+2. Financial Independence
+3. Pension Independence
+4. Mortgage Freedom
+
+Children remains outside the fixed Finance hierarchy.
 
 ## Flight Director
 

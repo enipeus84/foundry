@@ -179,6 +179,37 @@ session.
 every future data route applies the access check; review and route tests
 remain the enforcement mechanism.
 
+## Mission assessment isolation
+
+**Objective.** Prevent malformed mission metadata or one faulty provider
+from crossing scope boundaries, disclosing internal failures or fabricating
+state for another mission.
+
+**Current implementation.** Mission route slugs are validated
+lowercase-kebab definitions registered at composition time. Unknown routes
+return a generic non-reflective 404. Provider results must match the request's
+mission, policy, timestamp and `Subject`; nested milestones, series,
+recommendations, references and metric evidence receive runtime type,
+finiteness, availability/value consistency, ordering, direction, timestamp and
+scope validation before rendering. Current values and telemetry must retain
+the same household/member scope. `available` and `stale` metric evidence must
+carry a finite value. Exceptions and malformed envelopes degrade only the
+requested mission
+to a deterministic unavailable result with Insufficient confidence and no
+private exception detail.
+
+**Evidence.** `src/foundry/core/mission_assessment.py`,
+`src/foundry/mission_control.py`,
+`tests/test_core_mission_assessment.py`, and generic-route/provider-isolation
+cases in `tests/test_mission_control.py`.
+
+**Maturity.** Beta for in-process providers in the current single-user,
+read-only application.
+
+**Missing or future control.** Provider registration is not a plugin trust or
+signature system. Scope validation is not household/member authorisation;
+multi-user ownership and object-level permission policy remain absent.
+
 ## Operational logging
 
 **Objective.** Support diagnosis without copying household content,
