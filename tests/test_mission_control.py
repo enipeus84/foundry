@@ -543,7 +543,7 @@ def test_financial_independence_home_lane_opens_mission_detail(tmp_path):
     assert 'href="/missions/financial-independence"' in html
     assert "Financial Independence" in html
     assert 'href="/missions/mortgage-freedom"' in html
-    assert html.count("Assessment and target are planned.") == 2
+    assert html.count("Assessment and target are planned.") == 1
     assert ">FINANCE.MORTGAGE_BALANCE " not in html
     assert "finance.mortgage_balance 242" not in html
     assert "MORTGAGE BALANCE £242,540" in html
@@ -621,12 +621,136 @@ def test_mortgage_freedom_route_renders_deterministically(tmp_path):
         c.get("/missions/mortgage-freedom").text
 
 
+def test_financial_resilience_route_is_honest_steady_state_mission(tmp_path):
+    _seed_financial_independence(tmp_path)
+
+    html = client().get("/missions/financial-resilience").text
+    hero, analysis, summary = _mission_detail_regions(html)
+    drilldown = html[html.index('<details class="mission-drilldown">'):]
+
+    assert "Financial Resilience" in hero
+    assert "CURRENT MILESTONE</p><p class=\"v\">FORTIFIED" in hero
+    assert "Current position is RESERVE COVERAGE " in summary
+    assert " mo." in summary
+    assert "Trajectory history is not available for this mission." in hero
+    assert "Trajectory history is not available for this mission." in summary
+    assert '<p class="k">ETA' not in hero
+    assert "NOT IN HORIZON" not in hero
+    assert "EXPECTED DESTINATION" not in hero
+    assert "Δv" not in analysis
+    assert "ESTIMATED Δv" not in analysis
+    assert "forecast" not in summary.lower()
+    assert "solid historical path" not in summary
+    assert "dashed expected forecast" not in summary
+    assert "Maintain reserve contribution" in analysis
+    assert "£250 per month" in analysis
+    assert "Declared action and constraint" in drilldown
+    assert "evidence reference(s)" in drilldown
+    assert "declared 18-month reserve destination" in drilldown
+    assert "Modelled ETA change" not in drilldown
+    assert "finance." not in html
+    for assumption_key in (
+        "reserve_target_months",
+        "secure_floor_months",
+        "commitment_horizon_months",
+        "monthly_reserve_contribution",
+    ):
+        assert assumption_key not in html
+    assert "unprotected" not in html.lower()
+
+
+def test_financial_resilience_route_is_deterministic_and_read_only(tmp_path):
+    log = _seed_financial_independence(tmp_path)
+    before = (tmp_path / "events.jsonl").read_bytes()
+    c = client()
+
+    first = c.get("/missions/financial-resilience").text
+    second = c.get("/missions/financial-resilience").text
+
+    assert first == second
+    assert (tmp_path / "events.jsonl").read_bytes() == before
+
+
+def test_financial_resilience_home_lane_uses_months_without_currency(tmp_path):
+    _seed_financial_independence(tmp_path)
+
+    home = client().get("/").text
+    start = home.index(
+        '<a class="card mission live" '
+        'href="/missions/financial-resilience">')
+    end = home.index("</a>", start)
+    lane = home[start:end]
+
+    assert "CURRENT MILESTONE FORTIFIED" in lane
+    assert "RESERVE COVERAGE " in lane
+    assert " mo" in lane
+    assert "MISSION MARGIN HIGH MARGIN" in lane
+    assert "£30" not in lane
+    assert "NOT IN HORIZON" not in lane
+
+
+def test_month_milestone_ranges_never_render_as_currency():
+    from foundry.core.mission_assessment import MissionMilestone
+    from foundry.mission_control import _milestone_range_text
+
+    buffered = MissionMilestone(
+        "buffered", "Buffered", 3.0, 6.0, .5,
+        unit_or_currency="months")
+    fortified = MissionMilestone(
+        "fortified", "Fortified", 18.0, None, 1.0,
+        unit_or_currency="months")
+
+    assert _milestone_range_text(buffered) == "3.0 mo – 6.0 mo"
+    assert _milestone_range_text(fortified) == "ABOVE 18.0 mo"
+    assert "£" not in _milestone_range_text(buffered)
+
+
+def test_hostile_resilience_description_is_escaped_on_render(tmp_path):
+    from foundry.mission_control import _as_of
+    from foundry.finance.resilience_evidence import (
+        record_resilience_evidence,
+    )
+
+    log = _seed_financial_independence(tmp_path)
+    console = _build_console()
+    household_id = next(
+        party for party in console.entities.parties.values()
+        if party.party_type == "household").id
+    as_of = _as_of(console)
+    record_resilience_evidence(
+        log,
+        household_id,
+        "near_term_commitment",
+        100.0,
+        as_of,
+        confidence=.9,
+        source="<img src=x onerror=alert(1)>",
+        lineage="<script>alert('lineage')</script>",
+        unit_or_currency="GBP",
+        due_at=as_of + 86_400.0,
+        description="<script>alert('commitment')</script>",
+    )
+
+    html = client().get("/missions/financial-resilience").text
+
+    assert "<script>alert('commitment')</script>" not in html
+    assert "&lt;script&gt;alert(&#x27;commitment&#x27;)&lt;/script&gt;" \
+        in html
+    assert "<img src=x onerror=alert(1)>" not in html
+    assert "<script>alert('lineage')</script>" not in html
+    assert "onerror=" not in html.lower()
+
+
 def test_shipped_assessors_default_every_instrument_to_applicable(tmp_path):
     from foundry.core.mission_assessment import (
         InstrumentApplicability, MissionAssessmentRequest,
     )
     from foundry.mission_control import (
         _active_missions, _as_of, _household_scope,
+    )
+    from foundry.finance.mission_assessment import POLICY_ID as FI_POLICY_ID
+    from foundry.finance.mortgage_assessment import (
+        POLICY_ID as MORTGAGE_POLICY_ID,
     )
 
     _seed_financial_independence(tmp_path)
@@ -641,7 +765,9 @@ def test_shipped_assessors_default_every_instrument_to_applicable(tmp_path):
             as_of,
         ))
         for mission in _active_missions(console)
-        if mission.assessment_policy_id
+        if mission.assessment_policy_id in {
+            FI_POLICY_ID, MORTGAGE_POLICY_ID,
+        }
     ]
 
     assert len(assessed) == 2
@@ -693,18 +819,13 @@ def test_malformed_mortgage_provider_does_not_degrade_fi(
     assert "NOT EVALUABLE" not in unaffected.text
 
 
-@pytest.mark.parametrize("slug,label", [
-    ("financial-resilience", "Financial Resilience"),
-    ("pension-independence", "Pension Independence"),
-])
-def test_generic_planned_mission_routes_invent_no_policy(
-        tmp_path, slug, label):
+def test_generic_planned_mission_routes_invent_no_policy(tmp_path):
     _seed_financial_independence(tmp_path)
 
-    response = client().get(f"/missions/{slug}")
+    response = client().get("/missions/pension-independence")
 
     assert response.status_code == 200
-    assert label in response.text
+    assert "Pension Independence" in response.text
     assert "PLANNED" in response.text
     assert "This mission is planned. Its assessment is not available yet." \
         in response.text
@@ -1440,7 +1561,8 @@ def _replace_demo_scenario(log, *, name, amount, structured=True,
     projection = FinanceEntityProjection(log)
     original = next(
         scenario for scenario in projection.scenarios.values()
-        if scenario.status == "active")
+        if scenario.status == "active"
+        and "monthly_contribution_delta" in scenario.adjustments)
     finance.archive_scenario(log, original.id, "test replacement")
     kwargs = {}
     if structured:
@@ -1632,7 +1754,10 @@ def test_duplicate_active_missions_for_one_definition_fail_closed(tmp_path):
     from foundry.core.entities import EntityProjection
 
     log = _seed_financial_independence(tmp_path)
-    existing = next(iter(EntityProjection(log).missions.values()))
+    existing = next(
+        mission for mission in EntityProjection(log).missions.values()
+        if mission.assessment_policy_id
+        == "finance.financial_independence.v1")
     declare_mission(
         log,
         "Duplicate policy claim",

@@ -69,6 +69,13 @@ from foundry.finance.mission_assessment import FinancialIndependenceAssessor
 from foundry.finance.mortgage_assessment import MortgageFreedomAssessor
 from foundry.finance.mortgage_evidence import MortgageEvidenceProjection
 from foundry.finance.missions import register_finance_mission_definitions
+from foundry.finance.resilience_assessment import FinancialResilienceAssessor
+from foundry.finance.resilience_evidence import (
+    ResilienceEvidenceProjection,
+)
+from foundry.finance.resilience_metrics import (
+    FinanceResilienceMetricProvider,
+)
 from foundry.mission_control import Console, router as mission_control_router
 
 logger = logging.getLogger("foundry.web")
@@ -139,10 +146,15 @@ def _build_console() -> Console:
     log = EventLog(os.environ.get("FOUNDRY_DATA_PATH", DEFAULT_DATA_PATH))
     core_entities = EntityProjection(log)
     finance_entities = FinanceEntityProjection(log)
+    resilience_evidence = ResilienceEvidenceProjection(log)
     registry = MetricRegistry()
     registry.register(FinanceMetricProvider(finance_entities, core_entities))
+    registry.register(FinanceResilienceMetricProvider(
+        finance_entities, core_entities, resilience_evidence))
     assessments = MissionAssessmentRegistry()
     register_finance_mission_definitions(assessments)
+    assessments.register(FinancialResilienceAssessor(
+        registry, finance_entities, core_entities, resilience_evidence))
     assessments.register(FinancialIndependenceAssessor(
         finance_entities, core_entities, registry))
     assessments.register(MortgageFreedomAssessor(

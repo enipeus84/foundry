@@ -331,11 +331,33 @@ def test_out_of_horizon_projection_preserves_reference_schedule_metadata(
     result = assessor.assess(request)
 
     assert result.eta is None
+    assert result.applicability.eta == "unavailable"
     assert result.delta_v.days is None
     assert result.delta_v.period_label == "SINCE FIRST PAYMENT"
     assert result.delta_v.reference_start_label == "ORIGINAL START"
     assert result.delta_v.reference_destination_label \
         == "ORIGINAL DESTINATION"
+
+
+def test_out_of_horizon_eta_survives_registry_with_provenance(tmp_path):
+    _, _, _, _, assessor, request = _fixture(
+        tmp_path / "events.jsonl")
+    assumption_set = next(iter(assessor.finance.assumption_sets.values()))
+    assumption_set.assumptions["forecast_horizon_months"] = 1.0
+    registry = MissionAssessmentRegistry()
+    registry.register(assessor)
+
+    result = registry.dispatch(request)
+
+    assert result.status != "unavailable"
+    assert result.eta is None
+    assert result.applicability.eta == "unavailable"
+    assert result.current_value is not None
+    assert result.milestones
+    assert result.telemetry
+    assert result.input_references
+    assert result.evidence_references
+    assert "assessment provider failed safely" not in result.limitations
 
 
 def test_schedule_trajectory_does_not_infer_from_margin_or_confidence():
@@ -385,9 +407,15 @@ def test_financial_resilience_precedence_suppresses_recommendation(tmp_path):
 
     assert result.recommendations == ()
     assert result.trajectory_state == "Accelerated"
-    assert any(
-        "Financial Resilience takes precedence" in note
-        for note in result.limitations)
+    assert (
+        "Overpayment is not recommended because current liquidity runway "
+        "is 6.0 months, below Mortgage Freedom's declared 12-month "
+        "recommendation floor. Preserve emergency liquidity before "
+        "deploying additional capital."
+    ) in result.limitations
+    combined = " ".join(result.limitations)
+    assert "liquidity_floor_months" not in combined
+    assert "finance.liquidity_runway" not in combined
 
 
 def test_absent_scenario_invents_no_recommendation(tmp_path):

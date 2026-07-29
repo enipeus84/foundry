@@ -59,6 +59,23 @@ you can answer *why do you believe this* but not *why did you stop
 believing that*. Event-sourcing claim mutations resolves the
 contradiction and collapses the system to one storage primitive.
 
+## Architecture observations
+
+These observations are consequences of the constitutional invariants and
+shipped read-model behaviour, not new invariants.
+
+1. **Mission assessments are observations derived from evidence; facts live in
+   the append-only event log.** Metrics, milestones, margins, confidence,
+   stress results and recommendations are computed at `as_of`. An assessor and
+   its renderer have no event-log write path, so an assessment never becomes
+   canonical observed state merely by being shown.
+2. **Mission completion is an assessment outcome and is not necessarily
+   monotonic.** `MissionAssessment.mission_complete` is recomputed from the
+   current read model and is separate from the event-sourced Mission entity
+   lifecycle. A steady-state mission can move from complete back to incomplete
+   without an achievement or reversal event. No consumer may assume this
+   derived field only moves in one direction.
+
 ## Known, deliberate limitations
 
 - The hash chain detects edits and insertions but not truncation of

@@ -1788,13 +1788,18 @@ def _mission_trajectory_geometry(assessment: MissionAssessment) -> dict:
 
 def _milestone_range_text(milestone) -> str:
     unit = milestone.unit_or_currency
+    format_kind = "months" if unit == "months" else "currency"
     if milestone.upper_bound is None:
-        return f"ABOVE {_format_value(milestone.lower_bound, unit, 'currency')}"
+        return (
+            f"ABOVE "
+            f"{_format_value(milestone.lower_bound, unit, format_kind)}")
     if milestone.lower_bound <= 0:
-        return f"BELOW {_format_value(milestone.upper_bound, unit, 'currency')}"
+        return (
+            f"BELOW "
+            f"{_format_value(milestone.upper_bound, unit, format_kind)}")
     return (
-        f"{_format_value(milestone.lower_bound, unit, 'currency')} – "
-        f"{_format_value(milestone.upper_bound, unit, 'currency')}"
+        f"{_format_value(milestone.lower_bound, unit, format_kind)} – "
+        f"{_format_value(milestone.upper_bound, unit, format_kind)}"
     )
 
 
@@ -2087,21 +2092,39 @@ def mission_detail(request: Request, slug: str):
         recommendation_impact = _format_month_delta(
             recommendation.estimated_delta_v_months,
             recommendation.delta_v_direction)
-        recommendation_lineage = (
-            f"Declared scenario with "
-            f"{len(recommendation.assumption_references)} "
-            "assumption reference(s)")
-        raw_impact = (
-            f"{recommendation.estimated_delta_v_days:.1f} days"
-            if recommendation.estimated_delta_v_days is not None
-            else "not available")
-        recommendation_detail = (
-            f"<li>Evidence basis: {html.escape(recommendation_lineage)}.</li>"
-            f"<li>Declared action: {html.escape(recommendation.action)}</li>"
-            f"<li>Modelled adjustment: {html.escape(amount)} per "
-            f"{html.escape(recommendation.cadence or 'declared cadence')}.</li>"
-            f"<li>Modelled ETA change: {html.escape(raw_impact)}; "
-            f"displayed at month resolution.</li>")
+        if assessment.applicability.delta_v == "not_applicable":
+            recommendation_lineage = (
+                f"Declared scenario with "
+                f"{len(recommendation.assumption_references)} "
+                "assumption reference(s) and "
+                f"{len(recommendation.evidence_references)} "
+                "evidence reference(s)")
+            recommendation_detail = (
+                f"<li>Evidence basis: "
+                f"{html.escape(recommendation_lineage)}.</li>"
+                f"<li>Declared action and constraint: "
+                f"{html.escape(recommendation.action)}</li>"
+                f"<li>Declared adjustment: {html.escape(amount)} per "
+                f"{html.escape(recommendation.cadence or 'declared cadence')}."
+                "</li>")
+        else:
+            recommendation_lineage = (
+                f"Declared scenario with "
+                f"{len(recommendation.assumption_references)} "
+                "assumption reference(s)")
+            raw_impact = (
+                f"{recommendation.estimated_delta_v_days:.1f} days"
+                if recommendation.estimated_delta_v_days is not None
+                else "not available")
+            recommendation_detail = (
+                f"<li>Evidence basis: "
+                f"{html.escape(recommendation_lineage)}.</li>"
+                f"<li>Declared action: "
+                f"{html.escape(recommendation.action)}</li>"
+                f"<li>Modelled adjustment: {html.escape(amount)} per "
+                f"{html.escape(recommendation.cadence or 'declared cadence')}."
+                f"</li><li>Modelled ETA change: {html.escape(raw_impact)}; "
+                f"displayed at month resolution.</li>")
 
     telemetry_cards = []
     for item in assessment.telemetry:

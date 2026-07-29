@@ -247,6 +247,40 @@ assertions rather than authenticated attestations. There is no lender or
 valuation connector, multi-mortgage policy, object-level authorisation,
 automatic correction/supersession workflow or temporal-precision type.
 
+## Manual resilience evidence
+
+**Objective.** Preserve the attributed basis of Financial Resilience
+observations while preventing malformed, future or cross-household evidence
+from silently improving mission state.
+
+**Current implementation.** Finance accepts a closed set of manual
+essential-outflow cross-checks, income-source declarations, dated near-term
+commitments and reserved unscored protection declarations. The writer validates
+shape, finiteness, currency, confidence and due-date rules before append. The
+tolerant projection quarantines malformed direct-log envelopes, filters by
+exact household id and `as_of`, uses deterministic append-order tie-breaking
+and supersedes current income declarations by explicit source. The assessor
+revalidates every metric result's scope, timestamp, unit and availability,
+discloses future/stale/invalid evidence, never infers cadence or protection,
+and never appends an assessment or completion event.
+
+**Evidence.** `src/foundry/finance/resilience_evidence.py`,
+`src/foundry/finance/resilience_metrics.py`,
+`src/foundry/finance/resilience_assessment.py`,
+`tests/test_resilience_evidence.py`,
+`tests/test_resilience_metrics.py`, and
+`tests/test_resilience_assessment.py`.
+
+**Maturity.** Beta for the explicit synthetic/manual, single-household,
+read-only scope.
+
+**Missing or future control.** Household id, source, lineage, confidence and
+actor remain assertions; strings have no explicit size limits. Unattributable
+quarantined envelopes are visible at projection/operator level only, because
+assigning them to every household would cross scope. There is no authenticated
+live provider, object-level authorisation, protection model or richer
+commitment entity.
+
 ## Operational logging
 
 **Objective.** Support diagnosis without copying household content,

@@ -66,6 +66,12 @@ untrusted files and exports       identity provider       model providers
   date are validated, but source, lineage, actor and confidence remain
   assertions. This is an in-process input boundary, not an external
   connector or authenticated lender feed.
+- **Manual resilience evidence.** Governed household declarations become
+  permanent Finance events. Shape, finiteness, GBP currency, confidence,
+  effective date and commitment due date are validated. Household id, source,
+  lineage and actor remain assertions. Malformed direct-log envelopes are
+  quarantined; unattributable ones remain operator-level projection evidence
+  rather than being assigned across household scopes.
 
 ## Threat actors
 
@@ -211,10 +217,12 @@ misleading permanent events or abuse future standing credentials.
 
 **Current mitigations.** Current ingestors read local files, parse known
 export shapes and append through the Kernel. They do not hold service
-credentials or make outbound requests. The manual Mortgage Freedom adapter
-accepts only governed fields and validated finite envelopes; hostile direct
-log events make that mission not evaluable without replacing existing
-evidence or exposing payload details.
+credentials or make outbound requests. The manual Mortgage Freedom and
+Financial Resilience adapters accept only governed fields and validated finite
+envelopes; hostile attributable direct-log events make the relevant mission
+not evaluable or lower confidence without replacing existing evidence or
+exposing payload details. Resilience commitments require an explicit due date
+and protection declarations remain unscored.
 
 **Residual risk.** Inputs have no explicit size limit. ChatGPT exports
 omit system messages and both export ingestors normalise messages into a

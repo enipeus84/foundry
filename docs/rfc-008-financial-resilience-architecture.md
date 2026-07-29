@@ -1,8 +1,8 @@
 # RFC-008 — Financial Resilience Mission
 
-Status: **Approved — not implemented.** This document is the canonical
-architecture for implementation. No RFC-008 source code, tests or framework
-changes exist yet.
+Status: **Implemented on `rfc-008-financial-resilience-mission` — not merged.**
+This document remains the canonical architecture and implementation
+specification for RFC-008.
 
 Date: 2026-07-29
 
@@ -751,11 +751,11 @@ This section is the input to the Security Gate and answers every question in
 
 | # | Criterion |
 |---|---|
-| A2 | **Financial Independence behaviourally unchanged** — golden pins on status, trajectory state, margin, milestones, delta-v, ETA, recommendations. |
-| A19 | **FI detail-route rendering byte-identical** across the amendment. |
-| A3 | **Mortgage Freedom behaviourally unchanged** — same field pins. |
-| A20 | **Mortgage detail-route rendering byte-identical except the approved D7 precedence copy**, separately pinned with its own expected string. |
-| A27 | **Existing providers default to all-applicable** — FI and Mortgage supply no applicability and validate as `applicable` on all four instruments. |
+| A2 | **Financial Independence behaviourally unchanged** — golden pins on status, trajectory state, margin, milestones, delta-v, ETA, recommendations. A legitimate absent ETA declares that instrument `unavailable` so the remaining computed assessment survives validation. |
+| A19 | **FI detail-route rendering byte-identical** across the amendment on the normal all-applicable golden path; an absent ETA renders the new honest `unavailable` state without discarding other instruments. |
+| A3 | **Mortgage Freedom behaviourally unchanged** — same field pins. A legitimate absent ETA declares that instrument `unavailable` so the remaining computed assessment survives validation. |
+| A20 | **Mortgage detail-route rendering byte-identical except the approved D7 precedence copy** on the normal golden path, separately pinned with its own expected string; an absent ETA renders the new honest `unavailable` state. |
+| A27 | **Existing providers remain all-applicable when all four instruments are present.** FI and Mortgage explicitly declare ETA `unavailable` only when the deterministic projection cannot produce one; registry-level regressions preserve all other values and provenance. |
 | A31 | **Homepage lane output unchanged** for FI and Mortgage, byte-identical. |
 
 ### Applicability contract
