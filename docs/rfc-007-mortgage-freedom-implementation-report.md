@@ -1,6 +1,6 @@
 # RFC-007 — Mortgage Freedom Mission Implementation Report
 
-Status: implementation complete; draft PR preparation in progress.
+Status: implementation complete; draft PR #17 open.
 
 ## Scope
 

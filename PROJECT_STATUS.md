@@ -151,7 +151,7 @@ comes next.
 | **RFC-004 — Flight Deck** | 2026-07-20 to 2026-07-21 | [PR #7](https://github.com/enipeus84/foundry/pull/7), tag `v1.5-flight-deck`; refined by RFC-004.2, [PR #8](https://github.com/enipeus84/foundry/pull/8) |
 | **RFC-005 — Mission Assessment** | 2026-07-27 | [PR #9](https://github.com/enipeus84/foundry/pull/9) — no corresponding tag or CHANGELOG entry (tracked as the open gap above) |
 | **RFC-006 — Mission Assessment Framework** | 2026-07-29 | Merged via [PR #16](https://github.com/enipeus84/foundry/pull/16) |
-| **RFC-007 — Mortgage Freedom Mission** | 2026-07-29 | Implemented on `rfc-007-mortgage-freedom-mission`; draft PR preparation in progress |
+| **RFC-007 — Mortgage Freedom Mission** | 2026-07-29 | Implemented on `rfc-007-mortgage-freedom-mission`; [draft PR #17](https://github.com/enipeus84/foundry/pull/17) open |
 | **Engineering Review Gates** | 2026-07-27 | [PR #10](https://github.com/enipeus84/foundry/pull/10), [PR #11](https://github.com/enipeus84/foundry/pull/11) — `docs/engineering/review-gates.md` |
 | **Documentation Architecture** | 2026-07-27 | [PR #12](https://github.com/enipeus84/foundry/pull/12) — docs index, RFC index, versioned Design Constitution |
 | **PROJECT_STATUS.md** | 2026-07-27 | This document — the first executive-dashboard artifact, opened as its own PR |
