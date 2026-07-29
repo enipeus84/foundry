@@ -3,7 +3,9 @@
 Every RFC that has shipped, with links to its spec, architecture/decision
 doc, implementation report(s), technical-debt register, merged PR, and
 release tag — wherever each of those exists. All linked documents remain
-at their original paths; this page only indexes them.
+at their original paths; this page only indexes them. RFCs whose
+architecture is approved but not yet implemented are listed separately,
+below the shipped table, so "Merged" never overstates what exists.
 
 "No report published" means the RFC shipped but left no dedicated report
 in `docs/` — the merged PR diff and the CHANGELOG entry are the record of
@@ -23,6 +25,16 @@ undocumented elsewhere.
 | RFC-005 | Financial Independence Mission Assessment | Merged | — | [`rfc-005-financial-independence-architecture.md`](../rfc-005-financial-independence-architecture.md) | [`rfc-005-financial-independence-implementation-report.md`](../rfc-005-financial-independence-implementation-report.md) | [`rfc-005-technical-debt.md`](../rfc-005-technical-debt.md) | [#9](https://github.com/enipeus84/foundry/pull/9) | **Gap: no CHANGELOG entry or version bump exists for this RFC** — `pyproject.toml` still reads `1.5.1`, unchanged since RFC-004.2 |
 | RFC-006 | Mission Assessment Framework | Merged | — | [`rfc-006-mission-assessment-framework.md`](../rfc-006-mission-assessment-framework.md) | [`rfc-006-mission-assessment-framework-implementation-report.md`](../rfc-006-mission-assessment-framework-implementation-report.md) | [`rfc-006-technical-debt.md`](../rfc-006-technical-debt.md) | [#16](https://github.com/enipeus84/foundry/pull/16) | No release |
 | RFC-007 | Mortgage Freedom Mission | Merged | — | [`rfc-007-mortgage-freedom-architecture.md`](../rfc-007-mortgage-freedom-architecture.md) | [`rfc-007-mortgage-freedom-implementation-report.md`](../rfc-007-mortgage-freedom-implementation-report.md) | [`rfc-007-technical-debt.md`](../rfc-007-technical-debt.md) | [#17](https://github.com/enipeus84/foundry/pull/17) | No release |
+
+## Approved, not yet implemented
+
+Architecture approved and governed, with no source code, tests or framework
+changes in the repository. These RFCs are not in the table above because
+nothing has shipped for them.
+
+| RFC | Title | Status | Architecture / decision doc | Implementation report(s) | Technical debt | PR | Tag / release |
+|---|---|---|---|---|---|---|---|
+| RFC-008 | Financial Resilience Mission | **Approved — not implemented** | [`rfc-008-financial-resilience-architecture.md`](../rfc-008-financial-resilience-architecture.md) | *Not written — not implemented* | Recorded inside the architecture document; a dedicated register is written at implementation time | — | — |
 
 ## Pre-RFC infrastructure
 

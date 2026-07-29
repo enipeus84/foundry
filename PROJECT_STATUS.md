@@ -111,9 +111,14 @@ Highest-priority items from the RFC technical-debt registers and
 
 ## Next Recommended RFC
 
-Maintainer decision required after RFC-007. The current roadmap does not
-authorise implementing Financial Resilience, Pension Independence, Children,
-connectors or optimisation as an implicit next Burn.
+**RFC-008 — Financial Resilience Mission. Architecture approved; not
+implemented.** The governed architecture is
+[`docs/rfc-008-financial-resilience-architecture.md`](docs/rfc-008-financial-resilience-architecture.md),
+and it is the canonical document for that implementation. No RFC-008 source
+code, tests or framework changes exist in the repository.
+
+Nothing else is authorised as an implicit next Burn. Pension Independence,
+Children, connectors and optimisation still require a maintainer decision.
 
 ---
 
