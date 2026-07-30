@@ -136,6 +136,24 @@ would increase movement without removing demonstrated duplication.
 The view inputs are frozen and component-specific. The route composes the
 three regions in the unchanged order and appends the unchanged shared footer.
 
+## Canonical Mission Detail component inventory
+
+| Component name | Classification | Purpose | Current consumers |
+|---|---|---|---|
+| `_render` | Shared Mission Control shell | Composes the authenticated page shell, navigation, metadata, responsive CSS and local interaction script around page content. | Flight Deck home, metric drill-down, every Mission Detail state and placeholder pages. |
+| `_MissionHeroView` / `_render_mission_hero` | Shared Mission Detail | Renders mission identity, destination copy, current milestone, trajectory/ETA instruments, Mission Margin, Earthrise treatment and accessible trajectory summary. | Financial Resilience, Financial Independence and Mortgage Freedom through the generic live mission route. |
+| `_FlightAnalysisView` / `_render_flight_analysis` | Shared Mission Detail | Renders the shared analysis heading, optional reference schedule, Delta-v instrument, milestone completion, Next Burn and optional estimated Delta-v. | Financial Resilience, Financial Independence and Mortgage Freedom; applicability controls which instruments are present, and Mortgage Freedom currently supplies the reference schedule. |
+| `_MissionDataView` / `_render_mission_data` | Shared Mission Detail | Renders the disclosure containing primary telemetry, recommendation evidence, assumptions, limitations and provenance counts. | Financial Resilience, Financial Independence and Mortgage Freedom. |
+| `_mission_trajectory_svg` | Shared Mission Detail instrument | Renders provider-declared trajectory, forecast, sensitivity and milestone presentation, or the declared unavailable/not-applicable state. | All three live mission assessments; Financial Independence and Mortgage Freedom currently render SVG trajectories, while Financial Resilience declares trajectory unavailable. |
+| `_format_value`, `_month_year`, `_format_month_delta`, `_milestone_range_text` | Shared presentation helpers | Preserve canonical value, date, month-resolution Delta-v and milestone-bound wording. | Mission Hero, Flight Analysis, telemetry and trajectory presentation; `_format_value` is also consumed by the Flight Deck and metric drill-down. |
+| `FinancialResilienceAssessor` | Mission-specific | Owns resilience evidence interpretation, reserve milestones, stress telemetry, margin, confidence and recommendation policy. | Financial Resilience only, registered behind `MissionAssessmentRegistry`. |
+| `FinancialIndependenceAssessor` | Mission-specific | Owns Financial Independence telemetry, milestones, trajectory, forecast, schedule and scenario recommendation policy. | Financial Independence only, registered behind `MissionAssessmentRegistry`. |
+| `MortgageFreedomAssessor` | Mission-specific | Owns mortgage evidence interpretation, acquisition/current/equity telemetry, repayment schedule, margin and overpayment recommendation policy. | Mortgage Freedom only, registered behind `MissionAssessmentRegistry`. |
+
+No mission-specific HTML renderer exists. Mission-specific assessors project
+the common Core contract; the shared Mission Detail components render that
+contract without branching on mission name, slug or policy id.
+
 ## Duplication removed
 
 - The hero, Flight Analysis and deeper-data HTML are no longer embedded in
