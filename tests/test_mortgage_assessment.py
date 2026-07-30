@@ -10,7 +10,7 @@ from foundry.core.entities import (
     declare_party,
     join_household,
 )
-from foundry.core.metrics import MetricRegistry, MetricResult
+from foundry.core.metrics import MetricRegistry, MetricRequest, MetricResult
 from foundry.core.mission_assessment import (
     MissionAssessmentRegistry,
     MissionAssessmentRequest,
@@ -19,6 +19,7 @@ from foundry.core.scope import Subject
 from foundry.eventlog import EventLog
 from foundry.finance import entities as fin
 from foundry.finance.entities import FinanceEntityProjection
+from foundry.finance.metrics import FinanceMetricProvider
 from foundry.finance.mortgage_assessment import (
     DAY,
     MONTH,
@@ -69,7 +70,8 @@ def _fixture(path, *, runway=18.0, include_scenario=True,
              include_overpayments=True, overpayment_confidence=.95,
              valuation_effective_at=NOW - 10 * DAY,
              balance_effective_at=NOW - 10 * DAY,
-             balance=242_540.09, omit=()):
+             balance=242_540.09, valuation=436_638.42,
+             acquisition_costs=None, omit=()):
     log = EventLog(path)
     household = declare_party(log, "household")
     member = declare_party(log, "person")
@@ -113,7 +115,9 @@ def _fixture(path, *, runway=18.0, include_scenario=True,
         "property_role": "primary_residence",
         "purchase_price": 450_000.0,
         "purchase_date": NOW - 500 * DAY,
-        "property_valuation": 436_638.42,
+        "initial_deposit": 140_000.0,
+        "property_valuation": valuation,
+        "valuation_basis": "agent_appraisal",
         "lender": "NatWest",
         "original_advance": 310_000.0,
         "mortgage_start": mortgage_start,
@@ -126,6 +130,8 @@ def _fixture(path, *, runway=18.0, include_scenario=True,
         "remaining_term_months": 201.0,
         "fixed_rate_expiry": NOW + 367 * DAY,
     }
+    if acquisition_costs is not None:
+        fields["acquisition_costs"] = acquisition_costs
     for field, value in fields.items():
         if field in omit:
             continue
@@ -137,7 +143,8 @@ def _fixture(path, *, runway=18.0, include_scenario=True,
             log, mortgage.id, field, value, effective_at=effective_at,
             unit_or_currency=(
                 "GBP" if field in {
-                    "purchase_price", "property_valuation",
+                    "purchase_price", "initial_deposit",
+                    "acquisition_costs", "property_valuation",
                     "original_advance", "balance", "monthly_payment",
                 } else None))
     if include_overpayments:
@@ -159,6 +166,10 @@ def _fixture(path, *, runway=18.0, include_scenario=True,
     request = MissionAssessmentRequest(
         mission.id, POLICY_ID, Subject("party", household.id), NOW)
     return log, household, mortgage, assumptions, assessor, request
+
+
+def _telemetry_by_id(result):
+    return {item.result.metric_id: item for item in result.telemetry}
 
 
 def test_projection_is_deterministic_ordered_and_separate_from_observation():
@@ -259,6 +270,244 @@ def test_full_assessment_is_lower_is_better_and_has_complete_output(tmp_path):
     assert any(
         "historical one-off overpayments; no recurrence is assumed" in note
         for note in result.limitations)
+
+
+def test_property_equity_calculations_are_direct_explanatory_attribution(
+        tmp_path):
+    log, _, mortgage, _, assessor, request = _fixture(
+        tmp_path / "events.jsonl", acquisition_costs=7_500.0)
+
+    result = assessor.assess(request)
+    telemetry = _telemetry_by_id(result)
+
+    assert telemetry[
+        "finance.property_current_equity"].result.value == pytest.approx(
+            436_638.42 - 242_540.09)
+    assert telemetry[
+        "finance.mortgage_ltv"].result.value == pytest.approx(
+            242_540.09 / 436_638.42)
+    assert telemetry[
+        "finance.mortgage_principal_repaid"].result.value == pytest.approx(
+            310_000.0 - 242_540.09)
+    assert telemetry[
+        "finance.property_valuation_movement"].result.value == pytest.approx(
+            436_638.42 - 450_000.0)
+    assert telemetry[
+        "finance.mortgage_initial_deposit"].result.value == 140_000.0
+    assert telemetry[
+        "finance.mortgage_balance"].qualifier == "OBSERVED · JULY 2026"
+    assert telemetry[
+        "finance.property_acquisition_costs"].result.value == 7_500.0
+    principal_refs = set(telemetry[
+        "finance.mortgage_principal_repaid"].result.evidence_references)
+    evidence = MortgageEvidenceProjection(log)
+    payment_and_interest_refs = {
+        record.event_id
+        for record in evidence.for_obligation(mortgage.id, request.as_of)
+        if record.field in {"monthly_payment", "interest_rate"}
+    }
+    assert principal_refs.isdisjoint(payment_and_interest_refs)
+    assert any(
+        "explanatory attribution only" in note
+        and "Interest is excluded" in note
+        and "monthly payment is never used" in note
+        for note in result.limitations)
+    assert any(
+        "Acquisition costs are disclosed separately" in note
+        for note in result.limitations)
+
+
+def test_missing_acquisition_evidence_does_not_change_mortgage_behaviour(
+        tmp_path):
+    _, _, _, _, complete, complete_request = _fixture(
+        tmp_path / "complete.jsonl")
+    _, _, _, _, missing, missing_request = _fixture(
+        tmp_path / "missing.jsonl",
+        omit={"purchase_price", "purchase_date", "initial_deposit"})
+
+    complete_result = complete.assess(complete_request)
+    missing_result = missing.assess(missing_request)
+    telemetry = _telemetry_by_id(missing_result)
+
+    for attribute in (
+        "status", "mission_complete", "eta", "trajectory_state",
+        "confidence", "current_milestone", "milestones", "mission_margin",
+        "delta_v", "trajectory", "forecast",
+    ):
+        assert getattr(missing_result, attribute) == getattr(
+            complete_result, attribute)
+    assert tuple(
+        (
+            recommendation.action,
+            recommendation.amount,
+            recommendation.estimated_delta_v_days,
+        )
+        for recommendation in missing_result.recommendations
+    ) == tuple(
+        (
+            recommendation.action,
+            recommendation.amount,
+            recommendation.estimated_delta_v_days,
+        )
+        for recommendation in complete_result.recommendations
+    )
+    assert telemetry[
+        "finance.property_current_equity"].result.status == "available"
+    assert telemetry[
+        "finance.mortgage_principal_repaid"].result.status == "available"
+    assert telemetry[
+        "finance.mortgage_initial_deposit"
+    ].result.status == "unavailable"
+    assert telemetry[
+        "finance.property_valuation_movement"
+    ].result.status == "unavailable"
+    assert any(
+        "partially unavailable" in note for note in missing_result.limitations)
+
+
+def test_conflicting_acquisition_evidence_remains_visible_without_correction(
+        tmp_path):
+    path = tmp_path / "events.jsonl"
+    log, _, mortgage, _, _, request = _fixture(path)
+    conflicting_price = _record(
+        log, mortgage.id, "purchase_price", 455_000.0,
+        effective_at=NOW - 5 * DAY, unit_or_currency="GBP")
+    conflicting_deposit = _record(
+        log, mortgage.id, "initial_deposit", 145_000.0,
+        effective_at=NOW - 5 * DAY, unit_or_currency="GBP")
+    assessor = MortgageFreedomAssessor(
+        FinanceEntityProjection(log), EntityProjection(log),
+        _metric_registry(18.0), MortgageEvidenceProjection(log))
+
+    result = assessor.assess(request)
+    telemetry = _telemetry_by_id(result)
+    records = MortgageEvidenceProjection(log).for_obligation(
+        mortgage.id, request.as_of)
+    purchase_records = tuple(
+        record for record in records if record.field == "purchase_price")
+    deposit_records = tuple(
+        record for record in records if record.field == "initial_deposit")
+
+    assert result.status != "unavailable"
+    assert len(purchase_records) == len(deposit_records) == 2
+    assert telemetry[
+        "finance.property_purchase_price"].result.value == 455_000.0
+    assert telemetry[
+        "finance.mortgage_initial_deposit"].result.value == 145_000.0
+    assert {record.event_id for record in purchase_records} <= set(
+        result.evidence_references)
+    assert {record.event_id for record in deposit_records} <= set(
+        result.evidence_references)
+    assert conflicting_price.event_id in result.evidence_references
+    assert conflicting_deposit.event_id in result.evidence_references
+    assert all(not hasattr(record, "supersedes_event_id") for record in records)
+    conflict_notes = tuple(
+        note for note in result.limitations if note.startswith("Conflicting"))
+    assert len(conflict_notes) == 2
+    assert all("no evidence is automatically corrected" in note
+               for note in conflict_notes)
+
+
+def test_negative_equity_is_reported_without_changing_mission_completion(
+        tmp_path):
+    _, _, _, _, assessor, request = _fixture(
+        tmp_path / "events.jsonl", valuation=200_000.0)
+
+    result = assessor.assess(request)
+    telemetry = _telemetry_by_id(result)
+
+    assert result.status != "unavailable"
+    assert result.mission_complete is False
+    assert telemetry[
+        "finance.property_current_equity"].result.value == pytest.approx(
+            -42_540.09)
+    assert telemetry["finance.mortgage_ltv"].result.value > 1.0
+
+
+def test_valuation_basis_is_explicit_and_never_inferred_from_source_text(
+        tmp_path):
+    _, _, _, _, explicit, request = _fixture(
+        tmp_path / "explicit.jsonl")
+    _, _, _, _, absent, absent_request = _fixture(
+        tmp_path / "absent.jsonl", omit={"valuation_basis"})
+
+    explicit_valuation = _telemetry_by_id(explicit.assess(request))[
+        "finance.property_valuation"]
+    absent_valuation = _telemetry_by_id(absent.assess(absent_request))[
+        "finance.property_valuation"]
+
+    assert (
+        explicit_valuation.qualifier
+        == "Estimated · Agent appraisal · manual lender statement"
+        " · July 2026"
+    )
+    assert (
+        absent_valuation.qualifier
+        == "Estimated · Valuation basis: Not recorded; not inferred"
+        " · manual lender statement · July 2026"
+    )
+    assert "Owner Estimate" not in absent_valuation.qualifier
+    assert "Index Estimate" not in absent_valuation.qualifier
+
+
+def test_equity_evidence_does_not_change_net_worth_or_its_valuation_basis(
+        tmp_path):
+    log, household, mortgage, _, assessor, request = _fixture(
+        tmp_path / "events.jsonl")
+    obligation = assessor.finance.obligations[mortgage.id]
+    asset_id = next(
+        link.target for link in obligation.ownership
+        if link.relation == "secures")
+    fin.declare_valuation(log, asset_id, 480_000.0, "GBP", NOW - DAY)
+    scope = Subject("party", household.id)
+    before = FinanceMetricProvider(
+        FinanceEntityProjection(log), EntityProjection(log)).calculate(
+            MetricRequest("finance.net_worth", scope, NOW))
+
+    _record(
+        log, mortgage.id, "acquisition_costs", 8_000.0,
+        effective_at=NOW, unit_or_currency="GBP")
+    after = FinanceMetricProvider(
+        FinanceEntityProjection(log), EntityProjection(log)).calculate(
+            MetricRequest("finance.net_worth", scope, NOW))
+    mortgage_result = MortgageFreedomAssessor(
+        FinanceEntityProjection(log), EntityProjection(log),
+        _metric_registry(18.0), MortgageEvidenceProjection(log)).assess(
+            request)
+
+    assert replace(after, generated_at=before.generated_at) == before
+    assert _telemetry_by_id(mortgage_result)[
+        "finance.property_valuation"].result.value == 436_638.42
+    assert any(
+        "Net Worth continues to use its separate Finance asset valuation"
+        in note for note in mortgage_result.limitations)
+
+
+def test_additive_equity_evidence_preserves_all_mission_policy_outputs(
+        tmp_path):
+    path = tmp_path / "events.jsonl"
+    log, _, mortgage, _, assessor, request = _fixture(
+        path, omit={"initial_deposit", "valuation_basis"})
+    before = assessor.assess(request)
+    _record(
+        log, mortgage.id, "initial_deposit", 140_000.0,
+        effective_at=NOW, unit_or_currency="GBP")
+    _record(
+        log, mortgage.id, "valuation_basis", "owner_estimate",
+        effective_at=NOW)
+    after = MortgageFreedomAssessor(
+        FinanceEntityProjection(log), EntityProjection(log),
+        _metric_registry(18.0), MortgageEvidenceProjection(log)).assess(
+            request)
+
+    for attribute in (
+        "status", "current_value", "mission_complete", "eta",
+        "trajectory_state", "trajectory_tone", "confidence",
+        "current_milestone", "milestones", "phase", "phases",
+        "mission_margin", "delta_v", "trajectory", "forecast",
+        "recommendations",
+    ):
+        assert getattr(after, attribute) == getattr(before, attribute)
 
 
 def test_zero_balance_is_complete_not_an_epsilon_approximation(tmp_path):

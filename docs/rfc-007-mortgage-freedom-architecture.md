@@ -1,6 +1,7 @@
 # RFC-007 — Mortgage Freedom Mission
 
-Status: implemented for draft review.
+Status: implemented; Revision 2 property-equity amendment under Governor
+review.
 
 ## Decision
 
@@ -58,7 +59,11 @@ rejected input does not partially mutate the log.
 The synthetic proof data records every value in the approved brief. The
 £450,000 figure is the purchase price. The separate £436,638.42 figure is an
 HPI dated valuation reference for March 2025, with HPI provenance and that
-effective month preserved; it is not live or current valuation evidence.
+effective month preserved; it is not live or current valuation evidence. Its
+known `valuation_basis` is recorded separately as `index_estimate` by a fresh,
+immutable evidence event with the same obligation scope, effective date,
+source, lineage and synthetic marker. The valuation observation is not changed
+or superseded.
 The original term is separately recorded as 300 months from the first payment
 on 1 July 2025. It produces the original contractual mortgage-free destination
 of 1 July 2050. The 201-month remaining term is current evidence, not the
@@ -70,6 +75,40 @@ at the assessment date; no occurrence date is invented.
 This is a deprecated migration adapter, not a new integration layer. Its
 removal criteria are in
 [`rfc-007-technical-debt.md`](rfc-007-technical-debt.md).
+
+## Revision 2: property equity explanation
+
+The property-equity amendment adds Finance-owned evidence for
+`initial_deposit`, optional `acquisition_costs` and optional
+`valuation_basis`. Supported valuation bases are exactly `index_estimate`,
+`owner_estimate` and `agent_appraisal`; the basis is never inferred from
+source or free text. Acquisition costs remain one optional scalar, are shown
+separately, and do not create a cost taxonomy.
+
+Mortgage Freedom explains the current position with:
+
+```text
+current equity = property valuation - current mortgage balance
+principal repaid = initial mortgage - current mortgage balance
+valuation movement = property valuation - purchase price
+```
+
+The composition `initial deposit + principal repaid + valuation movement =
+current equity` is explanatory attribution, not evidence validation.
+Interest and monthly payment do not contribute to or infer equity.
+
+Acquisition facts are immutable observations. If purchase price, purchase
+date, initial deposit, initial mortgage or acquisition costs conflict, all
+applicable records remain referenced and the limitation is disclosed. The
+latest deterministic observation may be displayed, but no record is corrected
+or superseded and no `supersedes_event_id` contract exists.
+
+This amendment is isolated to Mortgage Freedom. `finance.net_worth` continues
+to use its separate Finance asset-valuation basis and is unchanged. The
+different valuation bases are disclosed rather than reconciled. A future
+**Property Valuation Canon** is the approved successor work for consistent
+valuation identity and basis across missions; it is not part of this
+amendment.
 
 ## Deterministic assessment
 
@@ -222,6 +261,8 @@ overlapping absolute offsets.
 - **Deferred work:** Authoritative lender/property connectors, multiple
   mortgages, product variants, fees, early-repayment constraints,
   affordability, variable rates, exact lender day-count conventions and
-  persisted actions are recorded in the technical-debt register.
+  persisted actions are recorded in the technical-debt register. Property
+  Valuation Canon and an explicit acquisition-evidence correction workflow
+  are also deferred there.
 
 This answers every question in the merged Security by Design checklist.

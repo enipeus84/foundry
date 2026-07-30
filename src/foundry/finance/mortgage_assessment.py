@@ -35,7 +35,7 @@ from .mortgage_evidence import MortgageEvidence, MortgageEvidenceProjection
 
 
 POLICY_ID = "finance.mortgage_freedom.v1"
-CALCULATION_VERSION = "mortgage-v1"
+CALCULATION_VERSION = "mortgage-v2"
 TARGET_METRIC = "finance.mortgage_balance"
 DAY = 86_400.0
 YEAR = 365.2425 * DAY
@@ -47,7 +47,12 @@ MONTH_NAMES = (
 )
 EVIDENCE_LABELS = {
     "property_role": "property role",
+    "purchase_price": "purchase price",
+    "purchase_date": "purchase date",
+    "initial_deposit": "initial deposit",
+    "acquisition_costs": "acquisition costs",
     "property_valuation": "dated valuation reference",
+    "valuation_basis": "valuation basis",
     "lender": "mortgage lender",
     "original_advance": "original mortgage advance",
     "mortgage_start": "first mortgage payment date",
@@ -60,6 +65,13 @@ EVIDENCE_LABELS = {
     "remaining_term_months": "remaining mortgage term",
     "fixed_rate_expiry": "fixed-rate expiry",
 }
+ACQUISITION_FIELDS = (
+    "purchase_price",
+    "purchase_date",
+    "initial_deposit",
+    "original_advance",
+    "acquisition_costs",
+)
 
 
 def _month_year(timestamp: float) -> str:
@@ -412,6 +424,8 @@ class MortgageFreedomAssessor:
         balance = numeric["balance"]
         original = numeric["original_advance"]
         valuation = numeric["property_valuation"]
+        current_equity = valuation - balance
+        principal_repaid = original - balance
         current_rate = numeric["interest_rate"]
         payment = numeric["monthly_payment"]
         fixed_expiry = numeric["fixed_rate_expiry"]
@@ -456,27 +470,48 @@ class MortgageFreedomAssessor:
             if record.field == "recorded_overpayment"
         )
         overpayments = all_overpayments
+        all_mortgage_records = self.evidence.for_obligation(
+            obligation.id, request.as_of)
+        acquisition_history = {
+            field: tuple(
+                record for record in all_mortgage_records
+                if record.field == field)
+            for field in ACQUISITION_FIELDS
+        }
+        acquisition_records = tuple(
+            record for field in ACQUISITION_FIELDS
+            for record in acquisition_history[field])
         purchase_price_record = self.evidence.latest(
             obligation.id, "purchase_price", request.as_of)
         purchase_date_record = self.evidence.latest(
             obligation.id, "purchase_date", request.as_of)
-        purchase_records = ()
-        purchase_detail = None
-        if purchase_price_record is not None \
-                and purchase_date_record is not None:
-            try:
-                purchase_price = self._numeric(
-                    purchase_price_record, "purchase_price")
-                purchase_date = self._numeric(
-                    purchase_date_record, "purchase_date")
-            except ValueError:
-                pass
-            else:
-                purchase_records = (
-                    purchase_price_record, purchase_date_record)
-                purchase_detail = (
-                    f"Purchase evidence: £{purchase_price:,.0f} purchase "
-                    f"price · {_month_year(purchase_date)}.")
+        initial_deposit_record = self.evidence.latest(
+            obligation.id, "initial_deposit", request.as_of)
+        acquisition_costs_record = self.evidence.latest(
+            obligation.id, "acquisition_costs", request.as_of)
+        valuation_basis_records = tuple(
+            record for record in all_mortgage_records
+            if record.field == "valuation_basis")
+        valuation_basis_record = self.evidence.latest(
+            obligation.id, "valuation_basis", request.as_of)
+
+        purchase_price = (
+            self._numeric(purchase_price_record, "purchase_price")
+            if purchase_price_record is not None else None)
+        purchase_date = self._purchase_date_label(purchase_date_record)
+        initial_deposit = (
+            self._numeric(initial_deposit_record, "initial_deposit")
+            if initial_deposit_record is not None else None)
+        acquisition_costs = (
+            self._numeric(acquisition_costs_record, "acquisition_costs")
+            if acquisition_costs_record is not None else None)
+        valuation_movement = (
+            valuation - purchase_price
+            if purchase_price is not None else None)
+        purchase_detail = (
+            f"Purchase evidence: £{purchase_price:,.0f} purchase price"
+            + (f" · {purchase_date}." if purchase_date else ".")
+            if purchase_price is not None else None)
         confidence = self._confidence(
             request.as_of, records, inputs, overpayments)
         assessment_input_refs = tuple(sorted({
@@ -490,7 +525,8 @@ class MortgageFreedomAssessor:
         }))
         assessment_evidence_refs = tuple(sorted({
             *recommendation_evidence_refs,
-            *(record.event_id for record in purchase_records),
+            *(record.event_id for record in acquisition_records),
+            *(record.event_id for record in valuation_basis_records),
         }))
         margin = self._mission_margin(
             ltv, runway_value, fixed_months, overpayments)
@@ -513,34 +549,186 @@ class MortgageFreedomAssessor:
                 inputs.valuation_stale_after_days)
             else "available")
         valuation_record = records["property_valuation"]
-        valuation_reference = (
-            f"DATED VALUATION REFERENCE · "
-            f"{valuation_record.source.upper()} · "
-            f"{_month_year(valuation_record.effective_at).upper()}")
+        valuation_source = valuation_record.source
+        valuation_month = _month_year(valuation_record.effective_at)
+        if valuation_basis_record is not None:
+            valuation_basis = self._string(
+                valuation_basis_record, "valuation_basis"
+            ).replace("_", " ").capitalize()
+            valuation_reference = (
+                f"Estimated · {valuation_basis} · "
+                f"{valuation_source} · {valuation_month}"
+            )
+        else:
+            valuation_reference = (
+                "Estimated · Valuation basis: Not recorded; not inferred · "
+                f"{valuation_source} · {valuation_month}"
+            )
+        current_position_status = (
+            "stale"
+            if balance_status == "stale" or valuation_status == "stale"
+            else "available")
+
+        def evidence_refs(*record_groups) -> tuple[str, ...]:
+            return tuple(sorted({
+                record.event_id
+                for group in record_groups
+                for record in group
+            }))
+
+        purchase_refs = evidence_refs(
+            acquisition_history["purchase_price"],
+            acquisition_history["purchase_date"])
+        deposit_refs = evidence_refs(
+            acquisition_history["initial_deposit"])
+        original_refs = evidence_refs(
+            acquisition_history["original_advance"])
+        acquisition_cost_refs = evidence_refs(
+            acquisition_history["acquisition_costs"])
+        valuation_refs = evidence_refs(
+            (valuation_record,), valuation_basis_records)
+        equity_refs = evidence_refs(
+            (valuation_record,), (records["balance"],))
+        purchase_qualifier = (
+            f"PURCHASED {purchase_date.upper()}"
+            + (
+                " · MONTH PRECISION"
+                if purchase_date_record is not None
+                and isinstance(purchase_date_record.value, str)
+                else ""
+            )
+            if purchase_date is not None
+            else "PURCHASE DATE NOT RECORDED"
+        )
+
+        purchase_metric = (
+            self._metric(
+                "finance.property_purchase_price", purchase_price,
+                self.policy.unit_or_currency, request, "available",
+                mortgage_input_refs, purchase_refs, assumption_refs)
+            if purchase_price is not None
+            else self._unavailable_metric(
+                "finance.property_purchase_price", request,
+                "purchase price evidence is not recorded",
+                mortgage_input_refs, purchase_refs, assumption_refs)
+        )
+        deposit_metric = (
+            self._metric(
+                "finance.mortgage_initial_deposit", initial_deposit,
+                self.policy.unit_or_currency, request, "available",
+                mortgage_input_refs, deposit_refs, assumption_refs)
+            if initial_deposit is not None
+            else self._unavailable_metric(
+                "finance.mortgage_initial_deposit", request,
+                "initial deposit evidence is not recorded",
+                mortgage_input_refs, deposit_refs, assumption_refs)
+        )
+        acquisition_cost_metric = (
+            self._metric(
+                "finance.property_acquisition_costs", acquisition_costs,
+                self.policy.unit_or_currency, request, "available",
+                mortgage_input_refs, acquisition_cost_refs, assumption_refs)
+            if acquisition_costs is not None
+            else self._unavailable_metric(
+                "finance.property_acquisition_costs", request,
+                "optional acquisition costs are not recorded",
+                mortgage_input_refs, acquisition_cost_refs, assumption_refs)
+        )
+        valuation_movement_metric = (
+            self._metric(
+                "finance.property_valuation_movement", valuation_movement,
+                self.policy.unit_or_currency, request,
+                current_position_status, mortgage_input_refs,
+                evidence_refs(
+                    (valuation_record,),
+                    acquisition_history["purchase_price"]),
+                assumption_refs)
+            if valuation_movement is not None
+            else self._unavailable_metric(
+                "finance.property_valuation_movement", request,
+                "purchase price evidence is required for valuation movement",
+                mortgage_input_refs, valuation_refs, assumption_refs)
+        )
         telemetry = (
-            TelemetryItem(current, "MORTGAGE BALANCE", "currency"),
+            # Property acquisition. Purchase date is carried at its supplied
+            # precision in the purchase-price qualifier; no day is inferred.
+            TelemetryItem(
+                purchase_metric, "PROPERTY ACQUISITION · PURCHASE PRICE",
+                "currency",
+                purchase_qualifier),
+            TelemetryItem(
+                deposit_metric, "PROPERTY ACQUISITION · INITIAL DEPOSIT",
+                "currency"),
+            TelemetryItem(self._metric(
+                "finance.mortgage_initial_advance", original,
+                self.policy.unit_or_currency, request, "available",
+                mortgage_input_refs, original_refs, assumption_refs),
+                "PROPERTY ACQUISITION · INITIAL MORTGAGE", "currency"),
+            TelemetryItem(
+                acquisition_cost_metric,
+                "PROPERTY ACQUISITION · ACQUISITION COSTS", "currency",
+                "OPTIONAL · SHOWN SEPARATELY FROM EQUITY"),
+
+            # Current position.
+            TelemetryItem(self._metric(
+                "finance.property_valuation", valuation,
+                self.policy.unit_or_currency, request, valuation_status,
+                mortgage_input_refs, valuation_refs, assumption_refs),
+                "CURRENT POSITION · PROPERTY VALUATION", "currency",
+                valuation_reference),
+            TelemetryItem(
+                current, "MORTGAGE BALANCE", "currency",
+                f"OBSERVED · "
+                f"{_month_year(records['balance'].effective_at).upper()}"),
+            TelemetryItem(self._metric(
+                "finance.property_current_equity", current_equity,
+                self.policy.unit_or_currency, request,
+                current_position_status, mortgage_input_refs, equity_refs,
+                assumption_refs), "CURRENT POSITION · CURRENT EQUITY",
+                "currency",
+                "PROPERTY VALUE − MORTGAGE BALANCE"),
             TelemetryItem(self._metric(
                 "finance.mortgage_ltv", ltv, None, request,
                 valuation_status, mortgage_input_refs,
                 mortgage_evidence_refs, assumption_refs),
-                "LOAN TO VALUE", "percent", valuation_reference),
+                "CURRENT POSITION · CURRENT LTV", "percent",
+                valuation_reference),
             TelemetryItem(self._metric(
                 "finance.mortgage_payment", payment,
                 self.policy.unit_or_currency, request, "available",
                 mortgage_input_refs, mortgage_evidence_refs, assumption_refs),
-                "MONTHLY PAYMENT", "currency"),
+                "CURRENT POSITION · MONTHLY PAYMENT", "currency"),
             TelemetryItem(self._metric(
                 "finance.mortgage_fixed_protection", fixed_months,
                 "months", request, "available", mortgage_input_refs,
                 mortgage_evidence_refs,
-                assumption_refs), "FIXED-RATE PROTECTION", "months"),
+                assumption_refs),
+                "CURRENT POSITION · FIXED-RATE PROTECTION", "months"),
             TelemetryItem(self._metric(
                 "finance.mortgage_projected_interest",
                 projected.interest_base, self.policy.unit_or_currency,
                 request, "available", mortgage_input_refs,
                 mortgage_evidence_refs,
-                assumption_refs), "REMAINING INTEREST", "currency",
+                assumption_refs), "CURRENT POSITION · REMAINING INTEREST",
+                "currency",
                 "PROJECTED · EXPECTED PATH"),
+
+            # Equity composition. These observations explain current equity;
+            # they do not determine mission policy or correct one another.
+            TelemetryItem(self._metric(
+                "finance.mortgage_principal_repaid", principal_repaid,
+                self.policy.unit_or_currency, request, balance_status,
+                mortgage_input_refs,
+                evidence_refs(
+                    acquisition_history["original_advance"],
+                    (records["balance"],)),
+                assumption_refs), "EQUITY COMPOSITION · PRINCIPAL REPAID",
+                "currency",
+                "INITIAL MORTGAGE − CURRENT BALANCE"),
+            TelemetryItem(
+                valuation_movement_metric,
+                "EQUITY COMPOSITION · VALUATION MOVEMENT", "currency",
+                "CURRENT VALUE − PURCHASE PRICE"),
         )
         limitations = [
             f"Primary residence dated valuation reference: "
@@ -562,9 +750,49 @@ class MortgageFreedomAssessor:
             "income and expenditure evidence is outside this Burn.",
             "Low, expected and high paths are deterministic rate "
             "sensitivities, not probabilities.",
+            "Equity composition is explanatory attribution only. Current "
+            "equity is property value minus mortgage balance; principal "
+            "repaid is initial mortgage minus current balance; valuation "
+            "movement is current value minus purchase price. Interest is "
+            "excluded, and monthly payment is never used to infer principal "
+            "repayment.",
+            "Mortgage Freedom uses the dated mortgage valuation evidence "
+            "shown here. Net Worth continues to use its separate Finance "
+            "asset valuation, so the valuation bases can differ.",
         ]
         if purchase_detail is not None:
             limitations.insert(1, purchase_detail)
+        missing_composition = []
+        if initial_deposit is None:
+            missing_composition.append("initial deposit")
+        if purchase_price is None:
+            missing_composition.append("purchase price")
+        if missing_composition:
+            limitations.append(
+                "Equity composition is partially unavailable because "
+                + " and ".join(missing_composition)
+                + " evidence is not recorded.")
+        if acquisition_costs is not None:
+            limitations.append(
+                "Acquisition costs are disclosed separately and do not form "
+                "part of current property equity.")
+        if initial_deposit is not None and valuation_movement is not None:
+            attributed_equity = (
+                initial_deposit + principal_repaid + valuation_movement)
+            difference = current_equity - attributed_equity
+            if not math.isclose(difference, 0.0, abs_tol=.01):
+                limitations.append(
+                    "The explanatory components differ from current equity "
+                    f"by £{abs(difference):,.2f}; every observation remains "
+                    "visible and no automatic correction is applied.")
+        for field in ACQUISITION_FIELDS:
+            history = acquisition_history[field]
+            if self._has_conflicting_values(history):
+                limitations.append(
+                    f"Conflicting {EVIDENCE_LABELS[field]} evidence remains "
+                    f"visible ({len(history)} observations); the latest "
+                    "effective observation is displayed and no evidence is "
+                    "automatically corrected.")
         if overpayments:
             limitations.append(
                 f"The observed balance follows {len(overpayments)} recorded "
@@ -724,6 +952,28 @@ class MortgageFreedomAssessor:
             label = EVIDENCE_LABELS.get(field, "required mortgage evidence")
             raise ValueError(f"Mortgage evidence {label} must be text")
         return record.value
+
+    @staticmethod
+    def _purchase_date_label(
+        record: MortgageEvidence | None,
+    ) -> str | None:
+        if record is None:
+            return None
+        if isinstance(record.value, str):
+            year, month = record.value.split("-")
+            return f"{MONTH_NAMES[int(month) - 1]} {year}"
+        if isinstance(record.value, (int, float)):
+            return _month_year(float(record.value))
+        return None
+
+    @staticmethod
+    def _has_conflicting_values(
+        records: tuple[MortgageEvidence, ...],
+    ) -> bool:
+        return len({
+            (record.value, record.unit_or_currency)
+            for record in records
+        }) > 1
 
     @staticmethod
     def _validate_contract(numeric: dict[str, float],
@@ -1119,4 +1369,28 @@ class MortgageFreedomAssessor:
             evidence_references=evidence_refs,
             assumption_references=assumption_refs,
             generated_at=request.as_of,
+        )
+
+    @staticmethod
+    def _unavailable_metric(
+        metric_id: str,
+        request: MissionAssessmentRequest,
+        reason: str,
+        input_refs: tuple[str, ...],
+        evidence_refs: tuple[str, ...],
+        assumption_refs: tuple[str, ...],
+    ) -> MetricResult:
+        return MetricResult(
+            metric_id=metric_id,
+            value=None,
+            unit_or_currency="GBP",
+            scope=request.scope,
+            as_of=request.as_of,
+            status="unavailable",
+            calculation_version=CALCULATION_VERSION,
+            input_references=input_refs,
+            evidence_references=evidence_refs,
+            assumption_references=assumption_refs,
+            generated_at=request.as_of,
+            limitations=(reason,),
         )

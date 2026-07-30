@@ -10,17 +10,27 @@ from __future__ import annotations
 from dataclasses import dataclass
 import math
 from numbers import Real
+import re
 
 from foundry.eventlog import EventLog
 
 
 EVENT_KIND = "finance.mortgage_evidence.recorded"
+VALUATION_BASES = frozenset({
+    "index_estimate",
+    "owner_estimate",
+    "agent_appraisal",
+})
+_PURCHASE_MONTH = re.compile(r"^[0-9]{4}-(0[1-9]|1[0-2])$")
 
 EVIDENCE_FIELDS = frozenset({
     "property_role",
     "purchase_price",
     "purchase_date",
+    "initial_deposit",
+    "acquisition_costs",
     "property_valuation",
+    "valuation_basis",
     "lender",
     "original_advance",
     "mortgage_start",
@@ -38,11 +48,13 @@ EVIDENCE_FIELDS = frozenset({
 })
 
 _TEXT_FIELDS = frozenset({
-    "property_role", "lender", "repayment_type", "interest_type",
+    "property_role", "valuation_basis", "lender", "repayment_type",
+    "interest_type",
 })
 _MONEY_FIELDS = frozenset({
-    "purchase_price", "property_valuation", "original_advance", "balance",
-    "monthly_payment", "recorded_overpayment",
+    "purchase_price", "initial_deposit", "acquisition_costs",
+    "property_valuation", "original_advance", "balance", "monthly_payment",
+    "recorded_overpayment",
 })
 _POSITIVE_FIELDS = frozenset({
     "purchase_price", "purchase_date", "property_valuation",
@@ -90,9 +102,22 @@ def _validate_field_value(
     value: str | float,
     unit_or_currency: str | None,
 ) -> None:
+    if field == "purchase_date":
+        if isinstance(value, str):
+            if not _PURCHASE_MONTH.fullmatch(value):
+                raise ValueError(
+                    "purchase_date text must use YYYY-MM month precision")
+            return
+        if value <= 0:
+            raise ValueError("purchase_date must be positive")
+        return
     if field in _TEXT_FIELDS:
         if not isinstance(value, str):
             raise ValueError(f"{field} must be text")
+        if field == "valuation_basis" and value not in VALUATION_BASES:
+            raise ValueError(
+                "valuation_basis must be index_estimate, owner_estimate, "
+                "or agent_appraisal")
         return
     if isinstance(value, str):
         raise ValueError(f"{field} must be numeric")
@@ -102,6 +127,8 @@ def _validate_field_value(
         raise ValueError(f"{field} must be positive")
     if field == "balance" and value < 0:
         raise ValueError("balance must be non-negative")
+    if field in {"initial_deposit", "acquisition_costs"} and value < 0:
+        raise ValueError(f"{field} must be non-negative")
     if field == "remaining_term_months" and value < 0:
         raise ValueError("remaining_term_months must be non-negative")
     if field == "original_term_months" and not value.is_integer():

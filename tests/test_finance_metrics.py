@@ -3,6 +3,7 @@ each a deterministic Fact over FinanceEntityProjection + Core's own
 EntityProjection, dispatched only through the Metric Registry (000
 §13.5) — never called directly by a test that stands in for Core."""
 
+from datetime import datetime, timezone
 import time
 
 import pytest
@@ -369,18 +370,31 @@ def test_liquidity_runway_months(kernel):
     its own committed spend (which `_account_value`'s ledger-sum rule
     would otherwise fold into "liquid holdings" too)."""
     household, chris, fiona = _household_of_two(kernel.log)
+    as_of = datetime(2026, 7, 15, tzinfo=timezone.utc).timestamp()
     savings = fin.declare_account(kernel.log, "savings", "GBP", liquidity_classification="liquid")
     fin.link_ownership(kernel.log, "account", savings.id, "owner", chris.id)
-    fin.declare_transaction(kernel.log, savings.id, 6000.0, "GBP", "income", NOW - 60)
+    fin.declare_transaction(
+        kernel.log, savings.id, 6000.0, "GBP", "income", as_of - 60)
 
     bills_account = fin.declare_account(kernel.log, "checking", "GBP")  # no liquidity_classification
     fin.link_ownership(kernel.log, "account", bills_account.id, "owner", chris.id)
-    for m in range(1, 4):
-        fin.declare_transaction(kernel.log, bills_account.id, -1000.0, "GBP", "housing", NOW - m * 30 * 24 * 3600)
+    # Three explicit, genuinely distinct calendar months make the fixture
+    # deterministic even when this test runs near a short-month boundary.
+    for year, month, day in (
+        (2026, 4, 15),
+        (2026, 5, 15),
+        (2026, 6, 15),
+    ):
+        observed_at = datetime(
+            year, month, day, tzinfo=timezone.utc).timestamp()
+        fin.declare_transaction(
+            kernel.log, bills_account.id, -1000.0, "GBP", "housing",
+            observed_at)
 
     registry = _registry(kernel.log)
     result = registry.dispatch(MetricRequest(
-        metric_id="finance.liquidity_runway", scope=Subject("party", household.id), as_of=NOW))
+        metric_id="finance.liquidity_runway",
+        scope=Subject("party", household.id), as_of=as_of))
     assert result.status == "available"
     assert result.unit_or_currency == "months"
     assert result.value == pytest.approx(6000.0 / 1000.0)  # liquid holdings / avg monthly essential spend
