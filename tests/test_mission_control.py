@@ -999,6 +999,56 @@ def _mission_detail_regions(rendered):
     )
 
 
+@pytest.mark.parametrize("slug", [
+    "financial-resilience",
+    "financial-independence",
+    "mortgage-freedom",
+])
+def test_live_finance_missions_share_the_mission_detail_structure(
+        tmp_path, slug):
+    """Every live Finance provider composes the same visible page regions."""
+    _seed_financial_independence(tmp_path)
+
+    html = client().get(f"/missions/{slug}").text
+    hero, analysis, summary = _mission_detail_regions(html)
+    drilldown_start = html.index('<details class="mission-drilldown">')
+
+    assert html.count('<section class="hero mission-detail-hero') == 1
+    assert html.count('<section aria-labelledby="analysis-heading">') == 1
+    assert html.count('<details class="mission-drilldown">') == 1
+    assert html.count('<div class="telemetry-grid">') == 1
+    assert html.index(hero) < html.index(analysis) < drilldown_start
+    assert 'aria-labelledby="mission-title"' in hero
+    assert 'aria-describedby="trajectory-summary"' in hero
+    assert 'id="analysis-heading"' in analysis
+    assert 'id="trajectory-summary"' in summary
+    assert 'class="mission-return" href="/#missions"' in hero
+
+
+def test_shared_mission_hero_escapes_textual_view_fields():
+    from foundry.mission_control import _MissionHeroView, _render_mission_hero
+
+    hostile = "<script>alert('mission')</script>"
+    rendered = _render_mission_hero(_MissionHeroView(
+        title=hostile,
+        definition=hostile,
+        return_link="",
+        sun_phase="day",
+        reference_schedule_class="",
+        trajectory="",
+        milestone_label=hostile,
+        trajectory_tile="",
+        eta_tile="",
+        margin_value=hostile,
+        margin_sub=hostile,
+        accessible_summary="",
+    ))
+
+    assert hostile not in rendered
+    assert rendered.count("&lt;script&gt;alert(&#x27;mission&#x27;)&lt;/script&gt;") \
+        == 5
+
+
 def test_not_applicable_instruments_are_omitted_visually_and_accessibly(
         monkeypatch, tmp_path):
     from foundry.core.mission_assessment import InstrumentApplicability
