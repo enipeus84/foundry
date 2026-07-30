@@ -664,7 +664,8 @@ _SHELL = """<!doctype html>
     gap: 22px 34px; margin-top: 32px;
   }}
   .mission-hero-meta .margin-stat {{ grid-column: 1 / -1; }}
-  .mission-hero-meta .k, .analysis-rail .k, .telemetry-grid .k {{
+  .mission-hero-meta .k, .flight-analysis-schedule .k,
+  .analysis-rail .k, .telemetry-grid .k {{
     font-size: 9px; font-weight: 650; letter-spacing: .2em; color: var(--faint);
   }}
   .mission-hero-meta .v {{
@@ -678,33 +679,31 @@ _SHELL = """<!doctype html>
     margin-top: 4px; color: #9aa8b6; font-size: 10px; letter-spacing: .04em;
     max-width: 34ch; overflow-wrap: anywhere;
   }}
-  .mission-time-lane {{
-    position: absolute; z-index: 4; left: clamp(460px, 46%, 610px);
-    right: 46px; bottom: 24px;
+  .flight-analysis-schedule {{
     display: grid; grid-template-columns: repeat(4, minmax(0,1fr));
-    gap: 1px; padding: 1px; background: rgba(52,66,82,.42);
-    border: 1px solid rgba(130,148,166,.22);
+    gap: 1px; padding: 1px; margin-bottom: 14px;
+    background: var(--line); border: 1px solid var(--line);
   }}
-  .mission-time-lane .time-point {{
-    min-width: 0; padding: 11px 12px; background: rgba(5,8,12,.84);
+  .flight-analysis-schedule .time-point {{
+    min-width: 0; padding: 20px 26px; background: rgba(9,14,20,.72);
   }}
-  .mission-time-lane .k {{
-    color: var(--faint); font-size: 7.5px; font-weight: 650;
-    letter-spacing: .16em; line-height: 1.35;
-  }}
-  .mission-time-lane .v {{
-    margin-top: 4px; color: var(--text); font-size: 12px; font-weight: 610;
+  .flight-analysis-schedule .v {{
+    margin-top: 8px; color: var(--text);
+    font-size: clamp(18px, 2.1vw, 27px); font-weight: 540;
     letter-spacing: .04em; overflow-wrap: anywhere;
   }}
-  .mission-time-lane .sub {{
-    margin-top: 3px; color: var(--green); font-size: 8px;
-    letter-spacing: .05em; line-height: 1.35; overflow-wrap: anywhere;
+  .flight-analysis-schedule .sub {{
+    margin-top: 7px; color: var(--green); font-size: 11px;
+    letter-spacing: .04em; line-height: 1.4; overflow-wrap: anywhere;
   }}
   .hero-trajectory {{
     position: absolute; z-index: 2;
     inset: 62px 20px 104px clamp(470px, 39vw, 520px);
     width: auto; height: auto;
     overflow: visible;
+  }}
+  .mission-detail-hero.reference-schedule-relocated .hero-trajectory {{
+    inset: 48px 12px 34px clamp(470px, 39vw, 520px);
   }}
   .hero-trajectory .actual-path {{
     fill: none; stroke: #edf2f7; stroke-width: 2.1;
@@ -823,7 +822,12 @@ _SHELL = """<!doctype html>
     .hero-trajectory {{
       inset: 72px -18px 116px 390px; transform: none;
     }}
-    .mission-time-lane {{ left: 42%; right: 28px; }}
+    .mission-detail-hero.reference-schedule-relocated .hero-trajectory {{
+      inset: 56px -18px 42px 390px;
+    }}
+    .flight-analysis-schedule {{
+      grid-template-columns: repeat(2, minmax(0,1fr));
+    }}
     .analysis-rail {{ grid-template-columns: repeat(2, minmax(0,1fr)); }}
     .analysis-rail .instrument:nth-child(3) {{ border-left: 0; border-top: 1px solid var(--line); }}
     .analysis-rail .instrument:nth-child(4) {{ border-top: 1px solid var(--line); }}
@@ -903,12 +907,14 @@ _SHELL = """<!doctype html>
     .hero-trajectory .milestone-label {{ font-size: 14px; stroke-width: 4px; }}
     .hero-trajectory .current-label,
     .hero-trajectory .current-detail {{ opacity: 0; }}
-    .mission-time-lane {{
-      left: 8px; right: 8px; bottom: 16px;
-      grid-template-columns: repeat(2, minmax(0,1fr));
+    .mission-detail-hero.reference-schedule-relocated {{
+      min-height: 820px;
     }}
-    .mission-time-lane .time-point {{ padding: 10px; }}
-    .mission-time-lane .v {{ font-size: 11px; }}
+    .mission-detail-hero.reference-schedule-relocated .hero-trajectory {{
+      inset: 500px -30px 28px -58px;
+    }}
+    .flight-analysis-schedule {{ grid-template-columns: 1fr; }}
+    .flight-analysis-schedule .time-point {{ padding: 20px 22px; }}
     .analysis-rail {{ grid-template-columns: 1fr; }}
     .analysis-rail .instrument + .instrument {{
       border-left: 0; border-top: 1px solid var(--line);
@@ -2171,7 +2177,7 @@ def mission_detail(request: Request, slug: str):
     )
     current_label, current_format_kind = (
         _assessment_current_presentation(assessment))
-    timeline_lane = f"""<div class="mission-time-lane"
+    flight_analysis_schedule = f"""<div class="flight-analysis-schedule"
     aria-label="Mission schedule comparison">
     <div class="time-point"><p class="k">{html.escape(
         delta_v.reference_start_label)}</p>
@@ -2287,7 +2293,9 @@ def mission_detail(request: Request, slug: str):
             '<p class="sr-only" id="trajectory-summary">'
             + html.escape(" ".join(summary_clauses))
             + "</p>")
-    body = f"""<section class="hero mission-detail-hero phase-{_sun_phase(as_of)}"
+    reference_schedule_class = (
+        " reference-schedule-relocated" if flight_analysis_schedule else "")
+    body = f"""<section class="hero mission-detail-hero{reference_schedule_class} phase-{_sun_phase(as_of)}"
   aria-labelledby="mission-title" aria-describedby="trajectory-summary">
   <img class="earthrise" src="{_EARTHRISE_PATH}"
     alt="Earth at sunrise from orbit, its curved horizon lit above the night side"
@@ -2308,11 +2316,11 @@ def mission_detail(request: Request, slug: str):
         <p class="sub">{html.escape(margin_sub)}</p></div>
     </div>
   </div>
-  {timeline_lane}
   {accessible_summary}
 </section>
 <section aria-labelledby="analysis-heading">
   <h2 id="analysis-heading">FLIGHT ANALYSIS</h2>
+  {flight_analysis_schedule}
   <div class="analysis-rail">
     {delta_instrument}
     <div class="instrument"><p class="k">MILESTONE COMPLETION</p>
