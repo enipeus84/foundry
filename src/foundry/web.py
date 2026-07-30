@@ -69,6 +69,9 @@ from foundry.finance.mission_assessment import FinancialIndependenceAssessor
 from foundry.finance.mortgage_assessment import MortgageFreedomAssessor
 from foundry.finance.mortgage_evidence import MortgageEvidenceProjection
 from foundry.finance.missions import register_finance_mission_definitions
+from foundry.finance.pension_assessment import PensionIndependenceAssessor
+from foundry.finance.pension_evidence import PensionEvidenceProjection
+from foundry.finance.pension_metrics import FinancePensionMetricProvider
 from foundry.finance.resilience_assessment import FinancialResilienceAssessor
 from foundry.finance.resilience_evidence import (
     ResilienceEvidenceProjection,
@@ -147,16 +150,21 @@ def _build_console() -> Console:
     core_entities = EntityProjection(log)
     finance_entities = FinanceEntityProjection(log)
     resilience_evidence = ResilienceEvidenceProjection(log)
+    pension_evidence = PensionEvidenceProjection(log)
     registry = MetricRegistry()
     registry.register(FinanceMetricProvider(finance_entities, core_entities))
     registry.register(FinanceResilienceMetricProvider(
         finance_entities, core_entities, resilience_evidence))
+    registry.register(FinancePensionMetricProvider(
+        finance_entities, core_entities, pension_evidence))
     assessments = MissionAssessmentRegistry()
     register_finance_mission_definitions(assessments)
     assessments.register(FinancialResilienceAssessor(
         registry, finance_entities, core_entities, resilience_evidence))
     assessments.register(FinancialIndependenceAssessor(
         finance_entities, core_entities, registry))
+    assessments.register(PensionIndependenceAssessor(
+        registry, finance_entities, core_entities, pension_evidence))
     assessments.register(MortgageFreedomAssessor(
         finance_entities, core_entities, registry,
         MortgageEvidenceProjection(log)))

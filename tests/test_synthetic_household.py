@@ -140,7 +140,7 @@ def test_mission_status_is_evaluable(household_log):
     households = [p for p in core_entities.parties.values() if p.party_type == "household"]
     scope = Subject("party", households[0].id)
     missions = [m for m in core_entities.missions.values() if m.status == "active"]
-    assert len(missions) == 3
+    assert len(missions) == 4
     fi_mission = next(
         mission for mission in missions
         if mission.target_metric == "finance.accessible_assets")

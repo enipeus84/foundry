@@ -4,6 +4,7 @@ from foundry.core.mission_assessment import MissionAssessmentRegistry
 from foundry.finance.mission_assessment import POLICY_ID
 from foundry.finance.mortgage_assessment import POLICY_ID as MORTGAGE_POLICY_ID
 from foundry.finance.missions import register_finance_mission_definitions
+from foundry.finance.pension_assessment import POLICY_ID as PENSION_POLICY_ID
 from foundry.finance.resilience_assessment import (
     POLICY_ID as RESILIENCE_POLICY_ID,
 )
@@ -43,6 +44,7 @@ def test_only_implemented_missions_declare_assessment_policies():
     ] == [
         "Financial Resilience",
         "Financial Independence",
+        "Pension Independence",
         "Mortgage Freedom",
     ]
     assert (
@@ -52,6 +54,10 @@ def test_only_implemented_missions_declare_assessment_policies():
     assert (
         _registry().definition_for_policy(POLICY_ID).slug
         == "financial-independence"
+    )
+    assert (
+        _registry().definition_for_policy(PENSION_POLICY_ID).slug
+        == "pension-independence"
     )
     assert (
         _registry().definition_for_policy(MORTGAGE_POLICY_ID).slug

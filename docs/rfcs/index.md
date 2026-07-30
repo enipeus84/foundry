@@ -34,6 +34,7 @@ shipped. They remain outside the merged table until a pull request lands.
 | RFC | Title | Status | Architecture / decision doc | Implementation report(s) | Technical debt | PR | Tag / release |
 |---|---|---|---|---|---|---|---|
 | RFC-008 | Financial Resilience Mission | **Implemented on branch — not merged** | [`rfc-008-financial-resilience-architecture.md`](../rfc-008-financial-resilience-architecture.md) | [`rfc-008-financial-resilience-implementation-report.md`](../rfc-008-financial-resilience-implementation-report.md) | [`rfc-008-technical-debt.md`](../rfc-008-technical-debt.md) | — | `1.6.0` metadata on branch; no tag |
+| RFC-009 | Pension Independence Mission | **Implemented on branch — not merged** | [`rfc-009-pension-independence-architecture.md`](../rfc-009-pension-independence-architecture.md) | [`rfc-009-pension-independence-implementation-report.md`](../rfc-009-pension-independence-implementation-report.md) | [`rfc-009-technical-debt.md`](../rfc-009-technical-debt.md) | [#22](https://github.com/enipeus84/foundry/pull/22) | `1.7.0` metadata on branch; no tag |
 
 RFC-007 Revision 2 documents `initial_deposit`, optional
 `acquisition_costs`, optional explicit `valuation_basis`, visible

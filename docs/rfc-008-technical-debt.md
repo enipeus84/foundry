@@ -59,6 +59,12 @@ through a documented compatibility release.
 
 ## Performance, history and compatibility
 
+- **Resolved by RFC-009 D13:** the Mission Detail trajectory tile no longer
+  suppresses a provider's computed `trajectory_state` merely because observed
+  trajectory history is unavailable. The history SVG and its explanatory
+  sub-line remain governed independently by instrument applicability. This
+  resolves the presentation defect only; the historical-reconstruction debt
+  below remains open.
 - Web requests rebuild projections from the Event Log. Provider-local
   memoisation removes repeated M1/M2/holdings work inside one request, but
   there is no cross-request cache, invalidation policy or persisted assessment

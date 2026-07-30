@@ -75,6 +75,12 @@ shipped read-model behaviour, not new invariants.
    lifecycle. A steady-state mission can move from complete back to incomplete
    without an achievement or reversal event. No consumer may assume this
    derived field only moves in one direction.
+3. **Mission completion and trajectory answer different questions.**
+   Completion is an evidence-based statement about the current observed
+   position against the destination. Trajectory is a policy judgement over a
+   declared deterministic projection or observed history. A mission may be
+   incomplete while its Expected path is Nominal; forecast assumptions may
+   change trajectory, ETA and margin but must not rewrite observed completion.
 
 ## Known, deliberate limitations
 

@@ -1,14 +1,14 @@
-"""Finance mission discovery metadata (RFC-006/RFC-007/RFC-008).
+"""Finance mission discovery metadata (RFC-006 through RFC-009).
 
-Financial Resilience, Financial Independence and Mortgage Freedom declare
-assessment policies. Pension Independence remains honest metadata only: no
-targets, thresholds, evidence, or assessment provider is implied.
+All four fixed Finance missions declare assessment policies and are rendered
+through the domain-neutral Mission Assessment contract.
 """
 
 from foundry.core.mission_assessment import MissionDefinition
 
 from .mission_assessment import POLICY_ID
 from .mortgage_assessment import POLICY_ID as MORTGAGE_POLICY_ID
+from .pension_assessment import POLICY_ID as PENSION_POLICY_ID
 from .resilience_assessment import POLICY_ID as RESILIENCE_POLICY_ID
 
 
@@ -42,6 +42,12 @@ FINANCE_MISSION_DEFINITIONS: tuple[MissionDefinition, ...] = (
         label="Pension Independence",
         order=3,
         destination_direction="higher_is_better",
+        definition=(
+            "The household's pension provision can sustain its required "
+            "retirement income from pension age onwards, without depending "
+            "on continued work."
+        ),
+        assessment_policy_id=PENSION_POLICY_ID,
     ),
     MissionDefinition(
         slug="mortgage-freedom",

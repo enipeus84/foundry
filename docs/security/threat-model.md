@@ -72,6 +72,12 @@ untrusted files and exports       identity provider       model providers
   lineage and actor remain assertions. Malformed direct-log envelopes are
   quarantined; unattributable ones remain operator-level projection evidence
   rather than being assigned across household scopes.
+- **Manual pension evidence.** Governed account and party declarations become
+  permanent Finance events. A closed field whitelist validates shape,
+  finiteness, GBP/fraction/year units, confidence and effective date before
+  append. Rates supersede, dated payments accumulate, and malformed direct-log
+  envelopes are quarantined. Subject id, source, lineage and actor remain
+  assertions; this is not an authenticated pension-provider feed.
 
 ## Threat actors
 

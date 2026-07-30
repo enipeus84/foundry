@@ -281,6 +281,43 @@ assigning them to every household would cross scope. There is no authenticated
 live provider, object-level authorisation, protection model or richer
 commitment entity.
 
+## Manual pension evidence
+
+**Objective.** Preserve the observed and declared basis of Pension
+Independence without allowing malformed, future, cross-basis or provider-like
+text to become trusted mission state.
+
+**Current implementation.** Finance accepts a closed set of account-scoped
+contribution-rate, dated-payment, fee and DB-entitlement fields and
+party-scoped State Pension fields. The in-process writer validates the field,
+numeric finiteness, non-negativity, unit, confidence, source, lineage and
+effective timestamp before append. Replay is deterministic and tolerant:
+rates and entitlements supersede by effective date plus append order, dated
+payments accumulate, future records are excluded visibly, and malformed
+direct-log envelopes are quarantined. DC valuations remain existing Finance
+valuation events; dated payments and annual rates are never added together.
+The assessor derives completion and projection output without appending an
+event. The existing authenticated generic Mission Detail route escapes
+provider-declared text and does not render raw entity identifiers, evidence
+payloads or assumption keys.
+
+**Evidence.** `src/foundry/finance/pension_evidence.py`,
+`src/foundry/finance/pension_metrics.py`,
+`src/foundry/finance/pension_assessment.py`,
+`tests/test_pension_evidence.py`, `tests/test_pension_metrics.py`,
+`tests/test_pension_assessment.py`, and Pension route/escaping regressions in
+`tests/test_mission_control.py`.
+
+**Maturity.** Beta for the explicit synthetic/manual, single-household,
+read-only scope.
+
+**Missing or future control.** Subject id, source, lineage, confidence and
+actor are assertions rather than authenticated attestations; free-text
+envelope fields have no explicit size limits. No pension-provider connector,
+policy-number field, annual-allowance rules, tax calculation, decumulation
+model, regulated-advice workflow, multi-user object authorisation or operator
+quarantine surface exists.
+
 ## Operational logging
 
 **Objective.** Support diagnosis without copying household content,

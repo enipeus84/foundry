@@ -138,6 +138,11 @@ TELEMETRY_FORMAT = ClosedVocabulary(
     {"currency", "percent", "months", "number", "plain"},
 )
 
+TELEMETRY_REGION = ClosedVocabulary(
+    "telemetry_region",
+    {"hero", "analysis", "drilldown"},
+)
+
 INSTRUMENT_APPLICABILITY = ClosedVocabulary(
     "instrument_applicability",
     {"applicable", "not_applicable", "unavailable"},
