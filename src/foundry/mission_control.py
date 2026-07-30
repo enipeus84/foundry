@@ -1970,85 +1970,99 @@ def _mission_trajectory_svg(assessment: MissionAssessment) -> str:
 
 @dataclass(frozen=True)
 class _MissionHeroView:
-    """Escaped-at-render presentation inputs for the shared mission hero."""
+    """Presentation contract for the shared mission hero.
+
+    Plain text fields are escaped by `_render_mission_hero`. Fields ending
+    `_html` are trusted, pre-rendered fragments constructed only by Mission
+    Control; provider- or evidence-derived text must be escaped before it can
+    enter one of those fragments.
+    """
 
     title: str
     definition: str
-    return_link: str
+    return_link_html: str
     sun_phase: str
-    reference_schedule_class: str
-    trajectory: str
+    reference_schedule_class_html: str
+    trajectory_html: str
     milestone_label: str
-    trajectory_tile: str
-    eta_tile: str
+    trajectory_tile_html: str
+    eta_tile_html: str
     margin_value: str
     margin_sub: str
-    accessible_summary: str
+    accessible_summary_html: str
 
 
 @dataclass(frozen=True)
 class _FlightAnalysisView:
-    """Presentation inputs shared by every live Mission Detail analysis."""
+    """Presentation contract for shared Mission Detail analysis.
 
-    schedule: str
-    delta_instrument: str
+    Plain text fields are escaped by `_render_flight_analysis`. Fields ending
+    `_html` are trusted fragments constructed internally by Mission Control.
+    """
+
+    schedule_html: str
+    delta_instrument_html: str
     milestone_completion: float
     milestone_label: str
     recommendation_action: str
     recommendation_amount: str
-    recommendation_delta_instrument: str
+    recommendation_delta_instrument_html: str
 
 
 @dataclass(frozen=True)
 class _MissionDataView:
-    """Presentation inputs for shared telemetry and provenance disclosure."""
+    """Presentation contract for shared telemetry and provenance.
 
-    telemetry_cards: tuple[str, ...]
-    recommendation_detail: str
-    note_items: str
+    Fields ending `_html` are trusted fragments constructed by Mission
+    Control after escaping every provider- or evidence-derived text value.
+    """
+
+    telemetry_cards_html: tuple[str, ...]
+    recommendation_detail_html: str
+    note_items_html: str
     input_reference_count: int
     assumption_reference_count: int
 
 
 def _render_mission_hero(view: _MissionHeroView) -> str:
-    return f"""<section class="hero mission-detail-hero{view.reference_schedule_class} phase-{html.escape(view.sun_phase)}"
+    return f"""<section class="hero mission-detail-hero{view.reference_schedule_class_html} phase-{html.escape(view.sun_phase)}"
   aria-labelledby="mission-title" aria-describedby="trajectory-summary">
   <img class="earthrise" src="{_EARTHRISE_PATH}"
     alt="Earth at sunrise from orbit, its curved horizon lit above the night side"
     width="1774" height="887" fetchpriority="high" decoding="async">
   <div class="scrim"></div>
-  {view.trajectory}
+  {view.trajectory_html}
   <div class="hero-content">
-    {view.return_link}
+    {view.return_link_html}
     <p class="eyebrow">MISSION</p>
     <h2 class="mission-title" id="mission-title">{html.escape(view.title)}</h2>
     <p class="mission-definition">{html.escape(view.definition)}</p>
     <div class="mission-hero-meta">
       <div><p class="k">CURRENT MILESTONE</p><p class="v">{html.escape(view.milestone_label)}</p></div>
-      {view.trajectory_tile}
-      {view.eta_tile}
+      {view.trajectory_tile_html}
+      {view.eta_tile_html}
       <div class="margin-stat"><p class="k">MISSION MARGIN</p>
         <p class="v num">{html.escape(view.margin_value)}</p>
         <p class="sub">{html.escape(view.margin_sub)}</p></div>
     </div>
   </div>
-  {view.accessible_summary}
+  {view.accessible_summary_html}
 </section>"""
 
 
 def _render_flight_analysis(view: _FlightAnalysisView) -> str:
     return f"""<section aria-labelledby="analysis-heading">
   <h2 id="analysis-heading">FLIGHT ANALYSIS</h2>
-  {view.schedule}
+  {view.schedule_html}
   <div class="analysis-rail">
-    {view.delta_instrument}
+    {view.delta_instrument_html}
     <div class="instrument"><p class="k">MILESTONE COMPLETION</p>
       <p class="v num">{view.milestone_completion:.1f}%</p>
       <p class="sub">{html.escape(view.milestone_label)}</p></div>
     <div class="instrument recommendation-action"><p class="k">NEXT BURN</p>
       <p class="v">{html.escape(view.recommendation_action)}</p>
       <p class="sub">{html.escape(view.recommendation_amount)}</p></div>
-    {view.recommendation_delta_instrument}
+    {view.recommendation_delta_instrument_html}
   </div>
 </section>"""
 
@@ -2059,10 +2073,10 @@ def _render_mission_data(view: _MissionDataView) -> str:
     <summary>DEEPER MISSION DATA · TELEMETRY, ASSUMPTIONS &amp; PROVENANCE</summary>
     <div class="mission-drilldown-content">
       <h2>PRIMARY TELEMETRY</h2>
-      <div class="telemetry-grid">{"".join(view.telemetry_cards)}</div>
+      <div class="telemetry-grid">{"".join(view.telemetry_cards_html)}</div>
       <div class="assessment-notes">
         <h2>ASSUMPTIONS, LIMITATIONS &amp; PROVENANCE</h2>
-        <ul>{view.recommendation_detail}{view.note_items}
+        <ul>{view.recommendation_detail_html}{view.note_items_html}
           <li>{view.input_reference_count} metric input reference(s)</li>
           <li>{view.assumption_reference_count} Assumption Set reference(s)</li>
         </ul>
@@ -2402,30 +2416,31 @@ def mission_detail(request: Request, slug: str):
     hero = _render_mission_hero(_MissionHeroView(
         title=definition.label,
         definition=definition.definition,
-        return_link=mission_return,
+        return_link_html=mission_return,
         sun_phase=_sun_phase(as_of),
-        reference_schedule_class=reference_schedule_class,
-        trajectory=_mission_trajectory_svg(assessment),
+        reference_schedule_class_html=reference_schedule_class,
+        trajectory_html=_mission_trajectory_svg(assessment),
         milestone_label=milestone_label,
-        trajectory_tile=trajectory_tile,
-        eta_tile=eta_tile,
+        trajectory_tile_html=trajectory_tile,
+        eta_tile_html=eta_tile,
         margin_value=margin_value,
         margin_sub=margin_sub,
-        accessible_summary=accessible_summary,
+        accessible_summary_html=accessible_summary,
     ))
     analysis = _render_flight_analysis(_FlightAnalysisView(
-        schedule=flight_analysis_schedule,
-        delta_instrument=delta_instrument,
+        schedule_html=flight_analysis_schedule,
+        delta_instrument_html=delta_instrument,
         milestone_completion=milestone_completion,
         milestone_label=milestone_label,
         recommendation_action=recommendation_action,
         recommendation_amount=recommendation_amount,
-        recommendation_delta_instrument=recommendation_delta_instrument,
+        recommendation_delta_instrument_html=(
+            recommendation_delta_instrument),
     ))
     mission_data = _render_mission_data(_MissionDataView(
-        telemetry_cards=tuple(telemetry_cards),
-        recommendation_detail=recommendation_detail,
-        note_items=note_items,
+        telemetry_cards_html=tuple(telemetry_cards),
+        recommendation_detail_html=recommendation_detail,
+        note_items_html=note_items,
         input_reference_count=len(assessment.input_references),
         assumption_reference_count=len(assessment.assumption_references),
     ))

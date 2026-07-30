@@ -1,6 +1,7 @@
 # RFC-009 Prep — Shared Mission Detail Refactor Implementation Report
 
-Status: implementation complete on the RFC branch; no pull request opened.
+Status: implementation complete on the RFC branch; PR #21 is open for
+independent Architecture and Security review.
 
 ## Scope
 
@@ -26,8 +27,12 @@ special case.
   current remote head.
 - PR #20 had already moved the Mortgage Freedom schedule comparison into
   Flight Analysis. That merged layout is the baseline preserved here.
-- GitHub had no open pull requests and no Pension branch. The only unmerged
-  remote branch was the older RFC-005 Financial Independence branch.
+- At the original refactor pre-flight, GitHub had no open pull requests or
+  Pension implementation branch. The current repository now has PR #21 for
+  this shared-component prerequisite and PR #22 containing the approved
+  RFC-009 Pension Independence architecture.
+- PR #21 must pass the independent Architecture and Security gates and merge
+  before the RFC-009 implementation burn begins on PR #22's branch.
 - Two stale, prunable worktree registrations were identified and left
   untouched because cleanup is unrelated to this refactor.
 - The normal macOS keep-awake process was started for the implementation run.
@@ -271,3 +276,42 @@ was attempted.
 
 The branch is ready for the independent Architecture and Security gates. It
 must not be described as approved until those read-only reviews complete.
+
+## PR #21 review remediation — 2026-07-30
+
+Independent review identified that `_MissionHeroView` described every input as
+escaped at render even though some inputs are trusted, pre-rendered Mission
+Control fragments. The presentation contracts now distinguish:
+
+- plain text values escaped by the component renderer; and
+- trusted internal fragments whose field names end in `_html`.
+
+The same explicit naming and contract is applied to Mission Hero, Flight
+Analysis and Mission Data. Provider- and evidence-derived text is escaped
+before entering a trusted fragment. Focused regressions cover plain-text
+escaping, escaped provider text, preserved internal structure and absence of
+double escaping.
+
+No Mission Detail content, layout or interaction changed. Financial
+Resilience, Financial Independence and Mortgage Freedom are byte-identical
+before and after the remediation except for the shared footer's expected test
+count increasing from 460 to 462 when two tests were added. No Pension
+Independence logic was introduced.
+
+### Remediation validation
+
+- `.venv/bin/python --version`: **Python 3.12.13**
+- `.venv/bin/python -m pytest tests/test_mission_control.py -q`:
+  **84 passed**, with the existing Starlette TestClient deprecation warning
+- `.venv/bin/python -m pytest tests/test_docs_governance.py -q`:
+  **4 passed**
+- `.venv/bin/python scripts/validate_security_docs.py`:
+  security documentation, repository structure and documentation
+  **COMPLETE**
+- `.venv/bin/python -m pytest tests -q`:
+  **553 passed**, with the existing Starlette TestClient deprecation warning
+- `git diff --check`: **clean**
+- `./validate.sh`: security/documentation checks and **553 tests passed**;
+  deterministic replay and the event-log hash chain passed; the script then
+  returned its documented exit 1 because no real-model API keys were present,
+  so this is not represented as V1.0 real-model validation

@@ -1025,28 +1025,92 @@ def test_live_finance_missions_share_the_mission_detail_structure(
     assert 'class="mission-return" href="/#missions"' in hero
 
 
-def test_shared_mission_hero_escapes_textual_view_fields():
+def test_shared_mission_hero_escapes_plain_text_and_preserves_trusted_html():
     from foundry.mission_control import _MissionHeroView, _render_mission_hero
 
     hostile = "<script>alert('mission')</script>"
+    trusted_fragments = (
+        '<a data-contract="trusted">RETURN</a>',
+        '<svg data-contract="trusted"></svg>',
+        '<div data-contract="trajectory-tile"></div>',
+        '<div data-contract="eta-tile"></div>',
+        '<p data-contract="summary">SUMMARY</p>',
+    )
     rendered = _render_mission_hero(_MissionHeroView(
         title=hostile,
         definition=hostile,
-        return_link="",
-        sun_phase="day",
-        reference_schedule_class="",
-        trajectory="",
+        return_link_html=trusted_fragments[0],
+        sun_phase=hostile,
+        reference_schedule_class_html=" trusted-class",
+        trajectory_html=trusted_fragments[1],
         milestone_label=hostile,
-        trajectory_tile="",
-        eta_tile="",
+        trajectory_tile_html=trusted_fragments[2],
+        eta_tile_html=trusted_fragments[3],
         margin_value=hostile,
         margin_sub=hostile,
-        accessible_summary="",
+        accessible_summary_html=trusted_fragments[4],
     ))
 
     assert hostile not in rendered
     assert rendered.count("&lt;script&gt;alert(&#x27;mission&#x27;)&lt;/script&gt;") \
-        == 5
+        == 6
+    assert "mission-detail-hero trusted-class" in rendered
+    assert all(fragment in rendered for fragment in trusted_fragments)
+    assert "&lt;svg data-contract=" not in rendered
+
+
+def test_shared_flight_analysis_escapes_plain_text_and_preserves_trusted_html():
+    from foundry.mission_control import (
+        _FlightAnalysisView, _render_flight_analysis,
+    )
+
+    hostile = "<script>alert('analysis')</script>"
+    trusted_fragments = (
+        '<div data-contract="schedule"></div>',
+        '<div data-contract="delta"></div>',
+        '<div data-contract="recommendation-delta"></div>',
+    )
+    rendered = _render_flight_analysis(_FlightAnalysisView(
+        schedule_html=trusted_fragments[0],
+        delta_instrument_html=trusted_fragments[1],
+        milestone_completion=42.0,
+        milestone_label=hostile,
+        recommendation_action=hostile,
+        recommendation_amount=hostile,
+        recommendation_delta_instrument_html=trusted_fragments[2],
+    ))
+
+    assert hostile not in rendered
+    assert rendered.count(
+        "&lt;script&gt;alert(&#x27;analysis&#x27;)&lt;/script&gt;") == 3
+    assert all(fragment in rendered for fragment in trusted_fragments)
+    assert "&lt;div data-contract=" not in rendered
+
+
+def test_shared_mission_data_preserves_escaped_provider_text_and_structure():
+    import html as html_module
+
+    from foundry.mission_control import _MissionDataView, _render_mission_data
+
+    hostile = "<script>alert('provider')</script>"
+    escaped = html_module.escape(hostile)
+    trusted_fragments = (
+        f'<div data-source="telemetry">{escaped}</div>',
+        f'<li data-source="recommendation">{escaped}</li>',
+        f'<li data-source="note">{escaped}</li>',
+    )
+    rendered = _render_mission_data(_MissionDataView(
+        telemetry_cards_html=(trusted_fragments[0],),
+        recommendation_detail_html=trusted_fragments[1],
+        note_items_html=trusted_fragments[2],
+        input_reference_count=1,
+        assumption_reference_count=2,
+    ))
+
+    assert hostile not in rendered
+    assert rendered.count(escaped) == 3
+    assert "&amp;lt;script&amp;gt;" not in rendered
+    assert all(fragment in rendered for fragment in trusted_fragments)
 
 
 def test_not_applicable_instruments_are_omitted_visually_and_accessibly(
