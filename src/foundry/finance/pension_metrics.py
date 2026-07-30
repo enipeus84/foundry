@@ -15,8 +15,8 @@ from foundry.core.entities import EntityProjection
 from foundry.core.metrics import MetricRequest, MetricResult
 
 from . import vocab
+from .aggregation import FinanceAggregationService
 from .entities import AssumptionSet, FinanceEntityProjection
-from .metrics import FinanceMetricProvider
 from .pension_evidence import (
     AGE_FIELDS,
     PAYMENT_FIELDS,
@@ -51,7 +51,7 @@ class FinancePensionMetricProvider:
         self.finance = finance
         self.core = core
         self.evidence = evidence
-        self.basis = FinanceMetricProvider(finance, core)
+        self.basis = FinanceAggregationService(finance, core)
         self._cache: dict[tuple[object, ...], MetricResult] = {}
 
     def owned_metric_ids(self) -> frozenset[str]:
@@ -143,7 +143,7 @@ class FinancePensionMetricProvider:
                 enumerate(valuations),
                 key=lambda item: (item[1].as_of, item[0]),
             )[1]
-            converted, conversion_ref = self.basis._convert(
+            converted, conversion_ref = self.basis.convert(
                 latest.amount, latest.currency, "GBP", request.as_of)
             if converted is None:
                 limitations.append(
@@ -513,13 +513,13 @@ class FinancePensionMetricProvider:
         self,
         request: MetricRequest,
     ) -> tuple[set[str], str | None] | None:
-        people = self.basis._scope_persons(request.scope)
+        people = self.basis.persons_for_scope(request.scope)
         if not people:
             return None
-        return set(people), self.basis._attribute_to(request.scope)
+        return set(people), self.basis.attribute_to(request.scope)
 
     def _pension_accounts(self, person_ids: set[str]):
-        owned = self.basis._owned_entities(
+        owned = self.basis.owned_entities(
             person_ids,
             self.finance.accounts,
             vocab.VALUE_OWNERSHIP_RELATIONS,
@@ -532,7 +532,7 @@ class FinancePensionMetricProvider:
     def _weight(self, links, attribute_to: str | None) -> float:
         if attribute_to is None:
             return 1.0
-        return self.basis._shares(links).get(attribute_to, 0.0)
+        return self.basis.shares(links).get(attribute_to, 0.0)
 
     def _valuations(self, account_id: str, as_of: float):
         return tuple(
@@ -565,7 +565,7 @@ class FinancePensionMetricProvider:
                         or transaction.transaction_category \
                         != "pension_contribution":
                     continue
-                converted, _ = self.basis._convert(
+                converted, _ = self.basis.convert(
                     transaction.amount,
                     transaction.currency,
                     "GBP",

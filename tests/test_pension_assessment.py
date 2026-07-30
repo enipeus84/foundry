@@ -18,6 +18,7 @@ from foundry.core.scope import Subject
 from foundry.demo_data import build
 from foundry.eventlog import EventLog
 from foundry.finance import entities as fin
+from foundry.finance.aggregation import FinanceAggregationService
 from foundry.finance.entities import FinanceEntityProjection
 from foundry.finance.metrics import FinanceMetricProvider
 from foundry.finance.pension_assessment import (
@@ -191,6 +192,38 @@ def test_w_star_zero_is_complete_and_derivation_remains_visible(tmp_path):
     assert required.result.assumption_references
     assert assessment.mission_complete is True
     assert assessment.current_milestone.label == "Pension Independent"
+    assert len(assessment.milestones) == 1
+    assert assessment.milestones[0].lower_bound == 0.0
+    assert assessment.milestones[0].upper_bound is None
+    assert assessment.milestones[0].completes_mission is True
+
+
+def test_pension_assessor_uses_supported_finance_aggregation_surface(tmp_path):
+    log, _ = _seed(tmp_path)
+    assessor, core, finance = _assessor(log)
+
+    assert isinstance(assessor.basis, FinanceAggregationService)
+    provider = FinanceMetricProvider(finance, core)
+    assert isinstance(provider.aggregation, FinanceAggregationService)
+
+    for provider_type in (
+        PensionIndependenceAssessor,
+        FinancePensionMetricProvider,
+    ):
+        source = inspect.getsource(provider_type)
+        tree = ast.parse(source)
+        private_aggregation_calls = {
+            node.attr for node in ast.walk(tree)
+            if isinstance(node, ast.Attribute)
+            and node.attr in {
+                "_scope_persons",
+                "_attribute_to",
+                "_owned_entities",
+                "_shares",
+                "_convert",
+            }
+        }
+        assert not private_aggregation_calls
 
 
 def test_milestone_contract_is_exactly_the_approved_w_star_hierarchy(tmp_path):

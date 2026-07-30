@@ -39,6 +39,8 @@ PensionIndependenceAssessor
         ↓
 FinancePensionMetricProvider + PensionEvidenceProjection
         ↓
+FinanceAggregationService
+        ↓
 MissionAssessment
         ↓
 Shared Mission Detail renderer
@@ -57,6 +59,7 @@ Shared Mission Detail renderer
 
 | Component | Ownership | Purpose | Current consumers |
 |---|---|---|---|
+| `FinanceAggregationService` | Finance, shared internal service | Provide the supported Party-scope, ownership-share and observed FX-conversion seam without exposing Finance rules to Core. | `FinanceMetricProvider`, `FinancePensionMetricProvider`, `PensionIndependenceAssessor` |
 | `PensionEvidenceProjection` / `record_pension_evidence` | Finance, mission-specific | Validate and replay attributed contribution, fee, DB and State Pension declarations; quarantine malformed envelopes. | Pension metrics and assessor |
 | `FinancePensionMetricProvider` | Finance, mission-specific | Publish P1–P7 with `pension-metrics-v1`, provenance, staleness, disjointness and tax-year rules. | Pension Independence through `MetricRegistry` |
 | `PensionIndependenceInputs` | Finance, mission-specific | Validate the complete declared policy surface without defaults. | Pension assessor |
@@ -68,6 +71,30 @@ Shared Mission Detail renderer
 
 No pension-specific UI component, conditional route, mission-name branch or
 new API contract was introduced.
+
+## Independent-review remediation
+
+The SAFE review of PR #22 was remediated without changing Pension policy,
+completion semantics, projections or API contracts:
+
+- Flight Analysis group headings now use a shared semantic heading class with
+  explicit Foundry typography, colour and spacing. The selector is
+  domain-neutral and no Pension string or branch appears in Mission Control.
+- Route regression coverage distinguishes exactly one Mission Data telemetry
+  grid from the number of Flight Analysis grids implied by declared groups.
+- `FinanceAggregationService` is the supported Finance-internal ownership and
+  currency seam. Pension providers no longer instantiate
+  `FinanceMetricProvider` or call its underscore-prefixed helpers.
+- A zero W* is represented as the single already-achieved
+  `Pension Independent` destination. There are no invented negative bands;
+  completion remains exactly `P1 >= W*`, and the W* derivation remains
+  visible.
+
+The repository's authenticated static review renderer produced Pension
+Independence and all three existing mission pages for desktop and responsive
+review. The agent browser was prevented from opening the local-only server by
+enterprise network policy, so interactive browser inspection is not claimed;
+the local preview command and URLs are recorded in the PR remediation report.
 
 ## Evidence and metric behaviour
 
@@ -168,6 +195,43 @@ optimisation was added.
 - `git diff --check`: clean.
 - Existing Starlette TestClient deprecation warning is unchanged.
 
+### PR #22 SAFE-remediation validation
+
+- Focused Pension evidence, metrics and assessment:
+  `pytest tests/test_pension_assessment.py tests/test_pension_metrics.py
+  tests/test_pension_evidence.py -q` — **33 passed**.
+- Focused shared Mission Assessment and Mission Detail:
+  `pytest tests/test_mission_control.py
+  tests/test_core_mission_assessment.py
+  tests/test_finance_mission_assessment.py -q` — **175 passed**, one existing
+  Starlette deprecation warning.
+- Security regressions:
+  `pytest tests/test_webauth.py tests/test_web.py tests/test_eventlog.py
+  tests/test_pension_evidence.py -q` — **34 passed**, the same warning.
+- Documentation governance: **4 passed**; security documentation validation
+  reports repository structure and documentation **COMPLETE**.
+- Full suite: **594 passed**, the same warning.
+- `validate.sh` completed security validation and the same **594 passed** full
+  suite, then exercised deterministic replay with mock models. It returned 1
+  by design because no external model API keys were available and therefore
+  did not claim real-model V1 validation.
+- `git diff --check`: clean. The project config declares no separate lint,
+  static type-check or formatter command.
+
+All six normalized route goldens changed because the shared stylesheet gained
+the domain-neutral Flight Analysis group rules; Pension additionally gained
+the semantic heading class. No displayed values or policy outputs changed in
+the ordinary W*>0 fixture:
+
+| Render | Previous hash | Remediated hash |
+|---|---|---|
+| Mission Control home | `1be46f20518c5bc502a286131eacab3978e091f7784fbb572cd02d2393bd4fd5` | `8c89b1fbba97598b2fa28cc24207d58cdd871be66d4132a62bed3afd6a90526c` |
+| Financial Resilience | `c7dc0a728c9522e317e1bbf73b299a7db1e63dd831628463f5f8a281c4a8ac8e` | `7906d20f014876f8183ab8edf51bbcee029a0c909ecf372fd570464dd2bdf623` |
+| Financial Resilience with pre-D13 tile | `bef8ece53695980d321230da1eb9f566c528b9e6aef98658cec6cb0cdbb74f80` | `96510b24c43f38d22a6e935ea65ae6007ed5713bb910c93c55f9ca73614acf15` |
+| Financial Independence | `3ceb7a5cfaec019ddecd24195d48cb60eab8958a62dea4386f2c1ee8b8d7b04d` | `586b255faf03b3512cb87487c902371886577d4de298f75d53a733053bdfef12` |
+| Mortgage Freedom | `315c684064a01f2ebaf57e9b2460e249e28283335664d41ec5a026063e384d74` | `b3fc0e6fef1a612bf06ccff025216502529c97feda1cd79597c31c8ad47ea20c` |
+| Pension Independence | `be6b46805efffb7ffe6e654de30c0192b0b768674a9e162b3745f04c5c043826` | `84f3b148a00cb6f0e8f8e79df0c6fa8b556a9bfd4fefcc9ad472c5f1cd6a2fde` |
+
 ## Known technical debt
 
 The complete register is
@@ -175,10 +239,13 @@ The complete register is
 authenticated pension ingestion, bounded envelope text, governed age-at-date
 evidence, historical trajectory reconstruction, DB/State Pension revaluation,
 decumulation and tax successor work, narrower cross-mission provenance and the
-Core zero-destination milestone representation.
+web projection rebuild cost.
 
 ## Architecture deviation
 
-No domain or renderer architecture deviation was introduced. The zero-W*
-milestone compatibility encoding and generic household age representation are
-recorded explicitly as debt rather than hidden as new semantics.
+No Pension mission semantic or shared-renderer architecture deviation was
+introduced. For the degenerate W*=0 case, A23's explicit honesty requirement
+governs the literal five-band wording in A22: a zero-width hierarchy collapses
+to the completing destination because intermediate wealth bands do not exist.
+The generic household age representation remains recorded explicitly as debt
+rather than hidden as a new identity contract.

@@ -42,11 +42,11 @@ No deferred item is represented as implemented.
   and State Pension reliance tuples as individually named scalar keys. A
   future structured-policy type may remove that encoding only through a
   versioned migration.
-- Core requires every bounded milestone to have non-zero width. When W* is
-  exactly zero, Pension Independence retains all five approved labels using
-  sub-penny negative internal boundaries while completion remains exactly
-  `P1 >= W*`. A future Core zero-destination representation should remove this
-  internal compatibility encoding without changing rendered values.
+- The frozen RFC states both the ordinary five-band W* hierarchy (A22) and an
+  honest zero-W* case (A23). The implementation treats A23 as the governing
+  degenerate case and emits only the already-achieved terminal milestone when
+  W*=0. A future RFC editorial erratum may make that exception explicit; no
+  Core contract change is needed and no negative boundary remains.
 
 ## History, presentation and performance
 
@@ -54,9 +54,6 @@ No deferred item is represented as implemented.
   revision reconstruction is not honest for sparse pension statements. The
   D13 renderer correction shows the provider's current trajectory judgement
   independently; it does not resolve historical reconstruction.
-- Pension metric and assessment providers reuse private basis helpers on
-  `FinanceMetricProvider`. Promote a stable shared Finance valuation,
-  ownership and currency-conversion seam before those helpers are refactored.
 - Provider-local metric caching is safe only for one replayed projection.
   Reuse across Event Log appends requires an explicit log identity and
   invalidation contract.
@@ -78,3 +75,13 @@ No deferred item is represented as implemented.
 - Recommendations are read-only deterministic re-projections of declared
   Scenarios. They are not advice, acceptance, scheduling, execution, product
   ranking, transfer analysis or consolidation guidance.
+
+## Closed during PR #22 SAFE remediation
+
+- Private Pension coupling to `FinanceMetricProvider` was removed.
+  `FinanceAggregationService` now owns the supported Finance-internal scope,
+  ownership, share and observed-currency operations used by the existing
+  Finance metric provider and both Pension providers.
+- The negative-epsilon zero-W* compatibility encoding was removed. A zero
+  destination now has one honest terminal milestone and renders no negative
+  currency boundary.

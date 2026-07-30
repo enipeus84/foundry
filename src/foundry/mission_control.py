@@ -806,6 +806,14 @@ _SHELL = """<!doctype html>
   .telemetry-grid .telemetry {{ background: var(--surface); padding: 24px; }}
   .telemetry-grid .value {{ margin-top: 8px; font-size: 26px; }}
   .telemetry-grid .sub {{ margin-top: 7px; color: var(--faint); font-size: 10px; }}
+  .mission-analysis-group {{
+    display: grid; gap: 10px; margin-top: 24px;
+  }}
+  .mission-analysis-group:first-of-type {{ margin-top: 0; }}
+  .mission-analysis-group-heading {{
+    margin: 0; color: var(--faint); font-size: 9px; font-weight: 650;
+    letter-spacing: .2em; line-height: 1.4;
+  }}
   .assessment-notes {{ margin-top: 30px; border-top: 1px solid var(--line); padding-top: 22px; }}
   .assessment-notes ul {{
     margin: 0 0 0 18px; color: var(--faint); font-size: 12px; line-height: 1.8;
@@ -2137,7 +2145,8 @@ def _analysis_telemetry_html(items) -> str:
     fragments = []
     for group, group_items in groups:
         heading = (
-            f'<h3 class="k">{html.escape(group)}</h3>' if group else "")
+            f'<h3 class="mission-analysis-group-heading">'
+            f'{html.escape(group)}</h3>' if group else "")
         cards = "".join(_telemetry_card_html(item) for item in group_items)
         fragments.append(
             f'<div class="mission-analysis-group">{heading}'

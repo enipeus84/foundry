@@ -29,8 +29,8 @@ from foundry.core.mission_assessment import (
 )
 
 from . import vocab
+from .aggregation import FinanceAggregationService
 from .entities import AssumptionSet, FinanceEntityProjection
-from .metrics import FinanceMetricProvider
 from .pension_evidence import PensionEvidenceProjection, RATE_FIELDS
 
 
@@ -219,7 +219,7 @@ class PensionIndependenceAssessor:
         self.finance = finance
         self.core = core
         self.evidence = evidence
-        self.basis = FinanceMetricProvider(finance, core)
+        self.basis = FinanceAggregationService(finance, core)
         self.policy = policy or PensionIndependencePolicy()
 
     def owned_policy_ids(self) -> frozenset[str]:
@@ -550,7 +550,7 @@ class PensionIndependenceAssessor:
         )
 
     def _pension_account_ids(self, person_ids):
-        owned = self.basis._owned_entities(
+        owned = self.basis.owned_entities(
             set(person_ids),
             self.finance.accounts,
             vocab.VALUE_OWNERSHIP_RELATIONS,
@@ -579,7 +579,7 @@ class PensionIndependenceAssessor:
                 enumerate(valuations),
                 key=lambda item: (item[1].as_of, item[0]),
             )[1]
-            converted, _ = self.basis._convert(
+            converted, _ = self.basis.convert(
                 latest.amount, latest.currency, "GBP", as_at)
             if converted is None:
                 continue
@@ -684,18 +684,31 @@ class PensionIndependenceAssessor:
 
     def _milestones(self, current, required, forecast):
         if required == 0:
-            # Core requires non-zero-width bounded milestones. A sub-penny
-            # display-invisible epsilon preserves the five approved labels;
-            # mission completion still uses exactly current >= W*.
-            boundaries = (-4e-9, -3e-9, -2e-9, -1e-9, 0.0)
-        else:
-            boundaries = (
+            # A zero destination has no honest intermediate wealth bands.
+            # Represent the already-secured destination directly rather than
+            # fabricating negative or epsilon-width boundaries.
+            return (MissionMilestone(
+                "pension-independent",
+                "Pension Independent",
                 0.0,
-                .25 * required,
-                .5 * required,
-                .75 * required,
-                required,
-            )
+                None,
+                1.0,
+                order=0,
+                unit_or_currency="GBP",
+                is_current=True,
+                is_complete=True,
+                completes_mission=True,
+                estimated_at=forecast[0].at,
+                destination_direction="higher_is_better",
+                destination_value=0.0,
+            ),)
+        boundaries = (
+            0.0,
+            .25 * required,
+            .5 * required,
+            .75 * required,
+            required,
+        )
         current_index = 4 if current >= required else next(
             index for index in range(4)
             if current < boundaries[index + 1]

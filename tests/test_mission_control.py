@@ -12,7 +12,7 @@ fastapi = pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient  # noqa: E402
 
 from foundry import webauth  # noqa: E402
-from foundry.core.entities import declare_mission  # noqa: E402
+from foundry.core.entities import abandon_mission, declare_mission  # noqa: E402
 from foundry.core.evidence import concern, derive_claim_directly, tag_claim  # noqa: E402
 from foundry.eventlog import EventLog  # noqa: E402
 from foundry.finance.fixtures import build_parker_brads_household  # noqa: E402
@@ -1055,11 +1055,11 @@ def test_rfc009_route_goldens_and_narrow_d13_diff(tmp_path):
     c = client()
 
     assert _normalized_render_hash(c.get("/").text) == (
-        "1be46f20518c5bc502a286131eacab3978e091f7784fbb572cd02d2393bd4fd5"
+        "8c89b1fbba97598b2fa28cc24207d58cdd871be66d4132a62bed3afd6a90526c"
     )
     resilience = c.get("/missions/financial-resilience").text
     assert _normalized_render_hash(resilience) == (
-        "c7dc0a728c9522e317e1bbf73b299a7db1e63dd831628463f5f8a281c4a8ac8e"
+        "7906d20f014876f8183ab8edf51bbcee029a0c909ecf372fd570464dd2bdf623"
     )
     new_tile = """<div><p class="k">TRAJECTORY</p>
         <p class="v green">COMPLETE</p>
@@ -1070,16 +1070,16 @@ def test_rfc009_route_goldens_and_narrow_d13_diff(tmp_path):
     assert new_tile in resilience
     assert _normalized_render_hash(
         resilience.replace(new_tile, old_tile, 1)
-    ) == "bef8ece53695980d321230da1eb9f566c528b9e6aef98658cec6cb0cdbb74f80"
+    ) == "96510b24c43f38d22a6e935ea65ae6007ed5713bb910c93c55f9ca73614acf15"
     assert _normalized_render_hash(
         c.get("/missions/financial-independence").text
-    ) == "3ceb7a5cfaec019ddecd24195d48cb60eab8958a62dea4386f2c1ee8b8d7b04d"
+    ) == "586b255faf03b3512cb87487c902371886577d4de298f75d53a733053bdfef12"
     assert _normalized_render_hash(
         c.get("/missions/mortgage-freedom").text
-    ) == "315c684064a01f2ebaf57e9b2460e249e28283335664d41ec5a026063e384d74"
+    ) == "b3fc0e6fef1a612bf06ccff025216502529c97feda1cd79597c31c8ad47ea20c"
     assert _normalized_render_hash(
         c.get("/missions/pension-independence").text
-    ) == "be6b46805efffb7ffe6e654de30c0192b0b768674a9e162b3745f04c5c043826"
+    ) == "84f3b148a00cb6f0e8f8e79df0c6fa8b556a9bfd4fefcc9ad472c5f1cd6a2fde"
 
 
 def test_d13_resilience_detail_and_home_agree_without_inventing_history(
@@ -1164,6 +1164,12 @@ def test_declared_telemetry_regions_place_and_duplicate_without_inference(
     assert hostile_group not in rendered
     assert "POSITION &lt;script&gt;alert(&#x27;group&#x27;)&lt;/script&gt;" \
         in analysis
+    assert (
+        '<h3 class="mission-analysis-group-heading">'
+        "POSITION &lt;script&gt;alert(&#x27;group&#x27;)&lt;/script&gt;</h3>"
+    ) in analysis
+    assert ".mission-analysis-group {" in rendered
+    assert ".mission-analysis-group-heading {" in rendered
     for label in ("HERO CAPACITY", "ANALYSIS CAPACITY", "DEEP CAPACITY"):
         assert label in drilldown
 
@@ -1182,17 +1188,75 @@ def test_live_finance_missions_share_the_mission_detail_structure(
     html = client().get(f"/missions/{slug}").text
     hero, analysis, summary = _mission_detail_regions(html)
     drilldown_start = html.index('<details class="mission-drilldown">')
+    drilldown_end = html.index("</details>", drilldown_start)
+    drilldown = html[drilldown_start:drilldown_end]
+    analysis_group_count = analysis.count(
+        '<div class="mission-analysis-group">')
 
     assert html.count('<section class="hero mission-detail-hero') == 1
     assert html.count('<section aria-labelledby="analysis-heading">') == 1
     assert html.count('<details class="mission-drilldown">') == 1
-    assert html.count('<div class="telemetry-grid">') >= 1
+    assert drilldown.count('<div class="telemetry-grid">') == 1
+    assert analysis.count('<div class="telemetry-grid">') \
+        == analysis_group_count
+    assert html.count('<div class="telemetry-grid">') \
+        == 1 + analysis_group_count
     assert html.index(hero) < html.index(analysis) < drilldown_start
     assert 'aria-labelledby="mission-title"' in hero
     assert 'aria-describedby="trajectory-summary"' in hero
     assert 'id="analysis-heading"' in analysis
     assert 'id="trajectory-summary"' in summary
     assert 'class="mission-return" href="/#missions"' in hero
+
+
+def test_zero_w_star_route_has_no_negative_or_fabricated_milestone_bands(
+        tmp_path):
+    from foundry.core.entities import EntityProjection
+    from foundry.finance import entities as finance_entities
+    from foundry.finance.entities import FinanceEntityProjection
+    from foundry.finance.pension_assessment import POLICY_ID
+
+    log = _seed_financial_independence(tmp_path)
+    core = EntityProjection(log)
+    finance = FinanceEntityProjection(log)
+    existing = next(
+        mission for mission in core.missions.values()
+        if mission.assessment_policy_id == POLICY_ID
+    )
+    original = finance.assumption_sets[existing.assumption_set_id]
+    assumptions = finance_entities.declare_assumption_set(
+        log,
+        "Pension zero-target route regression",
+        "pension-zero-target-v1",
+        {
+            **original.assumptions,
+            "required_retirement_income_annual": 10_000.0,
+        },
+    )
+    abandon_mission(log, existing.id, "replace with zero-target regression")
+    declare_mission(
+        log,
+        "Pension secured-income zero case",
+        target_metric="finance.pension_wealth",
+        assessment_policy_id=POLICY_ID,
+        assumption_set_id=assumptions.id,
+    )
+
+    response = client().get("/missions/pension-independence")
+
+    assert response.status_code == 200
+    assert "REQUIRED RETIREMENT WEALTH" in response.text
+    assert "W* · DECLARED INCOME NEED AND WITHDRAWAL BASIS" in response.text
+    assert "£0" in response.text
+    assert "£-0" not in response.text
+    assert "PENSION INDEPENDENT" in response.text
+    for fabricated_label in (
+        "DEPENDENT",
+        "FOUNDATION",
+        "BUILDING",
+        "APPROACHING",
+    ):
+        assert f">{fabricated_label}</text>" not in response.text
 
 
 def test_shared_mission_hero_escapes_plain_text_and_preserves_trusted_html():
