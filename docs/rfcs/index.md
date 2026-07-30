@@ -24,7 +24,7 @@ undocumented elsewhere.
 | RFC-004.2 | Flight Deck Visual Refinement | Merged | — | — | [`rfc-004-2-implementation-report.md`](../rfc-004-2-implementation-report.md); release-blocker/pre-merge pass: [`rfc-004-2-release-blocker-fixes.md`](../rfc-004-2-release-blocker-fixes.md) (RFC-004B, information-honesty) | — | [#8](https://github.com/enipeus84/foundry/pull/8) | see [CHANGELOG § v1.5.1-information-honesty](../../CHANGELOG.md) *(no separate tag cut)* |
 | RFC-005 | Financial Independence Mission Assessment | Merged | — | [`rfc-005-financial-independence-architecture.md`](../rfc-005-financial-independence-architecture.md) | [`rfc-005-financial-independence-implementation-report.md`](../rfc-005-financial-independence-implementation-report.md) | [`rfc-005-technical-debt.md`](../rfc-005-technical-debt.md) | [#9](https://github.com/enipeus84/foundry/pull/9) | **Gap: no CHANGELOG entry or version bump exists for this RFC** — `pyproject.toml` still reads `1.5.1`, unchanged since RFC-004.2 |
 | RFC-006 | Mission Assessment Framework | Merged | — | [`rfc-006-mission-assessment-framework.md`](../rfc-006-mission-assessment-framework.md) | [`rfc-006-mission-assessment-framework-implementation-report.md`](../rfc-006-mission-assessment-framework-implementation-report.md) | [`rfc-006-technical-debt.md`](../rfc-006-technical-debt.md) | [#16](https://github.com/enipeus84/foundry/pull/16) | No release |
-| RFC-007 | Mortgage Freedom Mission | Merged | — | [`rfc-007-mortgage-freedom-architecture.md`](../rfc-007-mortgage-freedom-architecture.md) | [`rfc-007-mortgage-freedom-implementation-report.md`](../rfc-007-mortgage-freedom-implementation-report.md) | [`rfc-007-technical-debt.md`](../rfc-007-technical-debt.md) | [#17](https://github.com/enipeus84/foundry/pull/17) | No release |
+| RFC-007 | Mortgage Freedom Mission; Property Equity Amendment (Revision 2) | Merged mission; amendment under Governor review | — | [`rfc-007-mortgage-freedom-architecture.md`](../rfc-007-mortgage-freedom-architecture.md) | [`rfc-007-mortgage-freedom-implementation-report.md`](../rfc-007-mortgage-freedom-implementation-report.md) | [`rfc-007-technical-debt.md`](../rfc-007-technical-debt.md) | [#17](https://github.com/enipeus84/foundry/pull/17) | Amendment unreleased |
 
 ## Implemented, not yet merged
 
@@ -34,6 +34,12 @@ shipped. They remain outside the merged table until a pull request lands.
 | RFC | Title | Status | Architecture / decision doc | Implementation report(s) | Technical debt | PR | Tag / release |
 |---|---|---|---|---|---|---|---|
 | RFC-008 | Financial Resilience Mission | **Implemented on branch — not merged** | [`rfc-008-financial-resilience-architecture.md`](../rfc-008-financial-resilience-architecture.md) | [`rfc-008-financial-resilience-implementation-report.md`](../rfc-008-financial-resilience-implementation-report.md) | [`rfc-008-technical-debt.md`](../rfc-008-technical-debt.md) | — | `1.6.0` metadata on branch; no tag |
+
+RFC-007 Revision 2 documents `initial_deposit`, optional
+`acquisition_costs`, optional explicit `valuation_basis`, visible
+acquisition-fact conflicts and explanatory (not validating) equity
+attribution. Net Worth remains isolated. Property Valuation Canon is successor
+work and a governed correction workflow remains deferred technical debt.
 
 ## Pre-RFC infrastructure
 

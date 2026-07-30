@@ -614,23 +614,44 @@ def build(log: EventLog, as_of: float | None = None) -> MorganHousehold:
             },
             unit_or_currency=unit_or_currency)
 
+    purchase_price = 450_000.0
+    initial_deposit = 140_000.0
+    initial_mortgage = 310_000.0
+    # Synthetic-fixture consistency check only. Mortgage Freedom does not use
+    # this equality as assessment evidence or to correct acquisition records.
+    if initial_deposit + initial_mortgage != purchase_price:
+        raise ValueError("synthetic acquisition evidence is inconsistent")
+
     mortgage_evidence(
         "property_role", "primary_residence", as_of)
     mortgage_evidence(
-        "purchase_price", 450_000.0, utc(2025, 5, 1), "GBP",
-        "Purchase month supplied as May 2025; day not supplied, so "
-        "month start represents date precision")
+        "purchase_price", purchase_price, as_of, "GBP",
+        "Purchase price supplied with the May 2025 purchase month; "
+        "no purchase day was supplied")
     mortgage_evidence(
-        "purchase_date", utc(2025, 5, 1), as_of,
-        lineage="Purchase month supplied as May 2025; day not supplied")
+        "purchase_date", "2025-05", as_of,
+        lineage="Purchase month supplied as May 2025; no day invented")
     mortgage_evidence(
-        "property_valuation", 436_638.42, utc(2025, 3, 31), "GBP",
+        "initial_deposit", initial_deposit, as_of, "GBP",
+        "Initial deposit supplied in the approved property equity amendment")
+    valuation_amount = 436_638.42
+    valuation_effective_at = utc(2025, 3, 31)
+    valuation_lineage = (
         "HPI dated valuation reference for March 2025; month end "
-        "represents the supplied month precision",
-        source="HPI")
+        "represents the supplied month precision"
+    )
+    mortgage_evidence(
+        "property_valuation", valuation_amount, valuation_effective_at, "GBP",
+        valuation_lineage, source="HPI")
+    # Immutable backfill: the known basis is a fresh observation carrying
+    # the same scope, effective date, source, lineage and synthetic marker.
+    # The existing valuation observation is not changed or superseded.
+    mortgage_evidence(
+        "valuation_basis", "index_estimate", valuation_effective_at,
+        lineage=valuation_lineage, source="HPI")
     mortgage_evidence("lender", "NatWest", as_of)
     mortgage_evidence(
-        "original_advance", 310_000.0, utc(2025, 7, 1), "GBP")
+        "original_advance", initial_mortgage, utc(2025, 7, 1), "GBP")
     mortgage_evidence(
         "mortgage_start", utc(2025, 7, 1), as_of)
     mortgage_evidence("balance", 242_540.09, as_of, "GBP")

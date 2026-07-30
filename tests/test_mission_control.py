@@ -547,6 +547,7 @@ def test_financial_independence_home_lane_opens_mission_detail(tmp_path):
     assert ">FINANCE.MORTGAGE_BALANCE " not in html
     assert "finance.mortgage_balance 242" not in html
     assert "MORTGAGE BALANCE £242,540" in html
+    assert "CURRENT POSITION · MORTGAGE BALANCE £242,540" not in html
 
 
 def test_financial_independence_route_renders_assessment_not_calculations(tmp_path):
@@ -590,14 +591,36 @@ def test_mortgage_freedom_uses_the_generic_live_mission_route(tmp_path):
     assert "label-lane-0" in html
     assert "label-lane-1" in html
     assert 'class="current-label"' in html
+    assert "PROPERTY ACQUISITION" in html
+    assert "CURRENT POSITION" in html
+    assert "EQUITY COMPOSITION" in html
+    telemetry_html = html[html.index('<div class="telemetry-grid">'):]
+    assert telemetry_html.index(
+        "PROPERTY ACQUISITION") < telemetry_html.index(
+        "CURRENT POSITION") < telemetry_html.index("EQUITY COMPOSITION")
+    assert "PURCHASE PRICE" in html
+    assert "PURCHASED MAY 2025 · MONTH PRECISION" in html
+    assert "INITIAL DEPOSIT" in html
+    assert "INITIAL MORTGAGE" in html
+    assert "ACQUISITION COSTS" in html
+    assert "PROPERTY VALUATION" in html
     assert "MORTGAGE BALANCE" in html
-    assert "LOAN TO VALUE" in html
+    assert "OBSERVED · JULY 2026" in html
+    assert "CURRENT EQUITY" in html
+    assert "CURRENT LTV" in html
+    assert "PRINCIPAL REPAID" in html
+    assert "VALUATION MOVEMENT" in html
     assert "REMAINING INTEREST" in html
     assert "PROJECTED · EXPECTED PATH" in html
-    assert "dated valuation reference" in html
+    assert "Estimated · Index estimate · HPI · March 2025" in html
     assert "HPI" in html
     assert "March 2025" in html
     assert "£450,000 purchase price" in html
+    assert "£140,000" in html
+    assert "£194,098" in html
+    assert "£67,460" in html
+    assert "£-13,362" in html
+    assert "Valuation basis: Not recorded; not inferred" not in html
     assert "supplied valuation" not in html
     assert "current valuation" not in html
     assert "live valuation" not in html
@@ -609,6 +632,15 @@ def test_mortgage_freedom_uses_the_generic_live_mission_route(tmp_path):
     assert "finance.mortgage_balance" not in html
     assert "Scenario " not in html
     assert "OBSERVATIONS AND PROJECTIONS REMAIN DISTINCT" in html
+    composition = html[html.index("EQUITY COMPOSITION"):]
+    composition = composition[:composition.index(
+        '<div class="assessment-notes">')]
+    assert "EQUITY COMPOSITION · INITIAL DEPOSIT" not in composition
+    assert "EQUITY COMPOSITION · CURRENT EQUITY" not in composition
+    assert html.count("PROPERTY ACQUISITION · INITIAL DEPOSIT") == 1
+    assert html.count("CURRENT POSITION · CURRENT EQUITY") == 1
+    assert "REMAINING INTEREST" not in composition
+    assert "MONTHLY PAYMENT" not in composition
     assert "PLANNED" not in html
     assert "<script>alert" not in html
 

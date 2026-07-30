@@ -32,6 +32,33 @@ The writer may be removed only when:
 - Month-only source dates retain their source precision through lineage; a
   richer temporal-precision contract is deferred.
 
+## Property valuation canon
+
+Mortgage Freedom's property valuation and `finance.net_worth` currently use
+different valuation evidence and may therefore report different property
+bases. Revision 2 deliberately discloses that isolation and does not change
+`finance.net_worth`.
+
+A successor **Property Valuation Canon** must define shared valuation identity,
+basis, effective-date precision and consumer-selection rules before the two
+domains can be reconciled. Until that work is approved, Mortgage Freedom
+accepts only the optional `valuation_basis` values `index_estimate`,
+`owner_estimate` and `agent_appraisal`, never infers a basis from text, and
+keeps Net Worth isolated.
+
+## Acquisition-evidence correction workflow
+
+Revision 2 records `initial_deposit`, optional `acquisition_costs` and
+acquisition facts as immutable evidence. Conflicting applicable observations
+remain visible and referenced; the deterministic latest observation may be
+displayed with a limitation, but the system performs no automatic correction
+and exposes no `supersedes_event_id`.
+
+A governed correction workflow is deferred. It must preserve the full event
+history, distinguish correction intent from ordinary conflicting evidence,
+define authorisation and audit semantics, and specify deterministic projection
+behaviour. It must not recast explanatory equity attribution as validation.
+
 ## Action lifecycle
 
 Scenario recommendations are read-only calculations. They are not accepted,

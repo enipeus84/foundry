@@ -1,5 +1,35 @@
 # Changelog
 
+## [Unreleased] — RFC-007 Property Equity Amendment
+
+### Added
+
+- Immutable Mortgage Freedom evidence for `initial_deposit`, optional
+  `acquisition_costs` and optional explicit `valuation_basis`; supported
+  valuation bases are index estimate, owner estimate and agent appraisal.
+- Local Mortgage Freedom telemetry sections for Property acquisition, Current
+  position and Equity composition, including current equity, current LTV,
+  principal repaid and valuation movement.
+- The synthetic HPI valuation's known `index_estimate` basis as a fresh
+  attributed record sharing its March 2025 effective date, HPI source,
+  mortgage/household scope and synthetic marker; the existing valuation
+  amount remains untouched.
+
+### Behaviour
+
+- Equity composition is explanatory attribution only: deposit plus principal
+  repaid plus valuation movement explains current equity and is not used as
+  evidence validation. Interest and monthly payment are excluded.
+- Conflicting acquisition facts remain visible and referenced. The system
+  neither corrects nor supersedes evidence automatically.
+- Mortgage Freedom continues to use its mortgage-specific valuation while
+  `finance.net_worth` remains unchanged on its separate Finance valuation
+  basis. Property Valuation Canon is successor work; an acquisition-evidence
+  correction workflow remains deferred technical debt.
+- The liquidity-runway unit fixture now uses three explicit calendar months,
+  removing calendar-date sensitivity without changing production finance
+  calculations.
+
 ## [v1.6.0-financial-resilience] — 2026-07-29
 
 RFC-008 adds Financial Resilience as the third live Mission Assessment and
