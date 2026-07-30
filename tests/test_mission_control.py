@@ -560,6 +560,7 @@ def test_financial_independence_route_renders_assessment_not_calculations(tmp_pa
     assert "MISSION MARGIN" in html
     assert "Δv" in html
     assert 'class="mission-time-lane"' not in html
+    assert 'class="flight-analysis-schedule"' not in html
     assert "low to high sensitivity corridor" in html
     assert "ACCESSIBLE ASSETS" in html
     assert "Increase ISA contribution" in html
@@ -578,6 +579,7 @@ def test_mortgage_freedom_uses_the_generic_live_mission_route(tmp_path):
 
     assert response.status_code == 200
     html = response.text
+    hero, analysis, _ = _mission_detail_regions(html)
     assert "Mortgage Freedom" in html
     assert "Mission trajectory" in html
     assert "REPAYMENT UNDERWAY" in html
@@ -643,6 +645,21 @@ def test_mortgage_freedom_uses_the_generic_live_mission_route(tmp_path):
     assert "MONTHLY PAYMENT" not in composition
     assert "PLANNED" not in html
     assert "<script>alert" not in html
+    assert 'class="flight-analysis-schedule"' not in hero
+    assert 'class="flight-analysis-schedule"' in analysis
+    assert html.count('class="flight-analysis-schedule"') == 1
+    assert analysis.count('class="time-point"') == 4
+    for label, value in (
+        ("ORIGINAL START", "JULY 2025"),
+        ("CURRENT POSITION", "£242,540"),
+        ("EXPECTED DESTINATION", "APRIL 2043"),
+        ("ORIGINAL DESTINATION", "JULY 2050"),
+    ):
+        assert label not in hero
+        assert f'<p class="k">{label}</p>' in analysis
+        assert html.count(f'<p class="k">{label}</p>') == 1
+        assert value in analysis
+    assert "ABOUT 86 MONTHS GAINED" in analysis
 
 
 def test_mortgage_freedom_route_renders_deterministically(tmp_path):
@@ -669,6 +686,7 @@ def test_financial_resilience_route_is_honest_steady_state_mission(tmp_path):
     assert '<p class="k">ETA' not in hero
     assert "NOT IN HORIZON" not in hero
     assert "EXPECTED DESTINATION" not in hero
+    assert 'class="flight-analysis-schedule"' not in analysis
     assert "Δv" not in analysis
     assert "ESTIMATED Δv" not in analysis
     assert "forecast" not in summary.lower()
