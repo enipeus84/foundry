@@ -11,6 +11,20 @@ the RFC-010 Mission Console UX Framework brief.
 
 Base: `main` at `e2aa480` (CI green following hotfix PR #23).
 
+**Governor architecture review completed 2026-07-31: GO WITH MINOR
+AMENDMENTS.** Seven amendments were directed and are applied in this revision;
+no scope was added and no concept redesigned:
+
+| # | Amendment | Where applied |
+|---|---|---|
+| 1 | Seam renamed **Mission Console Model** (from "Console Projection") | Conceptual Architecture, throughout |
+| 2 | Mission Margin is the architectural concept; missions may present a domain-specific label | Mission Margin Contract, Decision 4 |
+| 3 | Hero five-second success criterion added as an architecture principle | Region 1, AC-17 |
+| 4 | Mission Console Model owns ordering, grouping, visibility, disclosure placement and card priority; renderer owns presentation only | Conceptual Architecture, Decision 8, T21, AC-18 |
+| 5 | Mission Console declared a **platform** capability, not a Finance one | Governing Principles (principle 0) |
+| 6 | Disclosure ownership split: Core owns ordering, slot identity and behaviour; providers own titles, content and telemetry | Region 5 |
+| 7 | Governor visual review made an explicit mandatory gate between reference mission and remaining migrations | Migration Plan, AC-19 |
+
 ## Context
 
 Foundry now carries four Finance missions, all four with live assessment
@@ -87,6 +101,13 @@ architecture pass:
 
 Encoded as architectural requirements, not styling guidance:
 
+0. **Mission Console is a platform capability, not a Finance capability.**
+   It belongs to Foundry, not to the Finance domain that happens to have
+   populated it first. **Every future Foundry domain renders through the
+   Mission Console unless an RFC explicitly approves an exception.** A domain
+   that believes it needs its own page architecture must say so in an RFC and
+   have that exception approved; it may not simply build one. This principle
+   governs every other principle below.
 1. **Four questions, in order.** Every console answers *Where am I? Where am I
    going? Am I on course? What burn should I make next?* — in that order, in
    the page's structural hierarchy.
@@ -144,17 +165,41 @@ Mission Engine / Provider     (domain: policy + deterministic calculation)
         ↓
 MissionAssessment             (Core: frozen, validated, domain-neutral)
         ↓
-Console Projection            (Core-shaped view models — NEW SEAM)
+Mission Console Model         (Core-shaped view models — NEW SEAM)
         ↓
 Console Renderer              (shared regions; no domain knowledge)
 ```
 
-The new seam is **Console Projection**: a pure, deterministic mapping from
-`MissionAssessment` to region view models. It performs no calculation, no
-policy decision and no domain interpretation — it classifies, orders, caps and
-formats. Placing it between the contract and the renderer is what allows
-cardinality rules, emptiness rules and classification rules to be unit-tested
-without HTTP, HTML or a seeded event log.
+The new seam is the **Mission Console Model**: a pure, deterministic mapping
+from `MissionAssessment` to region view models. It performs no calculation, no
+policy decision and no domain interpretation. Placing it between the contract
+and the renderer is what allows cardinality rules, emptiness rules and
+classification rules to be unit-tested without HTTP, HTML or a seeded event
+log.
+
+**Naming.** *Mission Console Model* was selected over *Mission Console View*,
+*Mission View Model* and *Mission Presentation Model*. "View" is reserved for
+the frozen data the Model produces (`MissionConsoleView` and the five region
+views), so reusing it for the layer would collide. "Presentation" is precisely
+what this layer does **not** own — the renderer does. "Model" states what it
+is: the decision-making model of the console, sitting above presentation and
+below policy. The Model is the layer; the View is its output.
+
+### Responsibility split (normative)
+
+| Concern | Owner |
+|---|---|
+| **Ordering** — of regions, groups, telemetry and disclosure sections | **Mission Console Model** |
+| **Grouping** — which items belong to which group or section | **Mission Console Model** |
+| **Visibility** — whether a region, slot or item renders at all | **Mission Console Model** |
+| **Disclosure placement** — which content sits in which disclosure slot | **Mission Console Model** |
+| **Card priority** — primary versus supporting classification and rank | **Mission Console Model** |
+| Markup, tokens, spacing, typography, escaping, responsive behaviour | **Renderer** |
+
+**The renderer owns presentation only, and must not make ordering decisions.**
+It receives an already-ordered, already-grouped, already-filtered view and
+renders it in the order given. A renderer that sorts, re-ranks, filters,
+re-groups or chooses what to omit is a defect, asserted by test (T21).
 
 Business logic remains outside the UI layer. The renderer continues to branch
 only on declared contract fields.
@@ -183,6 +228,23 @@ A7)*: Region 3 sits between the answer to *Am I on course?* and the answer to
 six telemetry values before Q4 is answered. The preview keeps all four
 questions answerable within the hero. See
 [Universal Information Hierarchy](#universal-information-hierarchy).
+
+#### Hero success criterion
+
+**A first-time user must be able to understand current position, destination,
+trajectory and next action from the hero alone in approximately five seconds.**
+
+This is an **architecture principle, not a measurement of human behaviour**:
+Foundry runs no timing study and asserts no empirical claim. It is the design
+constraint the hero is accountable to, and it is what the hero's slot list, its
+prohibition on becoming a telemetry grid, and the required Next Burn preview
+all exist to serve.
+
+It is reviewable rather than automatically testable. Its structural proxies
+*are* testable and are the enforceable form: the hero carries all four answers
+(AC-17), it carries no telemetry list (AC-3), and trajectory occupies a
+dominant slot (AC-4). The five-second criterion is the standard applied at the
+Governor visual review gate.
 
 **Destination requires no new domain logic.** It is the completing milestone's
 `destination_value` with its `unit_or_currency` and label — already produced by
@@ -296,7 +358,21 @@ name comes from the provider via `display_group` *(amended by self-review A1)*:
 | 8 | Evidence and Provenance | "Evidence and Provenance" |
 | 9 | Mission Definition | "Mission Definition" |
 
-Core owns the ordering slots and their semantics; it never owns a domain noun.
+**Ownership, normative** *(Governor amendment 6)*:
+
+| Concern | Owner |
+|---|---|
+| Slot **ordering** — the fixed sequence above | **Core** |
+| Slot **identity** — which slot a section is, and its stable deep-link `id` | **Core** |
+| **Behaviour** — default open/closed, keyboard, focus, print, no-JS, warning hoisting | **Core** |
+| Section **titles** — the displayed name | **Provider** |
+| Section **content** | **Provider** |
+| **Telemetry** within a section | **Provider** |
+
+Core never owns a domain noun; providers never own ordering, identity or
+behaviour. A provider cannot introduce a slot, reorder slots, change a slot's
+`id`, or alter disclosure behaviour — it supplies the words and the values that
+fill a slot Core defines.
 
 **Behaviour contract:**
 
@@ -413,6 +489,26 @@ remaining gap. It is explicitly **not**:
 
 It answers: *how much room does this mission have before success is at risk?*
 
+**Architectural concept versus presentation language.** Mission Margin is the
+**underlying architectural concept** and the contract is universal; the
+**displayed label may be domain-specific**, because "Mission Margin" is
+platform vocabulary and rarely the clearest word for a given mission's user:
+
+| Mission | Concept | Presented label |
+|---|---|---|
+| Financial Resilience | Mission Margin | *Runway* |
+| Pension Independence | Mission Margin | *Income Gap* |
+| Mortgage Freedom | Mission Margin | *LTV Buffer* |
+| A future Health mission | Mission Margin | *Recovery Reserve* |
+
+Mechanism: `MissionMargin` gains an optional provider-supplied
+`label: str = ""`, defaulting to the platform term when empty. The label is
+plain text, escaped at render, and length-bounded like every other
+provider-supplied display string. **It changes presentation only** — the state
+vocabulary, the value, the band derivation and every consumer of margin remain
+universal, and no renderer or Core code may branch on the label. One concept,
+one contract, many words.
+
 **Amendment 1 — replace schedule-specific numerics with a domain-neutral
 quantity.** `MissionMargin.pace_percent` and `.schedule_buffer_days` are
 deprecated. Additive replacements:
@@ -486,7 +582,7 @@ inert default and a stated reason no smaller alternative suffices.
    names, descriptions, rationales and evidence notes are escaped at render.
 3. **View models contain no HTML-bearing provider input.** A provider cannot
    supply an `_html` field, directly or indirectly.
-4. **Frozen and pure.** Console projection is deterministic and side-effect
+4. **Frozen and pure.** The Mission Console Model is deterministic and side-effect
    free: no I/O, no clock read, no event append, no model call.
 5. **Maximum cardinalities are contract-enforced**, not conventions — see
    Acceptance Criteria.
@@ -519,7 +615,7 @@ destination, write path or authentication change. Assessed areas:
 
 - **Authentication and household scope:** unchanged. The session check remains
   the first statement of the mission route, before definition lookup, scope
-  selection and dispatch. Console projection receives an already-scoped
+  selection and dispatch. The Mission Console Model receives an already-scoped
   assessment and cannot widen scope.
 - **Collapsed content is still delivered.** Progressive disclosure is a
   *presentation* control, not an access control. Every disclosed value is
@@ -549,7 +645,7 @@ destination, write path or authentication change. Assessed areas:
   produce unbounded output.
 - **Fail-closed rendering:** an assessment failing envelope validation renders
   the existing NOT EVALUABLE console for that mission only; a malformed region
-  never partially renders. Console projection raising is contained by the
+  never partially renders. A Mission Console Model failure is contained by the
   existing dispatch boundary.
 
 ## Deterministic Testing
@@ -593,10 +689,11 @@ DET-5 and DET-6 are the additions that would have caught PR #23 before merge.
 | T14 | Trusted fragments | No provider string reaches an `_html` field; AST test on view construction |
 | T15 | Escaping | Hostile strings in labels, groups, qualifiers, rationales and evidence notes are escaped; no double-escaping |
 | T16 | Domain neutrality | No mission slug, label, policy id or domain term in Core or the renderer (extends the RFC-008 A22 assertion) |
-| T17 | No mission-name branching | AST test over renderer and console projection |
+| T17 | No mission-name branching | AST test over renderer and Mission Console Model |
 | T18 | Route goldens | Normalised hashes stable for all four missions |
 | T19 | Responsive | Console renders without body horizontal scroll at 320px and at 200% zoom |
 | T20 | Determinism | DET-1 … DET-6 above |
+| T21 | Renderer makes no ordering decision | The renderer performs no sort, re-rank, filter, re-group or omission choice; regions, groups and items render in the order the Mission Console Model supplied. Asserted by feeding a deliberately unsorted view and requiring the rendered order to match input order exactly |
 
 ## Renderer Architecture and Retirement
 
@@ -635,16 +732,26 @@ carrying them further.
 
 ## Migration Plan
 
+The sequence is gated at one mandatory point *(Governor amendment 7)*:
+
+```text
+Reference Mission
+        ↓
+Governor Visual Review        ← MANDATORY GATE
+        ↓
+Remaining Mission Migration
+```
+
 | Step | Gate |
 |---|---|
 | 1 | Freeze the Mission Console contract (this RFC, on approval) |
-| 2 | Build shared console primitives and console projection, with mock providers only — **no Finance code** |
+| 2 | Build shared console primitives and the Mission Console Model, with mock providers only — **no Finance code** |
 | 3 | Prove domain neutrality and cardinality against mock providers (T1–T17) |
 | 4 | Capture route goldens for all four missions under deterministic clocks (DET-1–DET-6) |
-| 5 | Implement the reference mission console |
+| 5 | Implement the **reference mission** console |
 | 6 | Produce a **live web preview**; screenshots only if a live preview is genuinely unavailable |
-| 7 | **Governor visual approval gate** |
-| 8 | Migrate Financial Resilience (the absence-path validator), then Mortgage Freedom, then Financial Independence |
+| 7 | **GOVERNOR VISUAL REVIEW — MANDATORY GATE. No remaining mission may be migrated until this gate passes.** |
+| 8 | Migrate the remaining missions: Financial Resilience (the absence-path validator) first, then Mortgage Freedom, then Financial Independence |
 | 9 | Remove retired renderer paths (Decision 15, items 1–4; 5–6 if authorised) |
 | 10 | Accessibility and structural validation (ACC-1…ACC-14, T1…T20) |
 | 11 | Full deterministic suite on Python 3.10–3.13 |
@@ -697,7 +804,7 @@ as reference it would leave the framework's populated paths unexercised.
 
 | # | Risk | Consequence | Control |
 |---|---|---|---|
-| R1 | Console projection becomes a second policy layer | Domain logic leaks into presentation | Projection is pure classification/ordering/formatting; T11, T17 |
+| R1 | The Mission Console Model becomes a second policy layer | Domain logic leaks into presentation | Projection is pure classification/ordering/formatting; T11, T17 |
 | R2 | Providers game `essential` to promote everything | Region 3 becomes the old telemetry wall | Hard cap 6 at contract level (T5); selection rules reviewed at Gate |
 | R3 | Progressive disclosure hides safety-relevant information | Reader acts on an invalidated recommendation | Safety rule is normative; critical warnings hoisted; T12 |
 | R4 | Migration lands all four missions at once | Regressions hidden in a large diff | Reference-first sequence with a Governor gate at step 7 |
@@ -731,13 +838,16 @@ Blocking for the implementation Burn:
 | AC-7 | Disclosure is native, closed by default, keyboard-operable, deep-linkable, print-complete and functional without JavaScript (T12, T13) |
 | AC-8 | No safety-relevant information is disclosure-only (T12) |
 | AC-9 | No provider string reaches a trusted fragment; all provider strings escaped without double-escaping (T14, T15) |
-| AC-10 | No domain term, mission slug or mission-name branch in Core, console projection or renderer (T16, T17) |
+| AC-10 | No domain term, mission slug or mission-name branch in Core, the Mission Console Model or renderer (T16, T17) |
 | AC-11 | ACC-1 … ACC-14 pass |
 | AC-12 | DET-1 … DET-6 pass, including two-frozen-clock hash equality |
 | AC-13 | Route goldens stable for all four missions; Financial Independence, Mortgage Freedom and Financial Resilience show no unintended behavioural change (T18) |
 | AC-14 | Console renders without body horizontal scroll at 320px and 200% zoom (T19) |
 | AC-15 | Retired paths (Decision 15 items 1–4) are removed, not merely bypassed. **Countable measure** *(self-review A2)*: `(distinct region-rendering functions in mission_control.py) + (TELEMETRY_REGION values) + (deprecated contract fields still read by the renderer)` must be **strictly lower** after the Burn than before, asserted by test |
 | AC-16 | Full suite green on Python 3.10–3.13; Architecture and Security Gates approve; first post-merge `main` workflow passes |
+| AC-17 | The hero carries all four answers — current position, destination, trajectory and next action — for every mission, including when margin is `not_applicable` and trajectory is `unavailable` (structural proxy for the five-second criterion) |
+| AC-18 | The renderer makes no ordering, grouping, visibility, disclosure-placement or priority decision; all five belong to the Mission Console Model (T21) |
+| AC-19 | The Governor visual review gate is passed on the reference mission **before** any remaining mission is migrated; migrating early is a process failure, not a schedule optimisation |
 
 ## Required Decisions — Recommendations
 
@@ -746,12 +856,12 @@ Blocking for the implementation Burn:
 | 1 | Universal section contract | Five regions, fixed order, universal; missions may not add, reorder or relocate |
 | 2 | Minimum hero content | Identity, current position, milestone, destination, trajectory (dominant), margin, confidence, optional burn preview — fixed slots, no telemetry list |
 | 3 | Trajectory presentation | Composed `MissionTrajectoryView`; one new field (`movement`) and one new closed vocabulary; all else aggregates existing outputs |
-| 4 | Mission Margin boundary | Tolerance between trajectory and success; not completion, confidence, trajectory or progress. Deprecate schedule-specific numerics for a domain-neutral value/unit/format, **and add `margin` to `InstrumentApplicability`** so a binary mission can declare it inapplicable |
+| 4 | Mission Margin boundary | Tolerance between trajectory and success; not completion, confidence, trajectory or progress. Deprecate schedule-specific numerics for a domain-neutral value/unit/format, **and add `margin` to `InstrumentApplicability`** so a binary mission can declare it inapplicable. Mission Margin is the architectural concept; a provider-supplied `label` may present it as Runway, Income Gap, LTV Buffer or Recovery Reserve without changing the contract |
 | 5 | Primary telemetry selection | Seven rules; `essential` region; hard cap 6; three-item lower bound is guidance, not validation; zero ⇒ region omitted |
 | 6 | One-Next-Burn rule | Exactly one primary; extras to Alternative Burns; six defined states |
 | 7 | Disclosure structure | Nine ordered **domain-neutral** Core slots; provider supplies displayed names; native `<details>`; closed by default; warnings hoisted |
-| 8 | Shared view-model boundaries | `MissionConsoleView` + five region views; plain text default; `_html` suffix **and** a `TrustedHtml` type for Mission-Control-only fragments |
-| 9 | Renderer migration | Extend the PR #21 seam; strangler migration behind a Governor visual gate; retire superseded paths in the same Burn |
+| 8 | Shared view-model boundaries | **Mission Console Model** owns ordering, grouping, visibility, disclosure placement and card priority; the renderer owns presentation only. `MissionConsoleView` + five region views; plain text default; `_html` suffix **and** a `TrustedHtml` type for Mission-Control-only fragments |
+| 9 | Renderer migration | Extend the PR #21 seam; strangler migration behind a **mandatory** Governor visual gate between the reference mission and the remaining migrations; retire superseded paths in the same Burn |
 | 10 | Reference mission | **Pension Independence**, with Financial Resilience mandated as the second migration |
 | 11 | Accessibility | ACC-1 … ACC-14, each testable |
 | 12 | Deterministic fixtures | DET-1 … DET-6; explicit clocks mandatory |

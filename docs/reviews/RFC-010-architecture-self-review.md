@@ -42,7 +42,7 @@ ahead of a real second domain. Recorded as a watch item, not a defect.
 
 **Partially justified concern; mitigation strengthened.**
 
-The RFC adds a Console Projection layer, five view models, one closed
+The RFC adds a Mission Console Model layer, five view models, one closed
 vocabulary and one margin amendment. That is real new surface. The defence is
 that it retires four to six existing paths in the same Burn, and that
 projection exists to make cardinality, emptiness and classification rules
@@ -273,3 +273,26 @@ and applicability `margin` — each additive with inert defaults, each with a
 stated reason no smaller alternative suffices.
 
 **Ready for Governor architecture review.**
+
+---
+
+## Governor Review Outcome — 2026-07-31
+
+**GO WITH MINOR AMENDMENTS.** Seven amendments were directed and applied; none
+redesigned a concept or added scope. The self-review findings above stand
+unchanged — no Governor amendment reversed or superseded any of A1–A7.
+
+Two amendments touched conclusions reached in this review:
+
+- **Governor amendment 1** renamed the seam this review had called a "Console
+  Projection layer" (challenge 2) to the **Mission Console Model**. The
+  challenge and its answer are unaffected; only the name changed.
+- **Governor amendment 4** made explicit what challenge 9 argued implicitly —
+  that the value of the seam is owning ordering, grouping, visibility,
+  disclosure placement and card priority. The responsibility split is now
+  normative and test-backed (T21) rather than inferred.
+
+Governor amendment 2 (domain-specific margin labels) refines, and does not
+weaken, challenge 3's finding: the contract stays universal and only the
+displayed word varies. Challenge 10's binary-mission walkthrough remains valid
+because the `margin` applicability field from A3 is retained.
