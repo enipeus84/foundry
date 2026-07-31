@@ -3,13 +3,16 @@ proven — Core-only imports, registry-only metric access, graceful
 missing metrics, intact authentication, deterministic rendering — plus
 the read-only guarantee. Skips cleanly without the [web] extra."""
 
+import hashlib
+import re
+
 import pytest
 
 fastapi = pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient  # noqa: E402
 
 from foundry import webauth  # noqa: E402
-from foundry.core.entities import declare_mission  # noqa: E402
+from foundry.core.entities import abandon_mission, declare_mission  # noqa: E402
 from foundry.core.evidence import concern, derive_claim_directly, tag_claim  # noqa: E402
 from foundry.eventlog import EventLog  # noqa: E402
 from foundry.finance.fixtures import build_parker_brads_household  # noqa: E402
@@ -190,6 +193,7 @@ def test_authentication_still_protects_every_surface(tmp_path):
                  "/missions/financial-independence",
                  "/missions/mortgage-freedom",
                  "/missions/financial-resilience",
+                 "/missions/pension-independence",
                  "/missions/not-a-definition", "/settings"):
         r = anonymous.get(path)
         assert r.status_code == 303, path
@@ -543,7 +547,9 @@ def test_financial_independence_home_lane_opens_mission_detail(tmp_path):
     assert 'href="/missions/financial-independence"' in html
     assert "Financial Independence" in html
     assert 'href="/missions/mortgage-freedom"' in html
-    assert html.count("Assessment and target are planned.") == 1
+    assert 'href="/missions/pension-independence"' in html
+    assert "Assessment and target are planned." not in html
+    assert "Pension Independence" in html
     assert ">FINANCE.MORTGAGE_BALANCE " not in html
     assert "finance.mortgage_balance 242" not in html
     assert "MORTGAGE BALANCE £242,540" in html
@@ -869,23 +875,47 @@ def test_malformed_mortgage_provider_does_not_degrade_fi(
     assert "NOT EVALUABLE" not in unaffected.text
 
 
-def test_generic_planned_mission_routes_invent_no_policy(tmp_path):
+def test_pension_independence_route_renders_approved_policy(tmp_path):
     _seed_financial_independence(tmp_path)
 
     response = client().get("/missions/pension-independence")
 
     assert response.status_code == 200
     assert "Pension Independence" in response.text
-    assert "PLANNED" in response.text
-    assert "This mission is planned. Its assessment is not available yet." \
-        in response.text
-    assert "No target, tracking criteria, or mission status is shown." \
-        in response.text
-    assert 'class="mission-empty-state"' in response.text
+    assert "PLANNED" not in response.text
+    assert "CURRENT PENSION" in response.text
+    assert "£62,000" in response.text
+    assert "PROJECTED PENSION AT RETIREMENT" in response.text
+    assert "£785,000" in response.text
+    assert "EXPECTED PATH · DEFAULT VIEW · NOT A GUARANTEE" in response.text
+    assert "STATE PENSION · PER YEAR" in response.text
+    assert "£10,600" in response.text
+    assert "ESTIMATED RETIREMENT INCOME" in response.text
+    assert "£42,000" in response.text
+    assert "Declared scenario increases pension contributions" in response.text
+    assert "not regulated financial advice" in response.text
+    assert "MISSION MARGIN" in response.text
+    assert "NOMINAL" in response.text
+    assert "NOT EVALUABLE" not in response.text
+    assert "finance.pension_" not in response.text
+    assert "required_retirement_income_annual" not in response.text
+    assert "success probability" not in response.text.lower()
+    assert "chance of success" not in response.text.lower()
+    assert re.search(
+        r"[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-"
+        r"[89ab][0-9a-f]{3}-[0-9a-f]{12}",
+        response.text,
+    ) is None
     assert 'class="mission-return" href="/#missions"' in response.text
 
 
-def _render_shape_neutral_mission(monkeypatch, tmp_path, applicability):
+def _render_shape_neutral_mission(
+    monkeypatch,
+    tmp_path,
+    applicability,
+    telemetry_factory=None,
+    trajectory_state="Nominal",
+):
     """Render one Core-only mock provider through the generic detail route."""
     from foundry.core.entities import declare_party
     from foundry.core.metrics import MetricResult
@@ -927,7 +957,7 @@ def _render_shape_neutral_mission(monkeypatch, tmp_path, applicability):
                     request.scope, request.as_of, "available",
                     "shape-neutral-v1",
                 ),
-                trajectory_state="Nominal",
+                trajectory_state=trajectory_state,
                 trajectory_tone="green",
                 current_milestone=milestone,
                 milestones=(milestone,),
@@ -957,6 +987,10 @@ def _render_shape_neutral_mission(monkeypatch, tmp_path, applicability):
                             request.as_of + 2.0, 7.0, 8.0, 9.0),
                     )
                     if applicability.forecast == "applicable" else ()
+                ),
+                telemetry=(
+                    telemetry_factory(request)
+                    if telemetry_factory is not None else ()
                 ),
                 applicability=applicability,
             )
@@ -999,9 +1033,151 @@ def _mission_detail_regions(rendered):
     )
 
 
+def _normalized_render_hash(rendered):
+    """Pin product output, excluding only volatile operational metadata."""
+    normalized = re.sub(
+        r"DATA AS OF [^<]+",
+        "DATA AS OF <NORMALIZED> ",
+        rendered,
+    )
+    normalized = re.sub(
+        r"<footer>.*?</footer>",
+        "<footer><NORMALIZED></footer>",
+        normalized,
+        flags=re.DOTALL,
+    )
+    return hashlib.sha256(normalized.encode()).hexdigest()
+
+
+def test_rfc009_route_goldens_and_narrow_d13_diff(tmp_path):
+    """A3/A5/A10-A14: pin every live route and the narrow D13 correction."""
+    _seed_financial_independence(tmp_path)
+    c = client()
+
+    assert _normalized_render_hash(c.get("/").text) == (
+        "8c89b1fbba97598b2fa28cc24207d58cdd871be66d4132a62bed3afd6a90526c"
+    )
+    resilience = c.get("/missions/financial-resilience").text
+    assert _normalized_render_hash(resilience) == (
+        "7906d20f014876f8183ab8edf51bbcee029a0c909ecf372fd570464dd2bdf623"
+    )
+    new_tile = """<div><p class="k">TRAJECTORY</p>
+        <p class="v green">COMPLETE</p>
+        <p class="sub">Trajectory history is not available for this mission.</p></div>"""
+    old_tile = """<div><p class="k">TRAJECTORY</p>
+        <p class="v none">NOT AVAILABLE</p>
+        <p class="sub">Trajectory history is not available for this mission.</p></div>"""
+    assert new_tile in resilience
+    assert _normalized_render_hash(
+        resilience.replace(new_tile, old_tile, 1)
+    ) == "96510b24c43f38d22a6e935ea65ae6007ed5713bb910c93c55f9ca73614acf15"
+    assert _normalized_render_hash(
+        c.get("/missions/financial-independence").text
+    ) == "586b255faf03b3512cb87487c902371886577d4de298f75d53a733053bdfef12"
+    assert _normalized_render_hash(
+        c.get("/missions/mortgage-freedom").text
+    ) == "b3fc0e6fef1a612bf06ccff025216502529c97feda1cd79597c31c8ad47ea20c"
+    assert _normalized_render_hash(
+        c.get("/missions/pension-independence").text
+    ) == "84f3b148a00cb6f0e8f8e79df0c6fa8b556a9bfd4fefcc9ad472c5f1cd6a2fde"
+
+
+def test_d13_resilience_detail_and_home_agree_without_inventing_history(
+        tmp_path):
+    _seed_financial_independence(tmp_path)
+    c = client()
+
+    home = c.get("/").text
+    detail = c.get("/missions/financial-resilience").text
+    hero, _, summary = _mission_detail_regions(detail)
+
+    assert "TRAJECTORY · COMPLETE" in home
+    assert '<p class="v green">COMPLETE</p>' in hero
+    assert "Trajectory history is not available for this mission." in hero
+    assert "Trajectory history is not available for this mission." in summary
+    assert 'class="trajectory-svg hero-trajectory"' not in hero
+
+
+def test_d13_unavailable_history_without_a_state_keeps_not_available_tile(
+        monkeypatch, tmp_path):
+    from foundry.core.mission_assessment import InstrumentApplicability
+
+    rendered = _render_shape_neutral_mission(
+        monkeypatch,
+        tmp_path,
+        InstrumentApplicability(trajectory="unavailable"),
+        trajectory_state=None,
+    )
+    hero, _, _ = _mission_detail_regions(rendered)
+
+    assert '<p class="v none">NOT AVAILABLE</p>' in hero
+    assert "Trajectory history is not available for this mission." in hero
+
+
+def test_declared_telemetry_regions_place_and_duplicate_without_inference(
+        monkeypatch, tmp_path):
+    from foundry.core.metrics import MetricResult
+    from foundry.core.mission_assessment import (
+        InstrumentApplicability,
+        TelemetryItem,
+    )
+
+    hostile_group = "POSITION <script>alert('group')</script>"
+
+    def telemetry(request):
+        def item(label, region, group=""):
+            return TelemetryItem(
+                MetricResult(
+                    f"domain.{label.lower().replace(' ', '_')}",
+                    42.0,
+                    "units",
+                    request.scope,
+                    request.as_of,
+                    "available",
+                    "shape-neutral-v1",
+                ),
+                label,
+                format_kind="number",
+                display_region=region,
+                display_group=group,
+            )
+
+        return (
+            item("HERO CAPACITY", "hero"),
+            item("ANALYSIS CAPACITY", "analysis", hostile_group),
+            item("DEEP CAPACITY", "drilldown"),
+        )
+
+    rendered = _render_shape_neutral_mission(
+        monkeypatch,
+        tmp_path,
+        InstrumentApplicability(),
+        telemetry_factory=telemetry,
+    )
+    hero, analysis, _ = _mission_detail_regions(rendered)
+    drilldown = rendered[rendered.index('<details class="mission-drilldown">'):]
+
+    assert "HERO CAPACITY" in hero
+    assert "ANALYSIS CAPACITY" not in hero
+    assert "ANALYSIS CAPACITY" in analysis
+    assert "HERO CAPACITY" not in analysis
+    assert hostile_group not in rendered
+    assert "POSITION &lt;script&gt;alert(&#x27;group&#x27;)&lt;/script&gt;" \
+        in analysis
+    assert (
+        '<h3 class="mission-analysis-group-heading">'
+        "POSITION &lt;script&gt;alert(&#x27;group&#x27;)&lt;/script&gt;</h3>"
+    ) in analysis
+    assert ".mission-analysis-group {" in rendered
+    assert ".mission-analysis-group-heading {" in rendered
+    for label in ("HERO CAPACITY", "ANALYSIS CAPACITY", "DEEP CAPACITY"):
+        assert label in drilldown
+
+
 @pytest.mark.parametrize("slug", [
     "financial-resilience",
     "financial-independence",
+    "pension-independence",
     "mortgage-freedom",
 ])
 def test_live_finance_missions_share_the_mission_detail_structure(
@@ -1012,17 +1188,75 @@ def test_live_finance_missions_share_the_mission_detail_structure(
     html = client().get(f"/missions/{slug}").text
     hero, analysis, summary = _mission_detail_regions(html)
     drilldown_start = html.index('<details class="mission-drilldown">')
+    drilldown_end = html.index("</details>", drilldown_start)
+    drilldown = html[drilldown_start:drilldown_end]
+    analysis_group_count = analysis.count(
+        '<div class="mission-analysis-group">')
 
     assert html.count('<section class="hero mission-detail-hero') == 1
     assert html.count('<section aria-labelledby="analysis-heading">') == 1
     assert html.count('<details class="mission-drilldown">') == 1
-    assert html.count('<div class="telemetry-grid">') == 1
+    assert drilldown.count('<div class="telemetry-grid">') == 1
+    assert analysis.count('<div class="telemetry-grid">') \
+        == analysis_group_count
+    assert html.count('<div class="telemetry-grid">') \
+        == 1 + analysis_group_count
     assert html.index(hero) < html.index(analysis) < drilldown_start
     assert 'aria-labelledby="mission-title"' in hero
     assert 'aria-describedby="trajectory-summary"' in hero
     assert 'id="analysis-heading"' in analysis
     assert 'id="trajectory-summary"' in summary
     assert 'class="mission-return" href="/#missions"' in hero
+
+
+def test_zero_w_star_route_has_no_negative_or_fabricated_milestone_bands(
+        tmp_path):
+    from foundry.core.entities import EntityProjection
+    from foundry.finance import entities as finance_entities
+    from foundry.finance.entities import FinanceEntityProjection
+    from foundry.finance.pension_assessment import POLICY_ID
+
+    log = _seed_financial_independence(tmp_path)
+    core = EntityProjection(log)
+    finance = FinanceEntityProjection(log)
+    existing = next(
+        mission for mission in core.missions.values()
+        if mission.assessment_policy_id == POLICY_ID
+    )
+    original = finance.assumption_sets[existing.assumption_set_id]
+    assumptions = finance_entities.declare_assumption_set(
+        log,
+        "Pension zero-target route regression",
+        "pension-zero-target-v1",
+        {
+            **original.assumptions,
+            "required_retirement_income_annual": 10_000.0,
+        },
+    )
+    abandon_mission(log, existing.id, "replace with zero-target regression")
+    declare_mission(
+        log,
+        "Pension secured-income zero case",
+        target_metric="finance.pension_wealth",
+        assessment_policy_id=POLICY_ID,
+        assumption_set_id=assumptions.id,
+    )
+
+    response = client().get("/missions/pension-independence")
+
+    assert response.status_code == 200
+    assert "REQUIRED RETIREMENT WEALTH" in response.text
+    assert "W* · DECLARED INCOME NEED AND WITHDRAWAL BASIS" in response.text
+    assert "£0" in response.text
+    assert "£-0" not in response.text
+    assert "PENSION INDEPENDENT" in response.text
+    for fabricated_label in (
+        "DEPENDENT",
+        "FOUNDATION",
+        "BUILDING",
+        "APPROACHING",
+    ):
+        assert f">{fabricated_label}</text>" not in response.text
 
 
 def test_shared_mission_hero_escapes_plain_text_and_preserves_trusted_html():
@@ -1126,6 +1360,7 @@ def test_not_applicable_instruments_are_omitted_visually_and_accessibly(
             trajectory="not_applicable",
             forecast="not_applicable",
         ),
+        trajectory_state=None,
     )
     hero, analysis, summary = _mission_detail_regions(rendered)
 
@@ -1299,7 +1534,9 @@ def test_malformed_provider_degrades_only_its_defined_mission(
     assert "assessment provider failed safely" in failed.text
     assert "provider-private failure" not in failed.text
     assert unaffected.status_code == 200
-    assert "PLANNED" in unaffected.text
+    assert "NOT EVALUABLE" in unaffected.text
+    assert "no provider registered for this assessment policy" \
+        in unaffected.text
 
 
 def test_malformed_nested_provider_data_cannot_break_shared_rendering(
@@ -1350,7 +1587,9 @@ def test_malformed_nested_provider_data_cannot_break_shared_rendering(
     assert "assessment provider failed safely" in failed.text
     assert "malformed-v1" not in failed.text
     assert unaffected.status_code == 200
-    assert "PLANNED" in unaffected.text
+    assert "NOT EVALUABLE" in unaffected.text
+    assert "no provider registered for this assessment policy" \
+        in unaffected.text
 
 
 def test_financial_independence_trajectory_is_integrated_into_hero(tmp_path):

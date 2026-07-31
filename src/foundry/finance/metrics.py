@@ -92,6 +92,7 @@ from foundry.core.metrics import MetricRequest, MetricResult
 from foundry.core.scope import Subject
 
 from . import vocab
+from .aggregation import FinanceAggregationService
 from .entities import Account, Asset, FinanceEntityProjection, Obligation
 
 CALCULATION_VERSION = "v1"
@@ -126,6 +127,8 @@ class FinanceMetricProvider:
     def __init__(self, finance_entities: FinanceEntityProjection, core_entities: CoreEntityProjection):
         self.finance = finance_entities
         self.core = core_entities
+        self.aggregation = FinanceAggregationService(
+            finance_entities, core_entities)
 
     def owned_metric_ids(self) -> frozenset[str]:
         return METRIC_IDS
@@ -421,39 +424,18 @@ class FinanceMetricProvider:
         (Employer, Mission, a bare resource) -> `None`, meaning "this
         metric doesn't know how to resolve this scope shape" — turned
         into `status: unsupported` by the metric."""
-        if scope.kind != "party":
-            return None
-        party = self.core.parties.get(scope.id)
-        if party is None:
-            return None
-        if party.party_type == "household":
-            return [m.id for m in self.core.members_of(scope.id)]
-        return [scope.id]
+        return self.aggregation.persons_for_scope(scope)
 
     def _attribute_to(self, scope: Subject) -> str | None:
         """`None` for a household scope (union at full value); the
         person's id otherwise (share-weighted attribution, 001 §9)."""
-        party = self.core.parties.get(scope.id)
-        if party is not None and party.party_type == "household":
-            return None
-        return scope.id
+        return self.aggregation.attribute_to(scope)
 
     def _target_currency(self, party_ids: Iterable[str]) -> str:
         """The Household Party's declared `reporting_currency` (001
         §9, default GBP) — resolved from a direct household scope, or
         from the first household any person in `party_ids` belongs to."""
-        parties = [self.core.parties.get(pid) for pid in party_ids]
-        for party in parties:
-            if party is not None and party.party_type == "household":
-                return party.attributes.get("reporting_currency", "GBP")
-        for party in parties:
-            if party is None:
-                continue
-            for household_id in party.memberships:
-                household = self.core.parties.get(household_id)
-                if household is not None:
-                    return household.attributes.get("reporting_currency", "GBP")
-        return "GBP"
+        return self.aggregation.target_currency(party_ids)
 
     # ------------------------------------------------------------ ownership
 
@@ -466,14 +448,7 @@ class FinanceMetricProvider:
         outside `person_ids` (including, improperly, the household
         Party itself — 001 §9 forbids the group being an ownership
         target) never brings an entity into scope."""
-        owned = {}
-        for eid, entity in store.items():
-            if entity.status != "active":
-                continue
-            links = [l for l in entity.ownership if l.relation in relations and l.target in person_ids]
-            if links:
-                owned[eid] = links
-        return owned
+        return self.aggregation.owned_entities(person_ids, store, relations)
 
     def _shares(self, links) -> dict[str, float]:
         """`person_id -> fraction of this entity's value` (001 §9:
@@ -482,14 +457,7 @@ class FinanceMetricProvider:
         for declared shares summing to 100% (001 §8) — this function
         does not re-validate that invariant, it only fills gaps left by
         omitted shares."""
-        explicit = {l.target: l.share / 100.0 for l in links if l.share is not None}
-        implicit = [l.target for l in links if l.share is None]
-        if implicit:
-            remaining = max(0.0, 1.0 - sum(explicit.values()))
-            each = remaining / len(implicit)
-            for target in implicit:
-                explicit[target] = explicit.get(target, 0.0) + each
-        return explicit
+        return self.aggregation.shares(links)
 
     def _flow_weight(self, entity, attribute_to: str | None) -> float:
         """The fraction of an entity's transaction flows attributed to
@@ -497,10 +465,7 @@ class FinanceMetricProvider:
         ownership share otherwise — computed from *all* the entity's
         value-ownership links, so a co-owner's fraction is correct even
         though `_owned_entities` pre-filtered links to the scope."""
-        if attribute_to is None:
-            return 1.0
-        links = [l for l in entity.ownership if l.relation in vocab.VALUE_OWNERSHIP_RELATIONS]
-        return self._shares(links).get(attribute_to, 0.0)
+        return self.aggregation.flow_weight(entity, attribute_to)
 
     # ----------------------------------------------------------- valuation
 
@@ -643,21 +608,7 @@ class FinanceMetricProvider:
         event used (001 §22). Returns `(None, None)` — never a guessed
         rate — when no applicable rate has been observed at or before
         `as_of`; a rate dated later never applies retroactively."""
-        if currency == target:
-            return amount, None
-        direct, inverse = f"{currency}/{target}", f"{target}/{currency}"
-        # rate > 0 guards replay against a non-positive rate that reached
-        # the append-only log through some other writer: it can never be
-        # applied (a zero inverse rate would divide by zero), only skipped.
-        candidates = [r for r in self.finance.exchange_rates.values()
-                      if r.currency_pair in (direct, inverse)
-                      and r.as_of <= as_of and r.rate > 0]
-        if not candidates:
-            return None, None
-        latest = max(candidates, key=lambda r: r.as_of)
-        rate = latest.rate if latest.currency_pair == direct else (1.0 / latest.rate)
-        ref = latest.provenance[-1] if latest.provenance else None
-        return amount * rate, ref
+        return self.aggregation.convert(amount, currency, target, as_of)
 
     def _average_essential_outflow(self, person_ids: set[str], attribute_to: str | None,
                                     target_currency: str, as_of: float):

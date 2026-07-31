@@ -806,6 +806,14 @@ _SHELL = """<!doctype html>
   .telemetry-grid .telemetry {{ background: var(--surface); padding: 24px; }}
   .telemetry-grid .value {{ margin-top: 8px; font-size: 26px; }}
   .telemetry-grid .sub {{ margin-top: 7px; color: var(--faint); font-size: 10px; }}
+  .mission-analysis-group {{
+    display: grid; gap: 10px; margin-top: 24px;
+  }}
+  .mission-analysis-group:first-of-type {{ margin-top: 0; }}
+  .mission-analysis-group-heading {{
+    margin: 0; color: var(--faint); font-size: 9px; font-weight: 650;
+    letter-spacing: .2em; line-height: 1.4;
+  }}
   .assessment-notes {{ margin-top: 30px; border-top: 1px solid var(--line); padding-top: 22px; }}
   .assessment-notes ul {{
     margin: 0 0 0 18px; color: var(--faint); font-size: 12px; line-height: 1.8;
@@ -1990,6 +1998,7 @@ class _MissionHeroView:
     margin_value: str
     margin_sub: str
     accessible_summary_html: str
+    telemetry_html: str = ""
 
 
 @dataclass(frozen=True)
@@ -2007,6 +2016,7 @@ class _FlightAnalysisView:
     recommendation_action: str
     recommendation_amount: str
     recommendation_delta_instrument_html: str
+    telemetry_html: str = ""
 
 
 @dataclass(frozen=True)
@@ -2040,7 +2050,7 @@ def _render_mission_hero(view: _MissionHeroView) -> str:
     <div class="mission-hero-meta">
       <div><p class="k">CURRENT MILESTONE</p><p class="v">{html.escape(view.milestone_label)}</p></div>
       {view.trajectory_tile_html}
-      {view.eta_tile_html}
+      {view.eta_tile_html}{view.telemetry_html}
       <div class="margin-stat"><p class="k">MISSION MARGIN</p>
         <p class="v num">{html.escape(view.margin_value)}</p>
         <p class="sub">{html.escape(view.margin_sub)}</p></div>
@@ -2053,7 +2063,7 @@ def _render_mission_hero(view: _MissionHeroView) -> str:
 def _render_flight_analysis(view: _FlightAnalysisView) -> str:
     return f"""<section aria-labelledby="analysis-heading">
   <h2 id="analysis-heading">FLIGHT ANALYSIS</h2>
-  {view.schedule_html}
+  {view.schedule_html}{view.telemetry_html}
   <div class="analysis-rail">
     {view.delta_instrument_html}
     <div class="instrument"><p class="k">MILESTONE COMPLETION</p>
@@ -2084,6 +2094,65 @@ def _render_mission_data(view: _MissionDataView) -> str:
     </div>
   </details>
 </section>"""
+
+
+def _telemetry_presentation(item) -> tuple[str, str]:
+    result = item.result
+    value = (
+        _format_value(
+            result.value, result.unit_or_currency, item.format_kind)
+        if result.status in ("available", "stale")
+        else result.status.upper()
+    )
+    qualifier = f" · {item.qualifier}" if item.qualifier else ""
+    detail = (
+        f"{result.status.upper()} · "
+        f"{len(result.input_references)} INPUT EVENT(S){qualifier}"
+    )
+    return value, detail
+
+
+def _telemetry_card_html(item) -> str:
+    value, detail = _telemetry_presentation(item)
+    return (
+        f'<div class="telemetry"><p class="k">{html.escape(item.label)}</p>'
+        f'<p class="value num">{html.escape(value)}</p>'
+        f'<p class="sub">{html.escape(detail)}</p></div>'
+    )
+
+
+def _hero_telemetry_html(items) -> str:
+    fragments = []
+    for item in items:
+        value, detail = _telemetry_presentation(item)
+        fragments.append(
+            f'<div><p class="k">{html.escape(item.label)}</p>'
+            f'<p class="v num">{html.escape(value)}</p>'
+            f'<p class="sub">{html.escape(detail)}</p></div>'
+        )
+    return "".join(fragments)
+
+
+def _analysis_telemetry_html(items) -> str:
+    groups: list[tuple[str, list]] = []
+    positions: dict[str, int] = {}
+    for item in items:
+        group = item.display_group
+        if group not in positions:
+            positions[group] = len(groups)
+            groups.append((group, []))
+        groups[positions[group]][1].append(item)
+    fragments = []
+    for group, group_items in groups:
+        heading = (
+            f'<h3 class="mission-analysis-group-heading">'
+            f'{html.escape(group)}</h3>' if group else "")
+        cards = "".join(_telemetry_card_html(item) for item in group_items)
+        fragments.append(
+            f'<div class="mission-analysis-group">{heading}'
+            f'<div class="telemetry-grid">{cards}</div></div>'
+        )
+    return ("\n  " + "".join(fragments)) if fragments else ""
 
 
 @router.get("/missions/{slug}", response_class=HTMLResponse)
@@ -2250,20 +2319,17 @@ def mission_detail(request: Request, slug: str):
                 f"</li><li>Modelled ETA change: {html.escape(raw_impact)}; "
                 f"displayed at month resolution.</li>")
 
-    telemetry_cards = []
-    for item in assessment.telemetry:
-        result = item.result
-        value = (
-            _format_value(
-                result.value, result.unit_or_currency, item.format_kind)
-            if result.status in ("available", "stale") else result.status.upper())
-        qualifier = f" · {item.qualifier}" if item.qualifier else ""
-        telemetry_cards.append(
-            f'<div class="telemetry"><p class="k">{html.escape(item.label)}</p>'
-            f'<p class="value num">{html.escape(value)}</p>'
-            f'<p class="sub">{html.escape(result.status.upper())} · '
-            f'{len(result.input_references)} INPUT EVENT(S)'
-            f'{html.escape(qualifier)}</p></div>')
+    telemetry_cards = [
+        _telemetry_card_html(item) for item in assessment.telemetry
+    ]
+    hero_telemetry = _hero_telemetry_html(tuple(
+        item for item in assessment.telemetry
+        if item.display_region == "hero"
+    ))
+    analysis_telemetry = _analysis_telemetry_html(tuple(
+        item for item in assessment.telemetry
+        if item.display_region == "analysis"
+    ))
 
     notes = [assessment.confidence_basis, *assessment.limitations]
     if assessment.confidence is not None:
@@ -2341,15 +2407,23 @@ def mission_detail(request: Request, slug: str):
         <p class="sub">An arrival estimate is not available for this mission.</p></div>"""
         if assessment.applicability.eta == "unavailable" else ""
     )
-    trajectory_tile = (
-        f"""<div><p class="k">TRAJECTORY</p>
+    if assessment.trajectory_state is not None:
+        trajectory_history_sub = (
+            '\n        <p class="sub">Trajectory history is not available '
+            'for this mission.</p>'
+            if assessment.applicability.trajectory == "unavailable" else ""
+        )
+        trajectory_tile = f"""<div><p class="k">TRAJECTORY</p>
+        <p class="v {trajectory_class}">{html.escape(trajectory_label)}</p>{trajectory_history_sub}</div>"""
+    elif assessment.applicability.trajectory == "applicable":
+        trajectory_tile = f"""<div><p class="k">TRAJECTORY</p>
         <p class="v {trajectory_class}">{html.escape(trajectory_label)}</p></div>"""
-        if assessment.applicability.trajectory == "applicable" else
-        """<div><p class="k">TRAJECTORY</p>
+    elif assessment.applicability.trajectory == "unavailable":
+        trajectory_tile = """<div><p class="k">TRAJECTORY</p>
         <p class="v none">NOT AVAILABLE</p>
         <p class="sub">Trajectory history is not available for this mission.</p></div>"""
-        if assessment.applicability.trajectory == "unavailable" else ""
-    )
+    else:
+        trajectory_tile = ""
     delta_instrument = (
         f"""<div class="instrument"><p class="k">Δv · {html.escape(delta_period)}</p>
       <p class="v num">{html.escape(delta_value)}</p>
@@ -2426,6 +2500,7 @@ def mission_detail(request: Request, slug: str):
         margin_value=margin_value,
         margin_sub=margin_sub,
         accessible_summary_html=accessible_summary,
+        telemetry_html=hero_telemetry,
     ))
     analysis = _render_flight_analysis(_FlightAnalysisView(
         schedule_html=flight_analysis_schedule,
@@ -2436,6 +2511,7 @@ def mission_detail(request: Request, slug: str):
         recommendation_amount=recommendation_amount,
         recommendation_delta_instrument_html=(
             recommendation_delta_instrument),
+        telemetry_html=analysis_telemetry,
     ))
     mission_data = _render_mission_data(_MissionDataView(
         telemetry_cards_html=tuple(telemetry_cards),

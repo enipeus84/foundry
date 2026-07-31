@@ -12,7 +12,8 @@ from foundry.core.mission_assessment import (
     DeltaV, ForecastPoint, MissionAssessment, MissionAssessmentRegistry,
     MissionAssessmentRequest, MissionConfidence, MissionDefinition,
     MissionMargin, MissionMilestone, MissionPhaseAssessment,
-    InstrumentApplicability, RecommendationAssessment, TrajectoryPoint,
+    InstrumentApplicability, RecommendationAssessment, TelemetryItem,
+    TrajectoryPoint,
 )
 from foundry.core.scope import Subject
 from foundry.errors import DuplicateMissionAssessmentError
@@ -530,6 +531,95 @@ def test_instrument_applicability_is_closed_and_defaults_to_applicable():
 
     with pytest.raises(ValueError, match="unsupported eta applicability"):
         InstrumentApplicability(eta="sometimes")
+
+
+def test_telemetry_regions_are_closed_inert_and_grouped_only_for_analysis():
+    result = MetricResult(
+        "domain.capacity",
+        1.0,
+        "units",
+        _request().scope,
+        _request().as_of,
+        "available",
+        "domain-v1",
+    )
+    default = TelemetryItem(result, "CAPACITY")
+    hero = TelemetryItem(result, "CAPACITY", display_region="hero")
+    analysis = TelemetryItem(
+        result,
+        "CAPACITY",
+        display_region="analysis",
+        display_group="OPERATING POSITION",
+    )
+
+    assert default.display_region == "drilldown"
+    assert default.display_group == ""
+    assert hero.result == analysis.result == default.result
+    assert hero.label == analysis.label == default.label
+
+    with pytest.raises(ValueError, match="unsupported telemetry display region"):
+        TelemetryItem(result, "CAPACITY", display_region="sidebar")
+    with pytest.raises(ValueError, match="only valid in the analysis"):
+        TelemetryItem(
+            result,
+            "CAPACITY",
+            display_region="hero",
+            display_group="POSITION",
+        )
+    with pytest.raises(ValueError, match="invalid telemetry display group"):
+        TelemetryItem(
+            result,
+            "CAPACITY",
+            display_region="analysis",
+            display_group="   ",
+        )
+    with pytest.raises(ValueError, match="invalid telemetry display group"):
+        TelemetryItem(
+            result,
+            "CAPACITY",
+            display_region="analysis",
+            display_group="X" * 81,
+        )
+
+
+def test_provider_envelope_caps_hero_telemetry_at_four_items():
+    class HeroProvider(_Provider):
+        def __init__(self, count):
+            super().__init__()
+            self.count = count
+
+        def assess(self, request):
+            result = MetricResult(
+                "domain.capacity",
+                1.0,
+                "units",
+                request.scope,
+                request.as_of,
+                "available",
+                "domain-v1",
+            )
+            base = super().assess(request)
+            return MissionAssessment(
+                **{
+                    **base.__dict__,
+                    "telemetry": tuple(
+                        TelemetryItem(
+                            result,
+                            f"CAPACITY {index}",
+                            display_region="hero",
+                        )
+                        for index in range(self.count)
+                    ),
+                }
+            )
+
+    accepted = MissionAssessmentRegistry()
+    accepted.register(HeroProvider(4))
+    rejected = MissionAssessmentRegistry()
+    rejected.register(HeroProvider(5))
+
+    assert accepted.dispatch(_request()).status == "green"
+    assert rejected.dispatch(_request()).status == "unavailable"
 
 
 @pytest.mark.parametrize(

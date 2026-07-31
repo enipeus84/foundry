@@ -30,11 +30,13 @@ from .vocab import (
     MISSION_MARGIN,
     MISSION_TRAJECTORY,
     TELEMETRY_FORMAT,
+    TELEMETRY_REGION,
 )
 from ..errors import DuplicateMissionAssessmentError
 
 
 _SAFE_MISSION_SLUG = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+_MAX_DISPLAY_GROUP_LENGTH = 80
 
 
 def _require_text(value, field: str, *, allow_empty: bool = False) -> None:
@@ -242,6 +244,8 @@ class TelemetryItem:
     label: str
     format_kind: str = "plain"
     qualifier: str = ""
+    display_region: str = "drilldown"
+    display_group: str = ""
 
     def __post_init__(self) -> None:
         if not isinstance(self.result, MetricResult):
@@ -251,6 +255,19 @@ class TelemetryItem:
             raise ValueError("unsupported telemetry format")
         _require_text(
             self.qualifier, "telemetry qualifier", allow_empty=True)
+        _require_text(self.display_region, "telemetry display region")
+        if self.display_region not in TELEMETRY_REGION:
+            raise ValueError("unsupported telemetry display region")
+        _require_text(
+            self.display_group, "telemetry display group", allow_empty=True)
+        if self.display_region != "analysis" and self.display_group:
+            raise ValueError(
+                "telemetry display group is only valid in the analysis region")
+        if self.display_group and (
+            not self.display_group.strip()
+            or len(self.display_group) > _MAX_DISPLAY_GROUP_LENGTH
+        ):
+            raise ValueError("invalid telemetry display group")
 
 
 @dataclass(frozen=True)
@@ -566,6 +583,11 @@ class MissionAssessmentRegistry:
         self._validate_applicability(result)
         if any(not isinstance(item, TelemetryItem) for item in result.telemetry):
             raise TypeError("provider returned unsupported telemetry")
+        if sum(
+            item.display_region == "hero" for item in result.telemetry
+        ) > 4:
+            raise ValueError(
+                "provider returned more than four hero telemetry items")
         metric_results = tuple(item.result for item in result.telemetry)
         if result.current_value is not None:
             metric_results += (result.current_value,)

@@ -41,7 +41,7 @@ def test_health_returns_ok_json():
 
 
 def test_release_version_is_not_stale():
-    assert __version__ == "1.6.0"
+    assert __version__ == "1.7.0"
 
 
 def test_home_renders_mission_control_even_on_an_empty_log():

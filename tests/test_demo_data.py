@@ -197,7 +197,7 @@ ensure_demo_data({str(path)!r})
                   and e["payload"].get("party_type") == "household"]
     missions = [e for e in events if e["kind"] == "core.mission.declared"]
     assert len(households) == 1, "concurrent seeding produced a doubled dataset"
-    assert len(missions) == 3
+    assert len(missions) == 4
     assert log.verify(), "concurrent seeding corrupted the hash chain"
 
 

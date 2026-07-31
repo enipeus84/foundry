@@ -1,5 +1,41 @@
 # Changelog
 
+## [Unreleased] — RFC-009 Pension Independence
+
+### Added
+
+- A live Pension Independence Mission Assessment over observed DC pension
+  wealth and a declared real-terms retirement-income requirement.
+- Seven published pension metrics covering observed wealth, declared annual
+  contribution rates, State Pension and defined-benefit income, required
+  retirement income and wealth, and dated current-tax-year contributions.
+- A closed, attributed pension-evidence envelope for contribution rates and
+  payments, scheme fees, DB entitlements and State Pension declarations.
+- Deterministic Conservative, Expected and Optimistic accumulation paths,
+  five W*-derived milestones, worst-factor Mission Margin, Mission Confidence,
+  ETA, lookback Delta-v and a liquidity-gated declared contribution scenario.
+
+### Changed
+
+- Mission telemetry can declare `hero`, `analysis` or `drilldown` display
+  regions while every item remains present in deeper Mission Data.
+- Mission Detail now renders a provider-declared trajectory judgement even
+  when observed trajectory history is unavailable; history availability
+  remains independently disclosed.
+- Pension Independence moves from planned metadata to the existing live
+  Mission Detail composition. No new route or pension-specific layout was
+  introduced.
+
+### Security and boundaries
+
+- Pension inputs remain append-only, validated and attributable; malformed
+  direct-log envelopes are quarantined and future-dated declarations are
+  excluded visibly.
+- Pension values and projections remain behind the existing authenticated
+  mission route. No connector, credential, write route, tax calculation,
+  regulated recommendation, decumulation model or probability output was
+  added.
+
 ## [Unreleased] — RFC-007 Property Equity Amendment
 
 ### Added
