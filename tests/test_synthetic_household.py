@@ -8,6 +8,7 @@ that varies between two independent rebuilds of the same log."""
 import os
 import subprocess
 import sys
+from itertools import count
 from pathlib import Path
 
 import pytest
@@ -30,6 +31,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "examples"))
 import seed_synthetic_household as seed  # noqa: E402
 
 ALLOWED = "cparkerbrads@gmail.com"
+SYNTHETIC_FIXTURE_AS_OF = 1_785_170_000.0
 
 KPI_METRIC_IDS = (
     "finance.net_worth", "finance.liquidity_runway",
@@ -55,7 +57,7 @@ def _console_pieces(log: EventLog):
 @pytest.fixture
 def household_log(tmp_path) -> EventLog:
     log = EventLog(tmp_path / "events.jsonl")
-    seed.build(log)
+    seed.build(log, as_of=SYNTHETIC_FIXTURE_AS_OF)
     return log
 
 
@@ -193,6 +195,9 @@ def test_verify_hash_chain_holds(household_log):
 
 @pytest.fixture(autouse=True)
 def auth_env(monkeypatch, tmp_path):
+    event_clock = count(SYNTHETIC_FIXTURE_AS_OF, step=0.001)
+    monkeypatch.setattr(
+        "foundry.eventlog.time.time", event_clock.__next__)
     monkeypatch.setenv("SUPABASE_URL", "https://example.supabase.co")
     monkeypatch.setenv("SUPABASE_PUBLISHABLE_KEY", "test-publishable-key")
     monkeypatch.setenv("FOUNDRY_ALLOWED_EMAIL", ALLOWED)
@@ -210,7 +215,7 @@ def _client() -> TestClient:
 
 def test_mission_control_renders_the_seeded_dataset_with_no_unsupported_cards(tmp_path):
     log = EventLog(tmp_path / "events.jsonl")
-    seed.build(log)
+    seed.build(log, as_of=SYNTHETIC_FIXTURE_AS_OF)
     r = _client().get("/")
     assert r.status_code == 200
     assert "Financial Independence" in r.text
@@ -221,7 +226,7 @@ def test_mission_control_renders_the_seeded_dataset_with_no_unsupported_cards(tm
 
 def test_mission_control_drill_down_shows_lineage_for_every_kpi(tmp_path):
     log = EventLog(tmp_path / "events.jsonl")
-    seed.build(log)
+    seed.build(log, as_of=SYNTHETIC_FIXTURE_AS_OF)
     c = _client()
     for metric_id in KPI_METRIC_IDS:
         r = c.get(f"/metrics/{metric_id}")
@@ -232,7 +237,7 @@ def test_mission_control_drill_down_shows_lineage_for_every_kpi(tmp_path):
 
 def test_mission_control_page_renders_deterministically(tmp_path):
     log = EventLog(tmp_path / "events.jsonl")
-    seed.build(log)
+    seed.build(log, as_of=SYNTHETIC_FIXTURE_AS_OF)
     c = _client()
     assert c.get("/").text == c.get("/").text
 

@@ -63,6 +63,7 @@ class MissionHeroView:
     current_format_kind: str
     milestone: MissionMilestone | None
     destination: MissionMilestone | None
+    milestones: tuple[MissionMilestone, ...]
     trajectory: MissionTrajectoryView
     margin: MissionMargin | None
     margin_applicability: str
@@ -103,7 +104,6 @@ class DisclosureSectionView:
     telemetry: tuple[TelemetryItem, ...] = ()
     recommendations: tuple[RecommendationAssessment, ...] = ()
     lines: tuple[str, ...] = ()
-    open_by_default: bool = False
 
 
 @dataclass(frozen=True)
@@ -134,8 +134,12 @@ class MissionConsoleModel:
             raise ValueError("Mission Console requires a current value")
 
         current_label, current_format = self._current_presentation(assessment)
+        milestones = tuple(sorted(
+            assessment.milestones,
+            key=lambda item: item.order,
+        ))
         destination = next(
-            (item for item in assessment.milestones if item.completes_mission),
+            (item for item in milestones if item.completes_mission),
             None,
         )
         confidence = assessment.confidence or MissionConfidence(
@@ -143,9 +147,7 @@ class MissionConsoleModel:
         trajectory = MissionTrajectoryView(
             state=assessment.trajectory_state,
             tone=assessment.trajectory_tone or "none",
-            # Unknown is a legitimate permanent state when observed movement
-            # is not declared; the Model never invents motion from forecasts.
-            movement="unknown",
+            movement=assessment.trajectory_movement,
             destination_direction=definition.destination_direction,
             history=assessment.applicability.trajectory,
             forecast=assessment.applicability.forecast,
@@ -163,6 +165,7 @@ class MissionConsoleModel:
             current_format_kind=current_format,
             milestone=assessment.current_milestone,
             destination=destination,
+            milestones=milestones,
             trajectory=trajectory,
             margin=assessment.mission_margin,
             margin_applicability=assessment.applicability.margin,

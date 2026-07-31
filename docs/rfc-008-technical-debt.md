@@ -54,11 +54,18 @@ through a documented compatibility release.
 - Synthesised telemetry ids and the four assumption-bound resilience metrics
   do not have authored public drill-down pages. Direct raw metric routes remain
   an internal contract-inspection surface and can expose raw identifiers.
-- Per-instrument applicability reason strings and a `DeltaV.direction`
-  extension remain deferred.
+- Per-instrument applicability reason strings remain deferred. RFC-010 closes
+  G5's need for value movement through the separate domain-neutral
+  `trajectory_movement` axis; `DeltaV.direction` remains deliberately
+  schedule-specific rather than being widened.
 
 ## Performance, history and compatibility
 
+- **Resolved by RFC-010 SAFE remediation:** Financial Independence and
+  Mortgage Freedom classify advancing/holding/receding from observed values
+  they already fold, while Resilience and Pension preserve `unknown` without
+  negative implication. This closes G5 without fabricating Resilience history
+  or changing its still-deferred `movement_lookback_days` policy.
 - **Resolved by RFC-009 D13:** the Mission Detail trajectory tile no longer
   suppresses a provider's computed `trajectory_state` merely because observed
   trajectory history is unavailable. The history SVG and its explanatory

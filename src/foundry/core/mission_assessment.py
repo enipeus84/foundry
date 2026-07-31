@@ -413,6 +413,7 @@ class MissionAssessment:
     eta: float | None = None
     trajectory_state: str | None = None
     trajectory_tone: str = ""
+    trajectory_movement: str = "unknown"
     confidence: MissionConfidence | None = None
     current_milestone: MissionMilestone | None = None
     milestones: tuple[MissionMilestone, ...] = ()
@@ -440,6 +441,8 @@ class MissionAssessment:
             raise ValueError("unsupported mission trajectory")
         if self.trajectory_tone not in ("", "green", "amber", "red", "none"):
             raise ValueError("unsupported trajectory presentation tone")
+        if self.trajectory_movement not in TRAJECTORY_MOVEMENT:
+            raise ValueError("unsupported trajectory movement")
 
     @classmethod
     def unavailable(cls, request: MissionAssessmentRequest, reason: str,

@@ -59,7 +59,7 @@ from foundry.core.flight_deck import Tile, compose_tile
 from foundry.core.metrics import MetricRegistry, MetricRequest
 from foundry.core.mission_assessment import (
     MissionAssessment, MissionAssessmentRegistry, MissionAssessmentRequest,
-    MissionDefinition,
+    MissionDefinition, MissionMilestone,
 )
 from foundry.core.mission_console import (
     DisclosureSectionView,
@@ -1687,14 +1687,17 @@ def _polygon_area(points: tuple[tuple[float, float], ...]) -> float:
     )) / 2.0
 
 
-def _mission_trajectory_geometry(assessment: MissionAssessment) -> dict:
+def _mission_trajectory_geometry(
+    assessment: MissionAssessment,
+    milestones: tuple[MissionMilestone, ...] | None = None,
+) -> dict:
     """Map immutable assessment values to honest two-dimensional geometry."""
     current_value = (
         assessment.current_value.value
         if assessment.current_value and assessment.current_value.value is not None
         else 0.0
     )
-    milestones = assessment.milestones
+    milestones = assessment.milestones if milestones is None else milestones
     direction = (
         assessment.current_milestone.destination_direction
         if assessment.current_milestone is not None else
@@ -1801,7 +1804,7 @@ def _mission_trajectory_geometry(assessment: MissionAssessment) -> dict:
         "current_point": point_for(current_value),
         "phase_points": tuple(
             (milestone, point_for(milestone.target_value))
-            for milestone in sorted(milestones, key=lambda item: item.order)
+            for milestone in milestones
         ),
     }
 
@@ -1823,7 +1826,10 @@ def _milestone_range_text(milestone) -> str:
     )
 
 
-def _mission_trajectory_svg(assessment: MissionAssessment) -> str:
+def _mission_trajectory_svg(
+    assessment: MissionAssessment,
+    milestones: tuple[MissionMilestone, ...] | None = None,
+) -> str:
     if assessment.applicability.trajectory == "not_applicable":
         return ""
     if (
@@ -1833,7 +1839,8 @@ def _mission_trajectory_svg(assessment: MissionAssessment) -> str:
         return (
             '<p class="empty">Trajectory unavailable. '
             'Trajectory history is not available for this mission.</p>')
-    geometry = _mission_trajectory_geometry(assessment)
+    milestones = assessment.milestones if milestones is None else milestones
+    geometry = _mission_trajectory_geometry(assessment, milestones)
     if not geometry["actual_path"] and not geometry["forecast_path"]:
         return '<p class="empty">Trajectory unavailable.</p>'
 
@@ -1864,7 +1871,7 @@ def _mission_trajectory_svg(assessment: MissionAssessment) -> str:
         f'aria-hidden="true"/>' if geometry["forecast_path"] else "")
 
     future_milestones = [
-        milestone for milestone in assessment.milestones
+        milestone for milestone in milestones
         if (
             milestone.target_value > (current_value or 0.0)
             if milestone.destination_direction == "higher_is_better"
@@ -1894,12 +1901,12 @@ def _mission_trajectory_svg(assessment: MissionAssessment) -> str:
         detail_y = label_y + 13.0
         anchor = (
             "end"
-            if milestone.order in (0, len(assessment.milestones) - 1)
+            if milestone.order in (0, len(milestones) - 1)
             else "middle"
         )
         label_x = (
             x - 24.0
-            if milestone.order == len(assessment.milestones) - 1 else
+            if milestone.order == len(milestones) - 1 else
             x - 4.0 if anchor == "end" else x
         )
         context = "Current milestone. " if milestone.is_current else ""
@@ -2259,8 +2266,7 @@ def _render_disclosure_section(view: DisclosureSectionView) -> str:
     lines = "".join(f"<li>{html.escape(line)}</li>" for line in view.lines)
     list_html = f"<ul>{recommendations}{lines}</ul>" \
         if recommendations or lines else ""
-    open_attribute = " open" if view.open_by_default else ""
-    return f"""<details id="{html.escape(view.id)}"{open_attribute}>
+    return f"""<details id="{html.escape(view.id)}">
       <summary>{html.escape(view.title.upper())}</summary>
       <div class="disclosure-content">{telemetry}{list_html}</div>
     </details>"""
@@ -2284,7 +2290,8 @@ def _render_mission_console(
     renderers = {
         "mission-hero": lambda: _render_console_hero(
             view.hero,
-            TrustedHtml(_mission_trajectory_svg(assessment)),
+            TrustedHtml(_mission_trajectory_svg(
+                assessment, view.hero.milestones)),
             return_link_html,
             as_of,
         ),

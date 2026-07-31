@@ -33,10 +33,12 @@ from foundry.finance.pension_evidence import (
 )
 from foundry.finance.pension_metrics import FinancePensionMetricProvider
 
+PENSION_FIXTURE_AS_OF = 1_785_170_000.0
+
 
 def _seed(tmp_path):
     log = EventLog(tmp_path / "events.jsonl")
-    household = build(log)
+    household = build(log, as_of=PENSION_FIXTURE_AS_OF)
     return log, household
 
 
@@ -60,7 +62,7 @@ def _assessment(log, household, *, mission_id=None, as_of=None):
     else:
         mission = core.missions[mission_id]
     if as_of is None:
-        as_of = max(event["ts"] for event in log.events())
+        as_of = household.as_of
     return assessor.assess(MissionAssessmentRequest(
         mission.id,
         POLICY_ID,
@@ -68,6 +70,27 @@ def _assessment(log, household, *, mission_id=None, as_of=None):
             "party", household.household_id),
         as_of,
     ))
+
+
+def test_pension_fixture_is_stable_across_calendar_boundaries(
+        monkeypatch, tmp_path):
+    snapshots = []
+    for index, frozen_clock in enumerate((1_609_459_200.0, 2_051_222_400.0)):
+        monkeypatch.setattr(
+            "foundry.eventlog.time.time", lambda: frozen_clock)
+        log, household = _seed(tmp_path / str(index))
+        assessment = _assessment(log, household)
+        snapshots.append((
+            assessment.as_of,
+            assessment.trajectory_state,
+            assessment.trajectory_movement,
+            assessment.eta,
+            assessment.current_value.value,
+            tuple((point.at, point.base) for point in assessment.forecast),
+            tuple((item.id, item.estimated_at) for item in assessment.milestones),
+        ))
+
+    assert snapshots[0] == snapshots[1]
 
 
 def _new_assumptions(log, original, **changes):

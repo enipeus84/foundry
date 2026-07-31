@@ -492,6 +492,7 @@ def test_full_financial_independence_assessment_is_read_only(tmp_path):
         "finance.net_worth", result.scope, as_of)).value
     assert result.current_milestone.label == "Building Capital"
     assert result.trajectory_state in ("Accelerated", "Nominal", "Divergent")
+    assert result.trajectory_movement == "advancing"
     assert result.flight_status_label == result.trajectory_state
     assert len(result.milestones) == 4
     assert result.milestones[2].completes_mission

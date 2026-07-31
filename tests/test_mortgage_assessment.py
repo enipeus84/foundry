@@ -225,6 +225,7 @@ def test_full_assessment_is_lower_is_better_and_has_complete_output(tmp_path):
         for item in result.milestones)
     assert result.eta is not None
     assert result.trajectory_state == "Accelerated"
+    assert result.trajectory_movement == "advancing"
     assert result.forecast
     assert result.delta_v.days > 0
     assert result.delta_v.direction == "accelerated"

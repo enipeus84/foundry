@@ -680,6 +680,7 @@ def _render_shape_neutral_mission(
     applicability,
     telemetry_factory=None,
     trajectory_state="Nominal",
+    trajectory_movement="unknown",
 ):
     """Render one Core-only mock provider through the generic detail route."""
     from foundry.core.entities import declare_party
@@ -724,6 +725,7 @@ def _render_shape_neutral_mission(
                 ),
                 trajectory_state=trajectory_state,
                 trajectory_tone="green",
+                trajectory_movement=trajectory_movement,
                 current_milestone=milestone,
                 milestones=(milestone,),
                 eta=(
@@ -841,11 +843,11 @@ def test_rfc010_phase_2_route_goldens_are_pinned_for_all_four_missions(
         "financial-resilience":
             "c82de9f26f914e9bd358b0ed620ae698fa2eb754b3fe6a39370f8f3364a24be9",
         "financial-independence":
-            "164046d0d4847afab18a4ed010a20d868352ed9e5d78010cf0617e47885f61fa",
+            "0b818e93e043f86a56a00c83d224dddeacac390f42569507b7a19e02a75439e9",
         "pension-independence":
             "b683086d31525dfbd958a4ece3e84e6adaae9c3dcd1c7598bcdcc9e07cb45caf",
         "mortgage-freedom":
-            "aecfc1ded2f0c44dce710e4bbd8bd1d674cd1b2df41702b5ac7e6f6dbaef55bc",
+            "a49c9f45d10a9fcbe2cdbc949ab6f4a1d3fef86cd17e5307535dc4398b59e938",
     }
 
 
@@ -951,6 +953,35 @@ def test_all_finance_missions_use_five_ordered_console_regions(
     assert re.search(r"<details\b[^>]*\sopen(?:\s|>)", disclosure) is None
     assert rendered.count('data-console-region="next-burn"') == 1
     assert rendered.count('class="next-burn-panel"') == 1
+
+
+@pytest.mark.parametrize("slug,expected", (
+    ("financial-resilience", "UNKNOWN"),
+    ("financial-independence", "ADVANCING"),
+    ("pension-independence", "UNKNOWN"),
+    ("mortgage-freedom", "ADVANCING"),
+))
+def test_provider_declared_movement_reaches_shared_renderer(
+        tmp_path, slug, expected):
+    _seed_financial_independence(tmp_path)
+
+    rendered = client().get(f"/missions/{slug}").text
+
+    assert f"Movement {expected}" in rendered
+
+
+def test_receding_movement_renders_without_mission_identity_branch(
+        monkeypatch, tmp_path):
+    from foundry.core.mission_assessment import InstrumentApplicability
+
+    rendered = _render_shape_neutral_mission(
+        monkeypatch,
+        tmp_path,
+        InstrumentApplicability(),
+        trajectory_movement="receding",
+    )
+
+    assert "Movement RECEDING" in rendered
 
 
 def test_financial_resilience_is_the_honest_absence_path(tmp_path):
@@ -1521,6 +1552,32 @@ def test_milestone_policy_presentation_comes_from_assessment_contract():
         "450_000", "750_000", "1_500_000",
     ):
         assert forbidden not in source
+
+
+def test_renderer_preserves_deliberately_supplied_milestone_order():
+    import inspect
+
+    from foundry.mission_control import (
+        _mission_trajectory_geometry,
+        _mission_trajectory_svg,
+    )
+
+    assessment = _synthetic_assessment(())
+    supplied = (
+        assessment.milestones[2],
+        assessment.milestones[0],
+        assessment.milestones[3],
+        assessment.milestones[1],
+    )
+
+    geometry = _mission_trajectory_geometry(assessment, supplied)
+    rendered = _mission_trajectory_svg(assessment, supplied)
+
+    assert tuple(item.id for item, _ in geometry["phase_points"]) == tuple(
+        item.id for item in supplied)
+    positions = [rendered.index(item.label.upper()) for item in supplied]
+    assert positions == sorted(positions)
+    assert "sorted(" not in inspect.getsource(_mission_trajectory_geometry)
 
 
 def test_current_position_uses_provider_presentation_metadata():

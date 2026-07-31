@@ -886,6 +886,7 @@ class MortgageFreedomAssessor:
             ),
             trajectory_state=trajectory_state,
             trajectory_tone=tone,
+            trajectory_movement=self._trajectory_movement(trajectory),
             confidence=confidence,
             current_milestone=current_milestone,
             milestones=milestones,
@@ -905,6 +906,18 @@ class MortgageFreedomAssessor:
                 "NOT A PROBABILITY"),
             forecast_resolution="month",
         )
+
+    @staticmethod
+    def _trajectory_movement(
+        points: tuple[TrajectoryPoint, ...],
+    ) -> str:
+        if len(points) < 2 or points[0].at >= points[-1].at:
+            return "unknown"
+        if points[-1].value < points[0].value:
+            return "advancing"
+        if points[-1].value > points[0].value:
+            return "receding"
+        return "holding"
 
     def _unavailable(
         self, request: MissionAssessmentRequest, reason: str

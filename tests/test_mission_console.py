@@ -1,6 +1,6 @@
 """RFC-010: the Mission Console Model is pure and domain-neutral."""
 
-from dataclasses import replace
+from dataclasses import fields, replace
 
 from foundry.core.metrics import MetricResult
 from foundry.core.mission_assessment import (
@@ -17,12 +17,18 @@ from foundry.core.mission_assessment import (
 )
 from foundry.core.mission_console import (
     DISCLOSURE_SLOT_ORDER,
+    DisclosureSectionView,
     MissionConsoleModel,
 )
 from foundry.core.scope import Subject
 
 
-def _assessment(*, essential_count=3, recommendation_status="available"):
+def _assessment(
+    *,
+    essential_count=3,
+    recommendation_status="available",
+    trajectory_movement="unknown",
+):
     scope = Subject("party", "subject-1")
     current = MetricResult(
         "domain.capacity", 42.0, "units", scope, 100.0,
@@ -74,6 +80,7 @@ def _assessment(*, essential_count=3, recommendation_status="available"):
         eta=200.0,
         trajectory_state="Nominal",
         trajectory_tone="green",
+        trajectory_movement=trajectory_movement,
         confidence=MissionConfidence("Provisional", "One input is stale."),
         current_milestone=milestone,
         milestones=(milestone,),
@@ -149,15 +156,10 @@ def test_disclosure_slot_order_and_provider_titles_are_preserved():
     assert view.disclosure[0].telemetry[0].label == "OPERATING CAPACITY"
 
 
-def test_disclosure_stays_collapsed_when_evidence_reports_a_conflict():
-    assessment = replace(
-        _assessment(),
-        limitations=("Critical source conflict remains visible.",),
-    )
-
-    view = MissionConsoleModel().build(_definition(), assessment)
-
-    assert all(not section.open_by_default for section in view.disclosure)
+def test_disclosure_view_has_no_dead_auto_open_state():
+    assert "open_by_default" not in {
+        field.name for field in fields(DisclosureSectionView)
+    }
 
 
 def test_primary_burn_hoists_limitations_and_provisional_confidence_basis():
@@ -177,3 +179,31 @@ def test_unknown_movement_is_a_legitimate_non_degrading_state():
     assert view.hero.trajectory.movement == "unknown"
     assert view.hero.trajectory.tone == "green"
     assert "unavailable" in view.hero.trajectory.evidence_note.lower()
+
+
+def test_provider_declared_receding_movement_reaches_the_model_verbatim():
+    view = MissionConsoleModel().build(
+        _definition(), _assessment(trajectory_movement="receding"))
+
+    assert view.hero.trajectory.movement == "receding"
+    assert view.analysis.trajectory.movement == "receding"
+
+
+def test_model_orders_milestones_before_the_renderer_boundary():
+    assessment = _assessment()
+    late = replace(
+        assessment.milestones[0], id="late", label="Late", order=9)
+    early = replace(
+        assessment.milestones[0], id="early", label="Early", order=1,
+        completes_mission=False,
+    )
+
+    view = MissionConsoleModel().build(
+        _definition(), replace(
+            assessment,
+            current_milestone=late,
+            milestones=(late, early),
+        ))
+
+    assert tuple(item.id for item in view.hero.milestones) == (
+        "early", "late")

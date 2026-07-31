@@ -416,6 +416,7 @@ def test_assessment_dimensions_are_independently_supplied():
         status="red", calculation_version="test-v1",
         trajectory_state="Accelerated",
         trajectory_tone="green",
+        trajectory_movement="receding",
         mission_margin=MissionMargin(
             1.0, -1.0, "mixed margin signals", "Low Margin"),
         confidence=MissionConfidence("Established", "verified evidence"),
@@ -423,8 +424,19 @@ def test_assessment_dimensions_are_independently_supplied():
 
     assert result.trajectory_state == "Accelerated"
     assert result.trajectory_tone == "green"
+    assert result.trajectory_movement == "receding"
     assert result.mission_margin.state == "Low Margin"
     assert result.confidence.state == "Established"
+
+
+def test_assessment_rejects_unknown_trajectory_movement_vocabulary():
+    with pytest.raises(ValueError, match="unsupported trajectory movement"):
+        MissionAssessment(
+            mission_id="mission-1", policy_id="alpha.mission.v1",
+            scope=Subject("party", "household-1"), as_of=1.0,
+            status="red", calculation_version="test-v1",
+            trajectory_movement="deteriorating",
+        )
 
 
 def test_milestone_direction_and_explicit_destination_are_domain_neutral():

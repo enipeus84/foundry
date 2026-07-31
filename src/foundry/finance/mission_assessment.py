@@ -388,6 +388,7 @@ class FinancialIndependenceAssessor:
             ),
             trajectory_state=trajectory_state,
             trajectory_tone=trajectory_tone,
+            trajectory_movement=self._trajectory_movement(trajectory),
             confidence=confidence,
             current_milestone=current_phase, milestones=phases,
             # Deprecated RFC-005 presentation fields, retained while
@@ -421,6 +422,18 @@ class FinancialIndependenceAssessor:
             if result.status in ("available", "stale") and result.value is not None:
                 points.append(TrajectoryPoint(at=at, value=result.value))
         return tuple(points)
+
+    @staticmethod
+    def _trajectory_movement(
+        points: tuple[TrajectoryPoint, ...],
+    ) -> str:
+        if len(points) < 2 or points[0].at >= points[-1].at:
+            return "unknown"
+        if points[-1].value > points[0].value:
+            return "advancing"
+        if points[-1].value < points[0].value:
+            return "receding"
+        return "holding"
 
     def _phase_assessments(
             self, current: float, forecast: tuple[ForecastPoint, ...],
