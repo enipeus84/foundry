@@ -56,6 +56,7 @@ from fastapi.staticfiles import StaticFiles
 
 from foundry import __version__
 from foundry import webauth
+from foundry.acquisition_web import router as acquisition_router
 from foundry.canon import Canon
 from foundry.core.entities import EntityProjection
 from foundry.core.evidence import EvidenceIndex
@@ -175,6 +176,7 @@ def _build_console() -> Console:
 
 app.state.console_factory = _build_console
 app.include_router(mission_control_router)
+app.include_router(acquisition_router)
 
 
 @app.middleware("http")
