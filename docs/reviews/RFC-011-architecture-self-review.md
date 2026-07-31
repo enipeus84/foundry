@@ -10,6 +10,13 @@ at 2026-07-31, after applying the five Governor amendments (GA1–GA5).
 the reasoning that cleared them, including one accepted residual and two
 watch items.
 
+**Closeout note (2026-07-31).** The Governor approved Revision 2 — including
+the three amendments this review produced — and ruled OQ1–OQ7 on their
+recorded recommendations. The architecture is frozen. The two watch items
+(W1: consumer-side `valid_at` discipline in a future Spec 000 amendment;
+W2: seam contract count) survive the freeze as watch items for the
+implementation Burns and any Revision 3, not as open questions.
+
 ---
 
 ## Challenge 1 — Does the new Core surface stay domain-neutral?

@@ -1,10 +1,17 @@
 # RFC-011 — Asset & Telemetry Acquisition Framework (architecture only, Revision 2)
 
-**Proposed — Revision 2, for Governor review.** Architecture-only burn: this
-branch contains documentation exclusively — no production source, tests,
-templates, connectors or runtime configuration are changed. Implementation
-authority is withheld until the Governor approves Revision 2 and rules on
-OQ1–OQ7.
+**Approved — architecture frozen. Ready for merge review.** Architecture-only
+burn: this branch contains documentation exclusively — no production source,
+tests, templates, connectors or runtime configuration are changed.
+
+The Governor approved Revision 2 on **2026-07-31**: the five Revision 2
+rulings are ratified, **OQ1–OQ7 are all resolved on their recorded
+recommendations** (Evidence Vault adopted; per-artefact Governor-gated
+redaction; Spec 001 Amendment 5 approved; vocabulary additions approved;
+children's accounts as reference implementation with PayPal RSUs second;
+rejected proposals stay in the log; prices are ordinary telemetry streams),
+and the contracts in this RFC are frozen: **implementation must not change a
+frozen contract without a new Governor ruling.**
 
 ## What this is
 
@@ -76,11 +83,13 @@ OQ3.
 - `docs/rfc-011-pr-description.md` — this document
 - `docs/rfcs/index.md` — index row
 
-## Governor decisions requested
+## Status and next step
 
-OQ1–OQ7 as listed in the RFC (Evidence Vault foremost), plus ratification
-of the five Revision 2 rulings. On approval, implementation authority
-proceeds to BOOSTER per the ten-phase sequence — Phase 1 is mock-only Core
-grammar including the Identity Index and temporal fields; the reference
-implementation remains the children's accounts, with PayPal RSUs as second
-validator.
+All Governor decisions are made: the five Revision 2 rulings are ratified
+and OQ1–OQ7 are closed (Phase 0 of the implementation sequence is
+complete). This PR is the architecture record awaiting **Governor merge
+review** — merging it unblocks the implementation Burns, which proceed to
+BOOSTER per the ten-phase sequence: Phase 1 is mock-only Core grammar
+including the Identity Index and temporal fields; the reference
+implementation is the children's accounts, with PayPal RSUs as second
+validator. No production code is changed by this PR.

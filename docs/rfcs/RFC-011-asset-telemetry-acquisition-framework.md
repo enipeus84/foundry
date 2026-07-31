@@ -1,17 +1,50 @@
 # RFC-011 — Asset & Telemetry Acquisition Framework
 
-**Status: Proposed — Revision 2, for Governor review.** Architecture-only: no
-production code, tests, templates, connectors or runtime configuration are
-changed by this RFC. Implementation proceeds as separate engineering Burns,
-sequenced below, and only after the Governor rulings this document requests.
+**Status: Approved — architecture frozen.** Approved by the Governor on
+2026-07-31 (Revision 2). Architecture-only: no production code, tests,
+templates, connectors or runtime configuration are changed by this RFC.
+Implementation proceeds as separate engineering Burns per the sequence
+below.
 
-Date: 2026-07-31 (Revision 1); Revision 2 same date.
+**The contracts in this document are frozen. Implementation must not change
+a frozen contract without a new Governor ruling.** Where implementation
+discovers that a frozen contract cannot be built as specified, it stops and
+returns to the Governor rather than adapting the contract in code (the
+RFC-010 freeze discipline, applied unchanged).
+
+Date: 2026-07-31 (Revision 1); Revision 2 and Governor approval same date.
 
 Author: EECOM (architecture Flight Controller role, Claude), commissioned by
 the RFC-011 Asset & Telemetry Acquisition Framework brief and the Revision 2
 architecture refinement brief.
 
 Base: `main` at `3375ed0` (RFC-010 Mission Console Phase 1 merged via PR #25).
+
+## Governor Approval — Architecture Freeze
+
+**Decision: GO — ARCHITECTURE APPROVED. Architecture-freeze date:
+2026-07-31.** Revision 2 is the frozen architecture.
+
+The five Revision 2 rulings are approved as recorded in this document's
+rulings section:
+
+1. **Identity Resolution is a permanent platform layer** (D13).
+2. **Container/Holding is represented through the Core `contains`
+   relationship** on the Asset Registry, with the derive-upward and
+   reconciliation rules (D14).
+3. **Refresh policy belongs to telemetry streams**; asset-level freshness is
+   a derived, per-lens fold (D15).
+4. **Temporal semantics are first-class contracts** — `valid_at`,
+   `observed_at`, `received_at`, `recorded_at`, and the bitemporal read rule
+   (D16).
+5. **The Accessibility lifecycle is a platform capability** — Core
+   vocabulary and lifecycle; domain profiles and transition events (D17).
+
+**The standing open questions OQ1–OQ7 are resolved as Governor-approved on
+their recorded recommendations** — see Open Questions, below, for each
+ruling. No open architecture questions remain; questions arising after this
+point are not open questions against RFC-011 and require a new Governor
+ruling.
 
 ## Revision 2
 
@@ -1311,9 +1344,20 @@ authentication. Assessed area by area:
    the events that assert transitions. Vesting remains Finance-owned but
    becomes the lifecycle's first instantiation (D17).
 
-## Open Questions — Governor rulings required
+## Open Questions — ruled and closed
 
-| # | Question | Recommendation |
+**All seven were approved by the Governor on 2026-07-31, each on its
+recorded recommendation.** In particular: the Evidence Vault is adopted
+(OQ1); redaction is Governor-gated per artefact in V1 (OQ2); Spec 001
+Amendment 5 (Grant, Vesting Event, valuation vocabularies, accessibility
+attributes) is approved and must land before the implementation Burns that
+need it (OQ3); the Core vocabulary and relation additions are approved
+(OQ4); the reference implementation is the children's accounts with PayPal
+RSUs as second validator (OQ5); rejected proposals remain in the log (OQ6);
+and market prices are ordinary telemetry streams on registrable instrument
+subjects (OQ7).
+
+| # | Question | Approved ruling (2026-07-31) |
 |---|---|---|
 | OQ1 | **Evidence Vault**: adopt the content-addressed vault with hash-committed payloads and the redaction-event mechanism? This nuances (without breaching) the append-only philosophy and is the only redaction path proposed | Adopt (D3) |
 | OQ2 | **Retention stance**: is redaction Governor-gated per artefact, or policy-scheduled (e.g. raw bills after N years)? Blast-radius and privacy argue for a policy; append-only instinct argues for per-artefact deliberation | Governor-gated per artefact in V1; revisit with volume |
@@ -1374,6 +1418,7 @@ Gated like RFC-010's migration plan, with mock-first neutrality proof:
 
 ```text
 Phase 0   Governor rulings OQ1–OQ7; freeze this contract
+          — COMPLETE 2026-07-31 (Governor approval, above)
 Phase 1   Core acquisition grammar: envelope events (temporal fields),
           proposal lifecycle, stream entity, registries, Identity Index +
           Resolution Service, containment relation — mock providers and
