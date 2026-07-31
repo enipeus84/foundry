@@ -30,9 +30,10 @@ incomplete in places.
 
 ## Current Release
 
-- **Current version:** `1.5.1` ([`pyproject.toml`](pyproject.toml)) — unchanged since RFC-004.2; RFC-005 shipped without a version bump (see [Documentation Status](#documentation-status))
-- **Latest merged RFC:** RFC-007 — Mortgage Freedom Mission ([PR #17](https://github.com/enipeus84/foundry/pull/17), merged 2026-07-29)
-- **Latest release/tag:** `v1.5-flight-deck` (git tag) — no tag exists for RFC-004.2 or RFC-005; see [`docs/rfcs/index.md`](docs/rfcs/index.md)
+- **Current version:** `1.7.0` ([`pyproject.toml`](pyproject.toml)) — bumped by RFC-009; RFC-005 remains the one RFC that shipped without a version bump (see [Documentation Status](#documentation-status))
+- **Latest merged RFC:** RFC-009 — Pension Independence Mission ([PR #22](https://github.com/enipeus84/foundry/pull/22), merged 2026-07-31)
+- **Current architecture burn:** RFC-010 — Mission Console UX Framework, **Proposed, architecture only, not implemented** ([`docs/rfcs/RFC-010-mission-console-ux-framework.md`](docs/rfcs/RFC-010-mission-console-ux-framework.md))
+- **Latest release/tag:** `v1.5-flight-deck` (git tag) — no tag exists for RFC-004.2 or later; see [`docs/rfcs/index.md`](docs/rfcs/index.md)
 
 ---
 
@@ -42,7 +43,7 @@ incomplete in places.
 |---|---|---|---|
 | **Core** | Stable substrate concepts since RFC-001; Party/Employer/Mission, Decision lifecycle, Metric Provider, Flight Deck and Mission Assessment contracts | Production substrate / Beta assessment contract | RFC-006 extends Core's public mission-assessment contracts without changing the event substrate — see [`docs/architecture.md`](docs/architecture.md) |
 | **Finance** | 8 registered metrics (net worth, liquidity runway, cash flow, asset allocation, employer concentration, debt ratio, cash available, accessible assets) | Beta | Full Financial Projection engine (§16), tax calculation, and AI-assisted analysis remain explicitly out of scope — see [`docs/rfc-002-implementation-report.md`](docs/rfc-002-implementation-report.md) |
-| **Mission Assessment** | Definition discovery, direction-aware milestones, closed trajectory/margin/confidence vocabularies and isolated provider dispatch; Financial Independence and Mortgage Freedom have providers | Beta | Financial Resilience and Pension Independence are definitions only; Children is outside the fixed hierarchy — see [`docs/rfc-006-mission-assessment-framework.md`](docs/rfc-006-mission-assessment-framework.md) and [`docs/rfc-007-mortgage-freedom-architecture.md`](docs/rfc-007-mortgage-freedom-architecture.md) |
+| **Mission Assessment** | Definition discovery, direction-aware milestones, closed trajectory/margin/confidence vocabularies, per-instrument applicability, telemetry display regions and isolated provider dispatch; **all four Finance missions have live providers** | Beta | Financial Resilience (RFC-008), Financial Independence (RFC-005), Pension Independence (RFC-009) and Mortgage Freedom (RFC-007) are all live; Children remains outside the fixed hierarchy. Console information architecture is the subject of RFC-010 — see [`docs/rfc-006-mission-assessment-framework.md`](docs/rfc-006-mission-assessment-framework.md) |
 | **Flight Deck** | Full homepage + generic authenticated `/missions/{slug}` route | Production (surface) | No authored `/missions` index or event-inspector page yet — see [`docs/design/design-constitution.md`](docs/design/design-constitution.md), [`docs/rfc-004-visual-review.md`](docs/rfc-004-visual-review.md) |
 | **Authentication** | Google sign-in via Supabase; stateless HMAC-signed cookies; fails closed | Beta | Single allowed email only — no multi-user, roles, or household sharing — see [`README.md` § Authentication](README.md#authentication) |
 | **Event sourcing** | Append-only, hash-chained JSONL; sole source of truth | Production | Truncation blindness and single-writer assumption are documented, accepted limitations |
@@ -52,11 +53,14 @@ incomplete in places.
 
 ## Engineering Status
 
-- **RFC process:** 7 major RFCs plus sub-RFCs (003.3, 004.1, 004.2, 004A, 004B) shipped via branch-per-RFC + PR. Depth is inconsistent — RFC-001/003/003.3 have no dedicated implementation report (see [`docs/rfcs/index.md`](docs/rfcs/index.md)).
+- **RFC process:** 9 major RFCs plus sub-RFCs (003.3, 004.1, 004.2, 004A, 004B) shipped via branch-per-RFC + PR. Depth is inconsistent — RFC-001/003/003.3 have no dedicated implementation report (see [`docs/rfcs/index.md`](docs/rfcs/index.md)).
 - **Documentation:** reorganized into a cross-referenced tree (see [Documentation Status](#documentation-status)).
-- **Testing:** RFC-007 baseline was 393 collected / 393 passing and the
-  implementation finishes at 453 collected / 453 passing in the declared
-  `.[dev,web]` environment.
+- **Testing:** RFC-009 reports 592 passing in the declared `.[dev,web]`
+  environment (RFC-008 finished at 529; RFC-007 at 453). **Deterministic
+  fixture clocks are now mandatory:** RFC-009's first post-merge `main` run
+  failed on a wall-clock-dependent fixture and was repaired by
+  [PR #23](https://github.com/enipeus84/foundry/pull/23). RFC-010 encodes this
+  as a standing testing requirement.
 - **Architecture Gate:** implemented (`adversarial-architect`); active.
 - **Security Gate:** implemented (`security-reviewer`); active.
 - **CI/CD:** GitHub Actions ([`.github/workflows/test.yml`](.github/workflows/test.yml)) runs the full suite on every push to `main` and every PR, across Python 3.10–3.13. Deployment to Render (`render.yaml`) is manual, not automated CD.
@@ -111,14 +115,20 @@ Highest-priority items from the RFC technical-debt registers and
 
 ## Next Recommended RFC
 
-**RFC-008 — Financial Resilience Mission. Architecture approved; not
-implemented.** The governed architecture is
-[`docs/rfc-008-financial-resilience-architecture.md`](docs/rfc-008-financial-resilience-architecture.md),
-and it is the canonical document for that implementation. No RFC-008 source
-code, tests or framework changes exist in the repository.
+**RFC-010 — Mission Console UX Framework. Architecture proposed; not
+approved; not implemented.** The governed architecture is
+[`docs/rfcs/RFC-010-mission-console-ux-framework.md`](docs/rfcs/RFC-010-mission-console-ux-framework.md),
+with its adversarial self-review at
+[`docs/reviews/RFC-010-architecture-self-review.md`](docs/reviews/RFC-010-architecture-self-review.md).
+No RFC-010 source code, tests, CSS or framework changes exist in the
+repository. It defines the universal five-region Mission Console and proposes
+three additive Core contract amendments; implementation requires Governor
+architecture approval first.
 
-Nothing else is authorised as an implicit next Burn. Pension Independence,
-Children, connectors and optimisation still require a maintainer decision.
+All four Finance missions now have live assessment providers, so no further
+mission implementation is outstanding. Children, connectors and optimisation
+still require a maintainer decision and none is authorised as an implicit next
+Burn.
 
 ---
 
@@ -155,7 +165,10 @@ comes next.
 | **RFC-004 — Flight Deck** | 2026-07-20 to 2026-07-21 | [PR #7](https://github.com/enipeus84/foundry/pull/7), tag `v1.5-flight-deck`; refined by RFC-004.2, [PR #8](https://github.com/enipeus84/foundry/pull/8) |
 | **RFC-005 — Mission Assessment** | 2026-07-27 | [PR #9](https://github.com/enipeus84/foundry/pull/9) — no corresponding tag or CHANGELOG entry (tracked as the open gap above) |
 | **RFC-006 — Mission Assessment Framework** | 2026-07-29 | Merged via [PR #16](https://github.com/enipeus84/foundry/pull/16) |
-| **RFC-007 — Mortgage Freedom Mission** | 2026-07-29 | Merged via [PR #17](https://github.com/enipeus84/foundry/pull/17) |
+| **RFC-007 — Mortgage Freedom Mission** | 2026-07-29 | Merged via [PR #17](https://github.com/enipeus84/foundry/pull/17); property-equity amendment via [PR #19](https://github.com/enipeus84/foundry/pull/19) |
+| **RFC-008 — Financial Resilience Mission** | 2026-07-29 | Merged via [PR #18](https://github.com/enipeus84/foundry/pull/18) — adds per-instrument applicability |
+| **RFC-009 — Pension Independence Mission** | 2026-07-31 | Merged via [PR #22](https://github.com/enipeus84/foundry/pull/22); shared Mission Detail extraction via [PR #21](https://github.com/enipeus84/foundry/pull/21); post-merge fixture hotfix [PR #23](https://github.com/enipeus84/foundry/pull/23) |
+| **RFC-010 — Mission Console UX Framework** | 2026-07-31 | Architecture proposed; not approved, not implemented |
 | **Engineering Review Gates** | 2026-07-27 | [PR #10](https://github.com/enipeus84/foundry/pull/10), [PR #11](https://github.com/enipeus84/foundry/pull/11) — `docs/engineering/review-gates.md` |
 | **Documentation Architecture** | 2026-07-27 | [PR #12](https://github.com/enipeus84/foundry/pull/12) — docs index, RFC index, versioned Design Constitution |
 | **PROJECT_STATUS.md** | 2026-07-27 | This document — the first executive-dashboard artifact, opened as its own PR |
@@ -164,6 +177,10 @@ comes next.
 
 ## Last Updated
 
-- **Date:** 2026-07-29
+- **Date:** 2026-07-31
 - **Branch:** `main`
-- **Merged RFC head:** `3b2d414f3247c050d3d740b22e538ee014635603`
+- **Merged RFC head:** `e2aa480` (RFC-009 merged via PR #22; fixture hotfix PR #23)
+- **Updated by:** RFC-010 architecture burn, which found this document
+  materially stale (it still described RFC-008 as unimplemented and the version
+  as `1.5.1`). Only project-state facts were corrected; historical material is
+  unchanged.
