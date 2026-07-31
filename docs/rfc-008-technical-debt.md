@@ -54,11 +54,18 @@ through a documented compatibility release.
 - Synthesised telemetry ids and the four assumption-bound resilience metrics
   do not have authored public drill-down pages. Direct raw metric routes remain
   an internal contract-inspection surface and can expose raw identifiers.
-- Per-instrument applicability reason strings and a `DeltaV.direction`
-  extension remain deferred.
+- Per-instrument applicability reason strings remain deferred. RFC-010 closes
+  G5's need for value movement through the separate domain-neutral
+  `trajectory_movement` axis; `DeltaV.direction` remains deliberately
+  schedule-specific rather than being widened.
 
 ## Performance, history and compatibility
 
+- **Resolved by RFC-010 SAFE remediation:** Financial Independence and
+  Mortgage Freedom classify advancing/holding/receding from observed values
+  they already fold, while Resilience and Pension preserve `unknown` without
+  negative implication. This closes G5 without fabricating Resilience history
+  or changing its still-deferred `movement_lookback_days` policy.
 - **Resolved by RFC-009 D13:** the Mission Detail trajectory tile no longer
   suppresses a provider's computed `trajectory_state` merely because observed
   trajectory history is unavailable. The history SVG and its explanatory
@@ -89,8 +96,10 @@ through a documented compatibility release.
 - Holdings freshness relies on dated contributing transactions or valuations.
   A richer undated-evidence disposition should be defined before a new holding
   type can contribute value without one of those dated records.
-- RFC-005 aliases and the RFC-006 legacy scalar adapter retain their existing
-  removal conditions and gain no new consumer.
+- RFC-005 phase aliases and the RFC-006 legacy scalar adapter were subsequently
+  retired by RFC-010 Phase 2 after all supported Finance missions migrated to
+  the Mission Console Model. Remaining compatibility fields retain their
+  separately governed lifecycle.
 - Two pre-existing FI early-unavailable construction paths (missing accessible
   assets and reporting-currency mismatch) still inherit all-applicable
   metadata, so registry validation replaces their specific reason and

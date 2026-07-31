@@ -57,10 +57,17 @@ from foundry.core.entities import EntityProjection, Mission
 from foundry.core.evidence import EvidenceIndex
 from foundry.core.flight_deck import Tile, compose_tile
 from foundry.core.metrics import MetricRegistry, MetricRequest
-from foundry.core.mission_evaluation import get_mission_status
 from foundry.core.mission_assessment import (
     MissionAssessment, MissionAssessmentRegistry, MissionAssessmentRequest,
-    MissionDefinition,
+    MissionDefinition, MissionMilestone,
+)
+from foundry.core.mission_console import (
+    DisclosureSectionView,
+    FlightAnalysisView as ConsoleFlightAnalysisView,
+    MissionConsoleModel,
+    MissionConsoleView,
+    MissionHeroView as ConsoleMissionHeroView,
+    NextBurnView,
 )
 from foundry.core.scope import Subject
 from foundry.eventlog import EventLog
@@ -71,6 +78,10 @@ MONTH_NAMES = (
     "January", "February", "March", "April", "May", "June",
     "July", "August", "September", "October", "November", "December",
 )
+
+
+class TrustedHtml(str):
+    """Markup constructed only inside Mission Control."""
 
 
 @dataclass
@@ -187,20 +198,6 @@ def _active_missions(console: Console) -> list[Mission]:
     return [m for m in console.entities.missions.values() if m.status == "active"]
 
 
-def _legacy_scalar_mission_status(
-    mission: Mission,
-    console: Console,
-    scope: Subject,
-    as_of: float,
-):
-    """Deprecated migration adapter for Missions without assessment policy.
-
-    New mission definitions and routes must use MissionAssessmentRegistry.
-    """
-    return get_mission_status(
-        mission.id, console.entities, console.registry, scope, as_of)
-
-
 _CURRENCY_SYMBOL = {"GBP": "£", "USD": "$", "EUR": "€"}
 
 
@@ -214,6 +211,8 @@ def _format_value(value: float | None, unit: str | None, kind: str) -> str:
         return f"{value * 100:.1f}%"
     if kind == "months":
         return f"{value:.1f} mo"
+    if kind == "number" and unit:
+        return f"{value:,.2f} {unit}"
     return f"{value:,.2f}"
 
 
@@ -659,51 +658,11 @@ _SHELL = """<!doctype html>
   .mission-detail-hero .mission-definition {{
     color: #d2d9e1; font-size: 15px; line-height: 1.62;
   }}
-  .mission-hero-meta {{
-    display: grid; grid-template-columns: repeat(2, minmax(0,1fr));
-    gap: 22px 34px; margin-top: 32px;
-  }}
-  .mission-hero-meta .margin-stat {{ grid-column: 1 / -1; }}
-  .mission-hero-meta .k, .flight-analysis-schedule .k,
-  .analysis-rail .k, .telemetry-grid .k {{
-    font-size: 9px; font-weight: 650; letter-spacing: .2em; color: var(--faint);
-  }}
-  .mission-hero-meta .v {{
-    margin-top: 4px; font-size: 18px; font-weight: 580; letter-spacing: .06em;
-  }}
-  .mission-hero-meta .v.green {{ color: var(--green); }}
-  .mission-hero-meta .v.amber {{ color: var(--amber); }}
-  .mission-hero-meta .v.red {{ color: var(--red); }}
-  .mission-hero-meta .v.none {{ color: var(--muted); }}
-  .mission-hero-meta .sub {{
-    margin-top: 4px; color: #9aa8b6; font-size: 10px; letter-spacing: .04em;
-    max-width: 34ch; overflow-wrap: anywhere;
-  }}
-  .flight-analysis-schedule {{
-    display: grid; grid-template-columns: repeat(4, minmax(0,1fr));
-    gap: 1px; padding: 1px; margin-bottom: 14px;
-    background: var(--line); border: 1px solid var(--line);
-  }}
-  .flight-analysis-schedule .time-point {{
-    min-width: 0; padding: 20px 26px; background: rgba(9,14,20,.72);
-  }}
-  .flight-analysis-schedule .v {{
-    margin-top: 8px; color: var(--text);
-    font-size: clamp(18px, 2.1vw, 27px); font-weight: 540;
-    letter-spacing: .04em; overflow-wrap: anywhere;
-  }}
-  .flight-analysis-schedule .sub {{
-    margin-top: 7px; color: var(--green); font-size: 11px;
-    letter-spacing: .04em; line-height: 1.4; overflow-wrap: anywhere;
-  }}
   .hero-trajectory {{
     position: absolute; z-index: 2;
     inset: 62px 20px 104px clamp(470px, 39vw, 520px);
     width: auto; height: auto;
     overflow: visible;
-  }}
-  .mission-detail-hero.reference-schedule-relocated .hero-trajectory {{
-    inset: 48px 12px 34px clamp(470px, 39vw, 520px);
   }}
   .hero-trajectory .actual-path {{
     fill: none; stroke: #edf2f7; stroke-width: 2.1;
@@ -765,58 +724,120 @@ _SHELL = """<!doctype html>
   .hero-trajectory .milestone-2 {{ color: #7692aa; }}
   .hero-trajectory .milestone-3 {{ color: #79a27e; }}
 
-  .analysis-rail {{
-    display: grid; grid-template-columns: .8fr .8fr 1.7fr .8fr;
-    border: 1px solid var(--line); background: rgba(9,14,20,.72);
-  }}
-  .analysis-rail .instrument {{ min-width: 0; padding: 24px 26px; }}
-  .analysis-rail .instrument + .instrument {{ border-left: 1px solid var(--line); }}
-  .analysis-rail .v {{
-    margin-top: 8px; font-size: clamp(18px, 2.1vw, 27px);
-    font-weight: 540; letter-spacing: .035em;
-  }}
-  .analysis-rail .recommendation-action .v {{
-    font-size: 16px; line-height: 1.45; letter-spacing: 0;
-  }}
-  .analysis-rail .recommendation-action .sub {{
-    color: var(--text); font-size: 14px; font-variant-numeric: tabular-nums;
-  }}
-  .analysis-rail .sub {{ margin-top: 7px; color: var(--muted); font-size: 11px; }}
-  .analysis-rail .green {{ color: var(--green); }}
-  .analysis-rail .amber {{ color: var(--amber); }}
-  .analysis-rail .red {{ color: var(--red); }}
-
-  details.mission-drilldown {{
-    margin-top: 30px; border-block: 1px solid var(--line);
-  }}
-  details.mission-drilldown > summary {{
-    cursor: pointer; list-style: none; padding: 18px 2px;
-    color: var(--muted); font-size: 9px; font-weight: 650; letter-spacing: .2em;
-  }}
-  details.mission-drilldown > summary::-webkit-details-marker {{ display: none; }}
-  details.mission-drilldown > summary::after {{
-    content: "+"; float: right; color: var(--faint); font-size: 15px; line-height: .8;
-  }}
-  details.mission-drilldown[open] > summary::after {{ content: "−"; }}
-  .mission-drilldown-content {{ padding: 8px 0 26px; }}
   .telemetry-grid {{
     display: grid; grid-template-columns: repeat(3, minmax(0,1fr));
     gap: 1px; background: var(--line); border: 1px solid var(--line);
   }}
   .telemetry-grid .telemetry {{ background: var(--surface); padding: 24px; }}
+  .telemetry-grid .k {{
+    font-size: 9px; font-weight: 650; letter-spacing: .2em; color: var(--faint);
+  }}
   .telemetry-grid .value {{ margin-top: 8px; font-size: 26px; }}
   .telemetry-grid .sub {{ margin-top: 7px; color: var(--faint); font-size: 10px; }}
-  .mission-analysis-group {{
-    display: grid; gap: 10px; margin-top: 24px;
+  /* -------------------------------- RFC-010 Mission Console primitives. */
+  .mission-console-hero .hero-content > * {{ max-width: 430px; }}
+  .console-position {{
+    display: grid; grid-template-columns: repeat(2, minmax(0,1fr));
+    gap: 18px 28px; margin-top: 28px;
   }}
-  .mission-analysis-group:first-of-type {{ margin-top: 0; }}
-  .mission-analysis-group-heading {{
-    margin: 0; color: var(--faint); font-size: 9px; font-weight: 650;
-    letter-spacing: .2em; line-height: 1.4;
+  .console-instrument .k, .console-rail .k, .next-burn-panel .k {{
+    font-size: 9px; font-weight: 650; letter-spacing: .2em; color: var(--faint);
   }}
-  .assessment-notes {{ margin-top: 30px; border-top: 1px solid var(--line); padding-top: 22px; }}
-  .assessment-notes ul {{
-    margin: 0 0 0 18px; color: var(--faint); font-size: 12px; line-height: 1.8;
+  .console-instrument .v {{
+    margin-top: 5px; font-size: 18px; font-weight: 580; letter-spacing: .04em;
+  }}
+  .console-instrument .sub {{
+    margin-top: 4px; color: var(--muted); font-size: 11px; line-height: 1.55;
+  }}
+  .console-instrument.wide {{ grid-column: 1 / -1; }}
+  .console-burn-preview {{
+    grid-column: 1 / -1; margin-top: 4px; padding: 16px 18px;
+    border-left: 2px solid var(--green); background: rgba(9,14,20,.64);
+  }}
+  .console-burn-preview .v {{ font-size: 14px; line-height: 1.45; }}
+  .console-trajectory-panel {{
+    display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr);
+    gap: 1px; border: 1px solid var(--line); background: var(--line);
+  }}
+  .console-trajectory-panel .endpoint {{
+    min-width: 0; padding: 28px; background: rgba(9,14,20,.82);
+  }}
+  .console-trajectory-panel .endpoint .label {{
+    color: var(--faint); font-size: 9px; font-weight: 650; letter-spacing: .2em;
+  }}
+  .console-trajectory-panel .endpoint .value {{
+    margin-top: 9px; font-size: clamp(24px,3vw,38px); font-weight: 530;
+  }}
+  .console-trajectory-panel .trajectory-readout {{
+    min-width: 0; grid-column: 1 / -1; padding: 24px 28px; background: var(--surface);
+    display: grid; grid-template-columns: 1fr auto; gap: 12px 28px;
+    border-top: 1px solid var(--line);
+  }}
+  .trajectory-readout .state {{
+    font-size: clamp(28px,4vw,48px); font-weight: 560; letter-spacing: .06em;
+  }}
+  .trajectory-readout .state.green {{ color: var(--green); }}
+  .trajectory-readout .state.amber {{ color: var(--amber); }}
+  .trajectory-readout .state.red {{ color: var(--red); }}
+  .trajectory-readout .note {{
+    grid-column: 1 / -1; color: var(--muted); font-size: 13px; line-height: 1.55;
+  }}
+  .console-rail {{
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(220px,1fr));
+    margin-top: 14px; border: 1px solid var(--line); background: var(--line);
+    gap: 1px;
+  }}
+  .console-rail .instrument {{ padding: 22px 24px; background: var(--surface); }}
+  .console-rail .v {{ margin-top: 8px; font-size: 21px; }}
+  .console-rail .sub {{ margin-top: 6px; color: var(--muted); font-size: 12px; line-height: 1.5; }}
+  .essential-grid {{
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(220px,1fr));
+    gap: 1px; border: 1px solid var(--line); background: var(--line);
+  }}
+  .essential-grid .telemetry {{ padding: 28px; background: var(--surface); }}
+  .essential-grid .k {{
+    color: var(--faint); font-size: 9px; font-weight: 650; letter-spacing: .2em;
+  }}
+  .essential-grid .value {{ margin-top: 9px; font-size: clamp(25px,3vw,38px); }}
+  .essential-grid .sub {{ margin-top: 7px; color: var(--muted); font-size: 11px; line-height: 1.5; }}
+  .next-burn-panel {{
+    display: grid; grid-template-columns: minmax(210px,.7fr) minmax(0,1.3fr);
+    gap: 28px 50px; padding: 34px; border: 1px solid var(--line-strong);
+    background: linear-gradient(135deg, rgba(17,25,35,.96), rgba(9,14,20,.9));
+  }}
+  .next-burn-panel > * {{ min-width: 0; }}
+  .next-burn-panel .burn-title {{
+    margin-top: 8px; font-size: clamp(25px,3vw,38px); line-height: 1.12;
+  }}
+  .next-burn-panel .burn-summary {{ color: #d2d9e1; line-height: 1.65; }}
+  .next-burn-panel .burn-impact {{
+    margin-top: 14px; color: var(--green); font-size: 14px;
+  }}
+  .next-burn-panel .safety {{
+    grid-column: 1 / -1; padding-top: 20px; border-top: 1px solid var(--line);
+    color: var(--muted); font-size: 12px; line-height: 1.65;
+  }}
+  .console-disclosure details {{ border-top: 1px solid var(--line); }}
+  .console-disclosure details:last-child {{ border-bottom: 1px solid var(--line); }}
+  .console-disclosure summary {{
+    cursor: pointer; list-style: none; padding: 20px 2px;
+    color: var(--muted); font-size: 10px; font-weight: 650; letter-spacing: .16em;
+  }}
+  .console-disclosure summary::-webkit-details-marker {{ display: none; }}
+  .console-disclosure summary::after {{ content: "+"; float: right; font-size: 16px; }}
+  .console-disclosure details[open] summary::after {{ content: "−"; }}
+  .console-disclosure details:target {{ border-color: var(--line-strong); }}
+  .console-disclosure details:target:not([open]) > .disclosure-content {{ display: block; }}
+  .disclosure-content {{ padding: 4px 0 28px; }}
+  .console-disclosure .telemetry-grid {{
+    grid-template-columns: repeat(auto-fit, minmax(220px,1fr));
+  }}
+  .disclosure-content ul {{
+    margin-left: 18px; color: var(--muted); font-size: 12px; line-height: 1.8;
+  }}
+  @media print {{
+    .console-disclosure details > .disclosure-content {{ display: block !important; }}
+    .menu-btn, .drawer-shell {{ display: none !important; }}
   }}
 
   @media (max-width: 980px) {{
@@ -830,15 +851,6 @@ _SHELL = """<!doctype html>
     .hero-trajectory {{
       inset: 72px -18px 116px 390px; transform: none;
     }}
-    .mission-detail-hero.reference-schedule-relocated .hero-trajectory {{
-      inset: 56px -18px 42px 390px;
-    }}
-    .flight-analysis-schedule {{
-      grid-template-columns: repeat(2, minmax(0,1fr));
-    }}
-    .analysis-rail {{ grid-template-columns: repeat(2, minmax(0,1fr)); }}
-    .analysis-rail .instrument:nth-child(3) {{ border-left: 0; border-top: 1px solid var(--line); }}
-    .analysis-rail .instrument:nth-child(4) {{ border-top: 1px solid var(--line); }}
   }}
   @media (max-width: 620px) {{
     .menu-btn {{ top: 14px; left: 14px; }}
@@ -874,6 +886,19 @@ _SHELL = """<!doctype html>
     .scope-bar button:last-child {{ flex-basis: 100%; }}
     .mission-detail-hero {{ min-height: 940px; margin-bottom: 34px; }}
     .mission-empty-state {{ min-height: 380px; padding-top: 92px; }}
+    .console-position, .console-trajectory-panel, .next-burn-panel {{
+      grid-template-columns: 1fr;
+    }}
+    .console-trajectory-panel .trajectory-readout,
+    .console-instrument.wide, .console-burn-preview, .next-burn-panel .safety {{
+      grid-column: 1;
+    }}
+    .console-trajectory-panel .trajectory-readout {{
+      grid-template-columns: minmax(0,1fr);
+    }}
+    .trajectory-readout .mono, .trajectory-readout .note {{ grid-column: 1; }}
+    .console-rail, .essential-grid {{ grid-template-columns: 1fr; }}
+    .mission-console-hero .hero-trajectory {{ overflow: hidden; }}
     .mission-detail-hero img.earthrise {{
       object-position: 66% 72%; height: 58%; top: 42%;
       transform: scale(1.32); transform-origin: 66% 0;
@@ -893,10 +918,6 @@ _SHELL = """<!doctype html>
       font-size: clamp(42px, 12.5vw, 58px); max-width: 8ch;
     }}
     .mission-detail-hero .mission-definition {{ font-size: 14px; max-width: 38ch; }}
-    .mission-hero-meta {{ grid-template-columns: repeat(3, minmax(0,1fr)); gap: 16px; margin-top: 24px; }}
-    .mission-hero-meta .margin-stat {{ grid-column: auto; }}
-    .mission-hero-meta .v {{ font-size: 14px; letter-spacing: .03em; }}
-    .mission-hero-meta .sub {{ display: none; }}
     .hero-trajectory {{
       inset: 510px -30px 150px -58px; width: auto; height: auto;
       transform: none;
@@ -915,20 +936,6 @@ _SHELL = """<!doctype html>
     .hero-trajectory .milestone-label {{ font-size: 14px; stroke-width: 4px; }}
     .hero-trajectory .current-label,
     .hero-trajectory .current-detail {{ opacity: 0; }}
-    .mission-detail-hero.reference-schedule-relocated {{
-      min-height: 820px;
-    }}
-    .mission-detail-hero.reference-schedule-relocated .hero-trajectory {{
-      inset: 500px -30px 28px -58px;
-    }}
-    .flight-analysis-schedule {{ grid-template-columns: 1fr; }}
-    .flight-analysis-schedule .time-point {{ padding: 20px 22px; }}
-    .analysis-rail {{ grid-template-columns: 1fr; }}
-    .analysis-rail .instrument + .instrument {{
-      border-left: 0; border-top: 1px solid var(--line);
-    }}
-    .analysis-rail .instrument:nth-child(3),
-    .analysis-rail .instrument:nth-child(4) {{ border-top: 1px solid var(--line); }}
     .telemetry-grid {{ grid-template-columns: 1fr; }}
   }}
 </style>
@@ -1089,8 +1096,7 @@ def home(request: Request):
                 rag = _ASSESSMENT_TO_RAG.get(assessment.status)
                 result = assessment.current_value
             else:
-                rag, result = _legacy_scalar_mission_status(
-                    mission, console, scope, as_of)
+                rag, result = None, None
             evaluated.append((mission, rag, result))
 
     # -- FLIGHT PLAN: worst status wins across active Missions. When
@@ -1681,14 +1687,17 @@ def _polygon_area(points: tuple[tuple[float, float], ...]) -> float:
     )) / 2.0
 
 
-def _mission_trajectory_geometry(assessment: MissionAssessment) -> dict:
+def _mission_trajectory_geometry(
+    assessment: MissionAssessment,
+    milestones: tuple[MissionMilestone, ...] | None = None,
+) -> dict:
     """Map immutable assessment values to honest two-dimensional geometry."""
     current_value = (
         assessment.current_value.value
         if assessment.current_value and assessment.current_value.value is not None
         else 0.0
     )
-    milestones = assessment.milestones
+    milestones = assessment.milestones if milestones is None else milestones
     direction = (
         assessment.current_milestone.destination_direction
         if assessment.current_milestone is not None else
@@ -1795,7 +1804,7 @@ def _mission_trajectory_geometry(assessment: MissionAssessment) -> dict:
         "current_point": point_for(current_value),
         "phase_points": tuple(
             (milestone, point_for(milestone.target_value))
-            for milestone in sorted(milestones, key=lambda item: item.order)
+            for milestone in milestones
         ),
     }
 
@@ -1817,14 +1826,21 @@ def _milestone_range_text(milestone) -> str:
     )
 
 
-def _mission_trajectory_svg(assessment: MissionAssessment) -> str:
+def _mission_trajectory_svg(
+    assessment: MissionAssessment,
+    milestones: tuple[MissionMilestone, ...] | None = None,
+) -> str:
     if assessment.applicability.trajectory == "not_applicable":
         return ""
-    if assessment.applicability.trajectory == "unavailable":
+    if (
+        assessment.applicability.trajectory == "unavailable"
+        and assessment.applicability.forecast != "applicable"
+    ):
         return (
             '<p class="empty">Trajectory unavailable. '
             'Trajectory history is not available for this mission.</p>')
-    geometry = _mission_trajectory_geometry(assessment)
+    milestones = assessment.milestones if milestones is None else milestones
+    geometry = _mission_trajectory_geometry(assessment, milestones)
     if not geometry["actual_path"] and not geometry["forecast_path"]:
         return '<p class="empty">Trajectory unavailable.</p>'
 
@@ -1855,7 +1871,7 @@ def _mission_trajectory_svg(assessment: MissionAssessment) -> str:
         f'aria-hidden="true"/>' if geometry["forecast_path"] else "")
 
     future_milestones = [
-        milestone for milestone in assessment.milestones
+        milestone for milestone in milestones
         if (
             milestone.target_value > (current_value or 0.0)
             if milestone.destination_direction == "higher_is_better"
@@ -1885,12 +1901,12 @@ def _mission_trajectory_svg(assessment: MissionAssessment) -> str:
         detail_y = label_y + 13.0
         anchor = (
             "end"
-            if milestone.order in (0, len(assessment.milestones) - 1)
+            if milestone.order in (0, len(milestones) - 1)
             else "middle"
         )
         label_x = (
             x - 24.0
-            if milestone.order == len(assessment.milestones) - 1 else
+            if milestone.order == len(milestones) - 1 else
             x - 4.0 if anchor == "end" else x
         )
         context = "Current milestone. " if milestone.is_current else ""
@@ -1934,13 +1950,19 @@ def _mission_trajectory_svg(assessment: MissionAssessment) -> str:
             "corridor is drawn."),
         "unavailable": "Low and high sensitivity geometry is unavailable.",
     }[geometry["range_status"]]
+    history_description = (
+        "Observed history is unavailable; the current position is the "
+        "forecast origin."
+        if assessment.applicability.trajectory == "unavailable" else
+        "A solid historical path reaches the current position."
+    )
     return f"""<svg class="trajectory-svg hero-trajectory" viewBox="0 0 1000 600"
       role="group" aria-labelledby="trajectory-title trajectory-description"
       data-range-status="{geometry["range_status"]}"
       preserveAspectRatio="xMidYMid meet">
   <title id="trajectory-title">Mission trajectory</title>
-  <desc id="trajectory-description">A solid historical path reaches the current position
-  at {html.escape(_format_value(
+  <desc id="trajectory-description">{html.escape(history_description)} Current position is
+  {html.escape(_format_value(
       current_value, current_unit, current_format_kind))}. A dashed expected forecast
   continues along the mission arc. {html.escape(range_description)}</desc>
   <defs>
@@ -1976,126 +1998,6 @@ def _mission_trajectory_svg(assessment: MissionAssessment) -> str:
 </svg>"""
 
 
-@dataclass(frozen=True)
-class _MissionHeroView:
-    """Presentation contract for the shared mission hero.
-
-    Plain text fields are escaped by `_render_mission_hero`. Fields ending
-    `_html` are trusted, pre-rendered fragments constructed only by Mission
-    Control; provider- or evidence-derived text must be escaped before it can
-    enter one of those fragments.
-    """
-
-    title: str
-    definition: str
-    return_link_html: str
-    sun_phase: str
-    reference_schedule_class_html: str
-    trajectory_html: str
-    milestone_label: str
-    trajectory_tile_html: str
-    eta_tile_html: str
-    margin_value: str
-    margin_sub: str
-    accessible_summary_html: str
-    telemetry_html: str = ""
-
-
-@dataclass(frozen=True)
-class _FlightAnalysisView:
-    """Presentation contract for shared Mission Detail analysis.
-
-    Plain text fields are escaped by `_render_flight_analysis`. Fields ending
-    `_html` are trusted fragments constructed internally by Mission Control.
-    """
-
-    schedule_html: str
-    delta_instrument_html: str
-    milestone_completion: float
-    milestone_label: str
-    recommendation_action: str
-    recommendation_amount: str
-    recommendation_delta_instrument_html: str
-    telemetry_html: str = ""
-
-
-@dataclass(frozen=True)
-class _MissionDataView:
-    """Presentation contract for shared telemetry and provenance.
-
-    Fields ending `_html` are trusted fragments constructed by Mission
-    Control after escaping every provider- or evidence-derived text value.
-    """
-
-    telemetry_cards_html: tuple[str, ...]
-    recommendation_detail_html: str
-    note_items_html: str
-    input_reference_count: int
-    assumption_reference_count: int
-
-
-def _render_mission_hero(view: _MissionHeroView) -> str:
-    return f"""<section class="hero mission-detail-hero{view.reference_schedule_class_html} phase-{html.escape(view.sun_phase)}"
-  aria-labelledby="mission-title" aria-describedby="trajectory-summary">
-  <img class="earthrise" src="{_EARTHRISE_PATH}"
-    alt="Earth at sunrise from orbit, its curved horizon lit above the night side"
-    width="1774" height="887" fetchpriority="high" decoding="async">
-  <div class="scrim"></div>
-  {view.trajectory_html}
-  <div class="hero-content">
-    {view.return_link_html}
-    <p class="eyebrow">MISSION</p>
-    <h2 class="mission-title" id="mission-title">{html.escape(view.title)}</h2>
-    <p class="mission-definition">{html.escape(view.definition)}</p>
-    <div class="mission-hero-meta">
-      <div><p class="k">CURRENT MILESTONE</p><p class="v">{html.escape(view.milestone_label)}</p></div>
-      {view.trajectory_tile_html}
-      {view.eta_tile_html}{view.telemetry_html}
-      <div class="margin-stat"><p class="k">MISSION MARGIN</p>
-        <p class="v num">{html.escape(view.margin_value)}</p>
-        <p class="sub">{html.escape(view.margin_sub)}</p></div>
-    </div>
-  </div>
-  {view.accessible_summary_html}
-</section>"""
-
-
-def _render_flight_analysis(view: _FlightAnalysisView) -> str:
-    return f"""<section aria-labelledby="analysis-heading">
-  <h2 id="analysis-heading">FLIGHT ANALYSIS</h2>
-  {view.schedule_html}{view.telemetry_html}
-  <div class="analysis-rail">
-    {view.delta_instrument_html}
-    <div class="instrument"><p class="k">MILESTONE COMPLETION</p>
-      <p class="v num">{view.milestone_completion:.1f}%</p>
-      <p class="sub">{html.escape(view.milestone_label)}</p></div>
-    <div class="instrument recommendation-action"><p class="k">NEXT BURN</p>
-      <p class="v">{html.escape(view.recommendation_action)}</p>
-      <p class="sub">{html.escape(view.recommendation_amount)}</p></div>
-    {view.recommendation_delta_instrument_html}
-  </div>
-</section>"""
-
-
-def _render_mission_data(view: _MissionDataView) -> str:
-    return f"""<section>
-  <details class="mission-drilldown">
-    <summary>DEEPER MISSION DATA · TELEMETRY, ASSUMPTIONS &amp; PROVENANCE</summary>
-    <div class="mission-drilldown-content">
-      <h2>PRIMARY TELEMETRY</h2>
-      <div class="telemetry-grid">{"".join(view.telemetry_cards_html)}</div>
-      <div class="assessment-notes">
-        <h2>ASSUMPTIONS, LIMITATIONS &amp; PROVENANCE</h2>
-        <ul>{view.recommendation_detail_html}{view.note_items_html}
-          <li>{view.input_reference_count} metric input reference(s)</li>
-          <li>{view.assumption_reference_count} Assumption Set reference(s)</li>
-        </ul>
-      </div>
-    </div>
-  </details>
-</section>"""
-
-
 def _telemetry_presentation(item) -> tuple[str, str]:
     result = item.result
     value = (
@@ -2121,38 +2023,286 @@ def _telemetry_card_html(item) -> str:
     )
 
 
-def _hero_telemetry_html(items) -> str:
-    fragments = []
-    for item in items:
-        value, detail = _telemetry_presentation(item)
-        fragments.append(
-            f'<div><p class="k">{html.escape(item.label)}</p>'
-            f'<p class="v num">{html.escape(value)}</p>'
-            f'<p class="sub">{html.escape(detail)}</p></div>'
-        )
-    return "".join(fragments)
+def _console_margin_html(view: ConsoleMissionHeroView) -> str:
+    if view.margin_applicability == "not_applicable":
+        return ""
+    if view.margin is None:
+        return """<div class="console-instrument wide">
+          <p class="k">MISSION MARGIN</p><p class="v none">NOT AVAILABLE</p>
+          <p class="sub">A margin could not be established from current evidence.</p>
+        </div>"""
+    margin = view.margin
+    label = margin.label or "MISSION MARGIN"
+    value = (
+        _format_value(margin.value, margin.unit_or_currency, margin.format_kind)
+        if margin.value is not None else
+        margin.state or "NOT AVAILABLE"
+    )
+    tone = {
+        "High Margin": "green",
+        "Adequate Margin": "green",
+        "Low Margin": "amber",
+        "Negative Margin": "red",
+    }.get(margin.state or "", "none")
+    return f"""<div class="console-instrument wide">
+      <p class="k">{html.escape(label)}</p>
+      <p class="v num {tone}">{html.escape(value)}</p>
+      <p class="sub">{html.escape(
+          " · ".join(part for part in (
+              margin.state or "", margin.description) if part)
+      )}</p>
+    </div>"""
 
 
-def _analysis_telemetry_html(items) -> str:
-    groups: list[tuple[str, list]] = []
-    positions: dict[str, int] = {}
-    for item in items:
-        group = item.display_group
-        if group not in positions:
-            positions[group] = len(groups)
-            groups.append((group, []))
-        groups[positions[group]][1].append(item)
-    fragments = []
-    for group, group_items in groups:
-        heading = (
-            f'<h3 class="mission-analysis-group-heading">'
-            f'{html.escape(group)}</h3>' if group else "")
-        cards = "".join(_telemetry_card_html(item) for item in group_items)
-        fragments.append(
-            f'<div class="mission-analysis-group">{heading}'
-            f'<div class="telemetry-grid">{cards}</div></div>'
+def _trajectory_state_label(state: str | None) -> str:
+    """Human-readable presentation derived only from the Core state."""
+    return f"{state} trajectory" if state else "Trajectory not evaluable"
+
+
+def _render_console_hero(
+    view: ConsoleMissionHeroView,
+    trajectory_html: TrustedHtml,
+    return_link_html: TrustedHtml,
+    as_of: float,
+) -> str:
+    current = _format_value(
+        view.current.value,
+        view.current.unit_or_currency,
+        view.current_format_kind,
+    )
+    destination = (
+        _format_value(
+            view.destination.target_value,
+            view.destination.unit_or_currency,
+            "months" if view.destination.unit_or_currency == "months"
+            else "currency",
         )
-    return ("\n  " + "".join(fragments)) if fragments else ""
+        if view.destination is not None else "NO DECLARED DESTINATION"
+    )
+    destination_label = (
+        view.destination.label if view.destination is not None
+        else "Destination not declared"
+    )
+    trajectory_state = _trajectory_state_label(view.trajectory.state)
+    trajectory_tone = (
+        view.trajectory.tone
+        if view.trajectory.tone in ("green", "amber", "red") else "none"
+    )
+    burn = (
+        f"""<div class="console-burn-preview">
+          <p class="k">NEXT BURN</p>
+          <p class="v">{html.escape(view.burn_preview)}</p>
+        </div>""" if view.burn_preview else ""
+    )
+    summary = (
+        f"Current position is {view.current_label} {current}. "
+        f"Destination is {destination_label} {destination}. "
+        f"Trajectory is {trajectory_state}. "
+        + (f"Next burn is {view.burn_preview}." if view.burn_preview
+           else "No primary burn is declared.")
+    )
+    return f"""<section class="hero mission-detail-hero mission-console-hero phase-{html.escape(_sun_phase(as_of))}"
+  data-console-region="mission-hero" aria-labelledby="mission-title"
+  aria-describedby="mission-console-summary">
+  <img class="earthrise" src="{_EARTHRISE_PATH}"
+    alt="Earth at sunrise from orbit, its curved horizon lit above the night side"
+    width="1774" height="887" fetchpriority="high" decoding="async">
+  <div class="scrim"></div>
+  {trajectory_html}
+  <div class="hero-content">
+    {return_link_html}
+    <p class="eyebrow">MISSION CONSOLE</p>
+    <h2 class="mission-title" id="mission-title">{html.escape(view.definition.label)}</h2>
+    <p class="mission-definition">{html.escape(view.definition.definition)}</p>
+    <div class="console-position">
+      <div class="console-instrument"><p class="k">CURRENT POSITION</p>
+        <p class="v num">{html.escape(current)}</p>
+        <p class="sub">{html.escape(view.current_label)} · {html.escape(view.milestone.label if view.milestone else "NOT EVALUABLE")}</p>
+      </div>
+      <div class="console-instrument"><p class="k">DESTINATION</p>
+        <p class="v num">{html.escape(destination)}</p>
+        <p class="sub">{html.escape(destination_label)}</p>
+      </div>
+      <div class="console-instrument"><p class="k">TRAJECTORY</p>
+        <p class="v {trajectory_tone}">{html.escape(trajectory_state.upper())}</p>
+        <p class="sub">Movement {html.escape(view.trajectory.movement.upper())}</p>
+      </div>
+      <div class="console-instrument"><p class="k">CONFIDENCE</p>
+        <p class="v">{html.escape(view.confidence.state.upper())}</p>
+        <p class="sub">{html.escape(view.confidence.basis)}</p>
+      </div>
+      {_console_margin_html(view)}{burn}
+    </div>
+  </div>
+  <p class="sr-only" id="mission-console-summary">{html.escape(summary)}</p>
+</section>"""
+
+
+def _render_console_analysis(view: ConsoleFlightAnalysisView) -> str:
+    current = _format_value(
+        view.current.value,
+        view.current.unit_or_currency,
+        view.current_format_kind,
+    )
+    destination = (
+        _format_value(
+            view.destination.target_value,
+            view.destination.unit_or_currency,
+            "months" if view.destination.unit_or_currency == "months"
+            else "currency",
+        ) if view.destination else "NOT DECLARED"
+    )
+    tone = view.trajectory.tone \
+        if view.trajectory.tone in ("green", "amber", "red") else "none"
+    instruments = []
+    for instrument in view.supporting:
+        if instrument.kind == "recent-movement":
+            delta = instrument.value
+            value = _format_month_delta(
+                delta.months if delta else None,
+                delta.direction if delta else None,
+            )
+        elif instrument.kind == "intercept":
+            value = (
+                _month_year(instrument.value)
+                if instrument.value is not None else "NOT AVAILABLE"
+            )
+        elif instrument.format_kind == "percent":
+            value = f"{float(instrument.value or 0.0) * 100:.1f}%"
+        else:
+            value = str(instrument.value or "NOT AVAILABLE")
+        instruments.append(f"""<div class="instrument">
+          <p class="k">{html.escape(instrument.label)}</p>
+          <p class="v num">{html.escape(value)}</p>
+          <p class="sub">{html.escape(instrument.detail)}</p>
+        </div>""")
+    note = view.evidence_note or (
+        "The composed trajectory uses declared observations and forecast evidence."
+    )
+    state = _trajectory_state_label(view.trajectory.state).upper()
+    return f"""<section data-console-region="flight-analysis"
+  aria-labelledby="analysis-heading">
+  <h2 id="analysis-heading">FLIGHT ANALYSIS</h2>
+  <div class="console-trajectory-panel">
+    <div class="endpoint"><p class="label">CURRENT POSITION</p>
+      <p class="value num">{html.escape(current)}</p></div>
+    <div class="endpoint"><p class="label">DECLARED DESTINATION</p>
+      <p class="value num">{html.escape(destination)}</p></div>
+    <div class="trajectory-readout">
+      <p class="state {tone}">{html.escape(state)}</p>
+      <p class="mono">FORECAST {html.escape(view.trajectory.forecast.upper())}</p>
+      <p class="note">{html.escape(note)}</p>
+    </div>
+  </div>
+  <div class="console-rail">{"".join(instruments)}</div>
+</section>"""
+
+
+def _render_console_essential(view) -> str:
+    cards = "".join(_telemetry_card_html(item) for item in view.items)
+    return f"""<section data-console-region="essential-telemetry"
+  aria-labelledby="essential-heading">
+  <h2 id="essential-heading">ESSENTIAL MISSION TELEMETRY</h2>
+  <div class="essential-grid">{cards}</div>
+</section>"""
+
+
+def _render_console_next_burn(view: NextBurnView) -> str:
+    impact = ""
+    primary = view.primary
+    if primary is not None and primary.amount is not None \
+            and primary.unit_or_currency is not None:
+        amount_kind = (
+            "currency"
+            if primary.unit_or_currency in _CURRENCY_SYMBOL
+            else "number"
+        )
+        amount = _format_value(
+            primary.amount, primary.unit_or_currency, amount_kind)
+        cadence = f" per {primary.cadence}" if primary.cadence else ""
+        delta = (
+            " · " + _format_month_delta(
+                primary.estimated_delta_v_months,
+                primary.delta_v_direction,
+            )
+            if primary.estimated_delta_v_months is not None
+            and primary.delta_v_direction is not None
+            else ""
+        )
+        impact = (
+            f'<p class="burn-impact">{html.escape(amount + cadence)}'
+            f'{html.escape(delta)}</p>'
+        )
+    safety = (
+        '<div class="safety"><p class="k">OPERATING LIMITS</p><ul>'
+        + "".join(f"<li>{html.escape(note)}</li>"
+                  for note in view.safety_notices)
+        + "</ul></div>"
+        if view.safety_notices else ""
+    )
+    return f"""<section data-console-region="next-burn"
+  aria-labelledby="next-burn-heading">
+  <h2 id="next-burn-heading">NEXT BURN</h2>
+  <div class="next-burn-panel" data-burn-state="{html.escape(view.state)}">
+    <div><p class="k">PRIMARY ACTION</p>
+      <p class="burn-title">{html.escape(view.title)}</p>{impact}</div>
+    <p class="burn-summary">{html.escape(view.summary)}</p>
+    {safety}
+  </div>
+</section>"""
+
+
+def _render_disclosure_section(view: DisclosureSectionView) -> str:
+    telemetry = (
+        f'<div class="telemetry-grid">'
+        + "".join(_telemetry_card_html(item) for item in view.telemetry)
+        + "</div>"
+        if view.telemetry else ""
+    )
+    recommendations = "".join(
+        f"<li>{html.escape(item.action)}</li>"
+        for item in view.recommendations
+    )
+    lines = "".join(f"<li>{html.escape(line)}</li>" for line in view.lines)
+    list_html = f"<ul>{recommendations}{lines}</ul>" \
+        if recommendations or lines else ""
+    return f"""<details id="{html.escape(view.id)}">
+      <summary>{html.escape(view.title.upper())}</summary>
+      <div class="disclosure-content">{telemetry}{list_html}</div>
+    </details>"""
+
+
+def _render_console_disclosure(views: tuple[DisclosureSectionView, ...]) -> str:
+    return f"""<section class="console-disclosure"
+  data-console-region="progressive-disclosure"
+  aria-labelledby="disclosure-heading">
+  <h2 id="disclosure-heading">SHOW ME THE WORKING</h2>
+  {"".join(_render_disclosure_section(view) for view in views)}
+</section>"""
+
+
+def _render_mission_console(
+    view: MissionConsoleView,
+    assessment: MissionAssessment,
+    return_link_html: TrustedHtml,
+    as_of: float,
+) -> str:
+    renderers = {
+        "mission-hero": lambda: _render_console_hero(
+            view.hero,
+            TrustedHtml(_mission_trajectory_svg(
+                assessment, view.hero.milestones)),
+            return_link_html,
+            as_of,
+        ),
+        "flight-analysis": lambda: _render_console_analysis(view.analysis),
+        "essential-telemetry": lambda: _render_console_essential(
+            view.essential),
+        "next-burn": lambda: _render_console_next_burn(view.next_burn),
+        "progressive-disclosure": lambda: _render_console_disclosure(
+            view.disclosure),
+    }
+    return "\n".join(renderers[region]() for region in view.region_order)
 
 
 @router.get("/missions/{slug}", response_class=HTMLResponse)
@@ -2225,307 +2375,17 @@ def mission_detail(request: Request, slug: str):
 </section>{_footer(console)}"""
         return _render(definition.label, body, as_of, "/missions")
 
-    milestone = assessment.current_milestone
-    trajectory_class = (
-        assessment.trajectory_tone
-        if assessment.trajectory_tone in ("green", "amber", "red")
-        else "none"
-    )
-    eta = _month_year(assessment.eta)
-    milestone_label = (
-        milestone.label.upper() if milestone else "NOT EVALUABLE")
-    completion_milestone = next(
-        (item for item in assessment.milestones if item.completes_mission), None)
-    completion_label = (
-        completion_milestone.label.upper()
-        if completion_milestone else "MISSION COMPLETION")
-    trajectory_label = (
-        assessment.trajectory_state.upper()
-        if assessment.trajectory_state else "NOT EVALUABLE")
-    milestone_completion = milestone.completion * 100.0 if milestone else 0.0
-    margin = assessment.mission_margin
-    margin_value = margin.state.upper() if margin and margin.state else "—"
-    margin_sub = margin.description if margin else "Not available"
-    if margin and margin.pace_percent is not None:
-        margin_sub = f"{margin.pace_percent:+.1f}% · {margin_sub}"
-    delta_v = assessment.delta_v
-    delta_value = _format_month_delta(
-        delta_v.months if delta_v else None,
-        delta_v.direction if delta_v else None)
-    delta_sub = delta_v.description if delta_v else "Not available"
-
-    recommendation = (
-        assessment.recommendations[0] if assessment.recommendations else None)
-    if recommendation is None:
-        recommendation_action = "No scenario-modelled action is available."
-        recommendation_amount = "No declared intervention"
-        recommendation_impact = "NOT AVAILABLE"
-        recommendation_detail = (
-            "<li>No improving recommendation is declared.</li>")
-    elif recommendation.status != "available" \
-            or recommendation.amount is None \
-            or recommendation.unit_or_currency is None \
-            or not recommendation.action_label:
-        recommendation_action = "Recommendation unavailable"
-        recommendation_amount = "Recommendation evidence is incomplete"
-        recommendation_impact = "NOT AVAILABLE"
-        recommendation_detail = "".join(
-            f"<li>{html.escape(note)}</li>"
-            for note in (
-                *recommendation.limitations,
-                "The declared recommendation evidence is incomplete.",
-            ))
-    else:
-        recommendation_action = recommendation.action_label
-        amount = _format_value(
-            recommendation.amount, recommendation.unit_or_currency, "currency")
-        recommendation_amount = (
-            f"{amount} per {recommendation.cadence}"
-            if recommendation.cadence else amount)
-        recommendation_impact = _format_month_delta(
-            recommendation.estimated_delta_v_months,
-            recommendation.delta_v_direction)
-        if assessment.applicability.delta_v == "not_applicable":
-            recommendation_lineage = (
-                f"Declared scenario with "
-                f"{len(recommendation.assumption_references)} "
-                "assumption reference(s) and "
-                f"{len(recommendation.evidence_references)} "
-                "evidence reference(s)")
-            recommendation_detail = (
-                f"<li>Evidence basis: "
-                f"{html.escape(recommendation_lineage)}.</li>"
-                f"<li>Declared action and constraint: "
-                f"{html.escape(recommendation.action)}</li>"
-                f"<li>Declared adjustment: {html.escape(amount)} per "
-                f"{html.escape(recommendation.cadence or 'declared cadence')}."
-                "</li>")
-        else:
-            recommendation_lineage = (
-                f"Declared scenario with "
-                f"{len(recommendation.assumption_references)} "
-                "assumption reference(s)")
-            raw_impact = (
-                f"{recommendation.estimated_delta_v_days:.1f} days"
-                if recommendation.estimated_delta_v_days is not None
-                else "not available")
-            recommendation_detail = (
-                f"<li>Evidence basis: "
-                f"{html.escape(recommendation_lineage)}.</li>"
-                f"<li>Declared action: "
-                f"{html.escape(recommendation.action)}</li>"
-                f"<li>Modelled adjustment: {html.escape(amount)} per "
-                f"{html.escape(recommendation.cadence or 'declared cadence')}."
-                f"</li><li>Modelled ETA change: {html.escape(raw_impact)}; "
-                f"displayed at month resolution.</li>")
-
-    telemetry_cards = [
-        _telemetry_card_html(item) for item in assessment.telemetry
-    ]
-    hero_telemetry = _hero_telemetry_html(tuple(
-        item for item in assessment.telemetry
-        if item.display_region == "hero"
-    ))
-    analysis_telemetry = _analysis_telemetry_html(tuple(
-        item for item in assessment.telemetry
-        if item.display_region == "analysis"
-    ))
-
-    notes = [assessment.confidence_basis, *assessment.limitations]
-    if assessment.confidence is not None:
-        notes.insert(
-            0,
-            f"MISSION CONFIDENCE · {assessment.confidence.state.upper()} · "
-            f"{assessment.confidence.basis}",
+    console_view = MissionConsoleModel().build(definition, assessment)
+    body = (
+        _render_mission_console(
+            console_view,
+            assessment,
+            TrustedHtml(mission_return),
+            as_of,
         )
-    note_items = "".join(f"<li>{html.escape(note)}</li>" for note in notes if note)
-    achieved_delta = (
-        (
-            "LESS THAN 1 MONTH GAINED"
-            if delta_v.months == 0 else
-            f"ABOUT {abs(delta_v.months)} MONTH"
-            f"{'S' if abs(delta_v.months) != 1 else ''} GAINED"
-        )
-        if delta_v is not None and delta_v.months is not None
-        and delta_v.direction == "accelerated" else
-        _format_month_delta(
-            delta_v.months if delta_v else None,
-            delta_v.direction if delta_v else None)
+        + _footer(console)
     )
-    has_reference_schedule = (
-        delta_v is not None
-        and delta_v.reference_start_at is not None
-        and bool(delta_v.reference_start_label)
-        and delta_v.reference_destination_at is not None
-        and bool(delta_v.reference_destination_label)
-    )
-    current_label, current_format_kind = (
-        _assessment_current_presentation(assessment))
-    flight_analysis_schedule = f"""<div class="flight-analysis-schedule"
-    aria-label="Mission schedule comparison">
-    <div class="time-point"><p class="k">{html.escape(
-        delta_v.reference_start_label)}</p>
-      <p class="v">{html.escape(_month_year(
-          delta_v.reference_start_at))}</p></div>
-    <div class="time-point"><p class="k">CURRENT POSITION</p>
-      <p class="v num">{html.escape(_format_value(
-          assessment.current_value.value,
-          assessment.current_value.unit_or_currency,
-          current_format_kind))}</p></div>
-    <div class="time-point"><p class="k">EXPECTED DESTINATION</p>
-      <p class="v">{html.escape(_month_year(assessment.eta))}</p></div>
-    <div class="time-point"><p class="k">{html.escape(
-        delta_v.reference_destination_label)}</p>
-      <p class="v">{html.escape(_month_year(
-          delta_v.reference_destination_at))}</p>
-      <p class="sub">{html.escape(achieved_delta)}</p></div>
-  </div>""" if (
-        has_reference_schedule
-        and assessment.applicability.eta == "applicable"
-    ) else ""
-    schedule_summary = (
-        f" Expected destination is {_month_year(assessment.eta)}; "
-        f"{delta_v.reference_destination_label.lower()} is "
-        f"{_month_year(delta_v.reference_destination_at)}; achieved change is "
-        f"{achieved_delta}."
-        if has_reference_schedule else
-        f" Expected destination is {_month_year(assessment.eta)}."
-    ) if assessment.applicability.eta == "applicable" else (
-        " Expected destination is not available."
-        if assessment.applicability.eta == "unavailable" else "")
-    delta_period = (
-        delta_v.period_label
-        if delta_v is not None and delta_v.period_label else
-        f"LAST {delta_v.lookback_days if delta_v else 0} DAYS"
-    )
-    eta_tile = (
-        f"""<div><p class="k">ETA · {html.escape(completion_label)}</p>
-        <p class="v">{html.escape(eta)}</p></div>"""
-        if assessment.applicability.eta == "applicable" else
-        """<div><p class="k">ETA</p>
-        <p class="v">NOT AVAILABLE</p>
-        <p class="sub">An arrival estimate is not available for this mission.</p></div>"""
-        if assessment.applicability.eta == "unavailable" else ""
-    )
-    if assessment.trajectory_state is not None:
-        trajectory_history_sub = (
-            '\n        <p class="sub">Trajectory history is not available '
-            'for this mission.</p>'
-            if assessment.applicability.trajectory == "unavailable" else ""
-        )
-        trajectory_tile = f"""<div><p class="k">TRAJECTORY</p>
-        <p class="v {trajectory_class}">{html.escape(trajectory_label)}</p>{trajectory_history_sub}</div>"""
-    elif assessment.applicability.trajectory == "applicable":
-        trajectory_tile = f"""<div><p class="k">TRAJECTORY</p>
-        <p class="v {trajectory_class}">{html.escape(trajectory_label)}</p></div>"""
-    elif assessment.applicability.trajectory == "unavailable":
-        trajectory_tile = """<div><p class="k">TRAJECTORY</p>
-        <p class="v none">NOT AVAILABLE</p>
-        <p class="sub">Trajectory history is not available for this mission.</p></div>"""
-    else:
-        trajectory_tile = ""
-    delta_instrument = (
-        f"""<div class="instrument"><p class="k">Δv · {html.escape(delta_period)}</p>
-      <p class="v num">{html.escape(delta_value)}</p>
-      <p class="sub">{html.escape(delta_sub)}</p></div>"""
-        if assessment.applicability.delta_v == "applicable" else
-        """<div class="instrument"><p class="k">Δv</p>
-      <p class="v num">NOT AVAILABLE</p>
-      <p class="sub">Schedule change is not available for this mission.</p></div>"""
-        if assessment.applicability.delta_v == "unavailable" else ""
-    )
-    recommendation_delta_instrument = (
-        f"""<div class="instrument"><p class="k">ESTIMATED Δv</p>
-      <p class="v num green">{html.escape(recommendation_impact)}</p>
-      <p class="sub">Month-level model resolution</p></div>"""
-        if assessment.applicability.delta_v != "not_applicable" else ""
-    )
-    if (
-        assessment.applicability.trajectory == "applicable"
-        and assessment.applicability.forecast == "applicable"
-        and assessment.applicability.eta == "applicable"
-    ):
-        accessible_summary = f"""<p class="sr-only" id="trajectory-summary">The solid historical path reaches
-    {html.escape(current_label)} {html.escape(_format_value(
-        assessment.current_value.value,
-        assessment.current_value.unit_or_currency,
-        current_format_kind))}.
-    The dashed expected forecast continues through a widening low to high sensitivity
-    range toward the configured milestones.{html.escape(schedule_summary)}
-    Current milestone is
-    {html.escape(milestone_label)}; trajectory is
-    {html.escape(trajectory_label)}.</p>"""
-    else:
-        summary_clauses = [
-            (
-                f"Current position is {current_label} "
-                f"{_format_value(assessment.current_value.value, assessment.current_value.unit_or_currency, current_format_kind)}."
-            ),
-            f"Current milestone is {milestone_label}.",
-        ]
-        if assessment.applicability.trajectory == "applicable":
-            summary_clauses.append(
-                f"Historical trajectory is {trajectory_label}.")
-        elif assessment.applicability.trajectory == "unavailable":
-            summary_clauses.append(
-                "Trajectory history is not available for this mission.")
-        if assessment.applicability.forecast == "applicable":
-            summary_clauses.append(
-                "An expected low to high sensitivity forecast is shown.")
-        elif assessment.applicability.forecast == "unavailable":
-            summary_clauses.append(
-                "Forecast evidence is not available for this mission.")
-        if assessment.applicability.eta == "applicable":
-            summary_clauses.append(
-                f"Expected destination is {_month_year(assessment.eta)}.")
-        elif assessment.applicability.eta == "unavailable":
-            summary_clauses.append(
-                "An arrival estimate is not available for this mission.")
-        accessible_summary = (
-            '<p class="sr-only" id="trajectory-summary">'
-            + html.escape(" ".join(summary_clauses))
-            + "</p>")
-    reference_schedule_class = (
-        " reference-schedule-relocated" if flight_analysis_schedule else "")
-    hero = _render_mission_hero(_MissionHeroView(
-        title=definition.label,
-        definition=definition.definition,
-        return_link_html=mission_return,
-        sun_phase=_sun_phase(as_of),
-        reference_schedule_class_html=reference_schedule_class,
-        trajectory_html=_mission_trajectory_svg(assessment),
-        milestone_label=milestone_label,
-        trajectory_tile_html=trajectory_tile,
-        eta_tile_html=eta_tile,
-        margin_value=margin_value,
-        margin_sub=margin_sub,
-        accessible_summary_html=accessible_summary,
-        telemetry_html=hero_telemetry,
-    ))
-    analysis = _render_flight_analysis(_FlightAnalysisView(
-        schedule_html=flight_analysis_schedule,
-        delta_instrument_html=delta_instrument,
-        milestone_completion=milestone_completion,
-        milestone_label=milestone_label,
-        recommendation_action=recommendation_action,
-        recommendation_amount=recommendation_amount,
-        recommendation_delta_instrument_html=(
-            recommendation_delta_instrument),
-        telemetry_html=analysis_telemetry,
-    ))
-    mission_data = _render_mission_data(_MissionDataView(
-        telemetry_cards_html=tuple(telemetry_cards),
-        recommendation_detail_html=recommendation_detail,
-        note_items_html=note_items,
-        input_reference_count=len(assessment.input_references),
-        assumption_reference_count=len(assessment.assumption_references),
-    ))
-    body = f"""{hero}
-{analysis}
-{mission_data}
-{_footer(console)}"""
     return _render(definition.label, body, as_of, "/missions")
-
 
 def _placeholder(request: Request, path: str, title: str, note: str):
     if session_email(request) is None:

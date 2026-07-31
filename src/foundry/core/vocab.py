@@ -140,7 +140,12 @@ TELEMETRY_FORMAT = ClosedVocabulary(
 
 TELEMETRY_REGION = ClosedVocabulary(
     "telemetry_region",
-    {"hero", "analysis", "drilldown"},
+    {"drilldown", "essential"},
+)
+
+TRAJECTORY_MOVEMENT = ClosedVocabulary(
+    "trajectory_movement",
+    {"advancing", "holding", "receding", "unknown"},
 )
 
 INSTRUMENT_APPLICABILITY = ClosedVocabulary(

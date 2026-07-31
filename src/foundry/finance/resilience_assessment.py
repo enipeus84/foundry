@@ -320,6 +320,7 @@ class FinancialResilienceAssessor:
         factor_telemetry.append(TelemetryItem(
             current, "RESERVE COVERAGE", "months",
             f"BAND {reserve_band} · {runway_value:.1f} MONTHS",
+            display_group="MISSION MARGIN EVIDENCE",
         ))
 
         concentration = self.metrics.dispatch(MetricRequest(
@@ -359,6 +360,7 @@ class FinancialResilienceAssessor:
                 "percent",
                 f"BAND {income_band} · {len(income_records)} DECLARED "
                 "SOURCE(S)",
+                display_group="MISSION MARGIN EVIDENCE",
             ))
         else:
             if not income_records:
@@ -417,6 +419,7 @@ class FinancialResilienceAssessor:
                     "COMMITMENT COVERAGE",
                     "number",
                     f"BAND {commitment_band} · {coverage:.2f}×",
+                    display_group="MISSION MARGIN EVIDENCE",
                 ),
                 TelemetryItem(
                     self._derived_metric(
@@ -431,6 +434,7 @@ class FinancialResilienceAssessor:
                     "OBLIGATION HEADROOM",
                     "currency",
                     f"BAND {headroom_band}",
+                    display_group="MISSION MARGIN EVIDENCE",
                 ),
             ))
         else:
@@ -440,7 +444,7 @@ class FinancialResilienceAssessor:
                 "from Mission Margin because no positive dated near-term "
                 "commitment is recorded.")
 
-        margin = self._mission_margin(bands)
+        margin = self._mission_margin(bands, runway_value)
         complete = runway_value >= self.policy.destination_months
         trajectory_state = self._trajectory_state(
             runway_value,
@@ -477,26 +481,31 @@ class FinancialResilienceAssessor:
         telemetry = (
             *factor_telemetry,
             TelemetryItem(outflow, "ESSENTIAL OUTFLOW", "currency",
-                          "AVERAGE MONTHLY BASIS"),
+                          "AVERAGE MONTHLY BASIS",
+                          display_group="RESERVE REQUIREMENTS"),
             TelemetryItem(target, "EMERGENCY RESERVE TARGET", "currency",
-                          "FULL 18-MONTH DESTINATION"),
+                          "FULL 18-MONTH DESTINATION",
+                          display_group="RESERVE REQUIREMENTS"),
             TelemetryItem(gap, "EMERGENCY RESERVE GAP", "currency",
-                          "SIGNED SHORTFALL"),
+                          "SIGNED SHORTFALL",
+                          display_region="essential"),
             TelemetryItem(deployable, "DEPLOYABLE SURPLUS", "currency",
-                          "STOCK ABOVE FULL RESERVE"),
-            *self._stress_telemetry(
-                request,
-                inputs,
-                liquid_holdings,
-                outflow_value,
-                income_records,
-                tuple(sorted({
-                    *outflow.input_references,
-                    *gap.input_references,
-                })),
-                tuple(record.event_id for record in income_records),
-                tuple(assumption_set.provenance),
-            ),
+                          "STOCK ABOVE FULL RESERVE",
+                          display_region="essential"),
+            *(replace(item, display_group="STRESS ANALYSIS")
+              for item in self._stress_telemetry(
+                  request,
+                  inputs,
+                  liquid_holdings,
+                  outflow_value,
+                  income_records,
+                  tuple(sorted({
+                      *outflow.input_references,
+                      *gap.input_references,
+                  })),
+                  tuple(record.event_id for record in income_records),
+                  tuple(assumption_set.provenance),
+              )),
         )
         recommendations = self._recommendations(
             request,
@@ -542,8 +551,6 @@ class FinancialResilienceAssessor:
             confidence=confidence,
             current_milestone=current_milestone,
             milestones=milestones,
-            phase=current_milestone,
-            phases=milestones,
             mission_margin=margin,
             delta_v=None,
             trajectory=(),
@@ -648,6 +655,7 @@ class FinancialResilienceAssessor:
     @staticmethod
     def _mission_margin(
         bands: list[tuple[str, int]],
+        runway: float,
     ) -> MissionMargin:
         values = tuple(value for _, value in bands)
         minimum = min(values)
@@ -666,6 +674,10 @@ class FinancialResilienceAssessor:
             schedule_buffer_days=None,
             description=description,
             state=state,
+            label="RUNWAY",
+            value=runway,
+            unit_or_currency="months",
+            format_kind="months",
         )
 
     @staticmethod

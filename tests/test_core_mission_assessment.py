@@ -1,6 +1,7 @@
 """RFC-005: Core owns assessment shapes and routing, never domain logic."""
 
 import ast
+from dataclasses import fields
 import inspect
 import pkgutil
 import importlib
@@ -11,7 +12,7 @@ from foundry.core.metrics import MetricResult
 from foundry.core.mission_assessment import (
     DeltaV, ForecastPoint, MissionAssessment, MissionAssessmentRegistry,
     MissionAssessmentRequest, MissionConfidence, MissionDefinition,
-    MissionMargin, MissionMilestone, MissionPhaseAssessment,
+    MissionMargin, MissionMilestone,
     InstrumentApplicability, RecommendationAssessment, TelemetryItem,
     TrajectoryPoint,
 )
@@ -33,6 +34,9 @@ class _Provider:
             calculation_version="test-v1",
             eta=request.as_of + 1.0,
             delta_v=DeltaV(1.0, 1, "test schedule change"),
+            mission_margin=MissionMargin(
+                None, None, "one unit of operating tolerance",
+                "Adequate Margin", value=1.0, unit_or_currency="units"),
             trajectory=(TrajectoryPoint(request.as_of, 1.0),),
             forecast=(
                 ForecastPoint(request.as_of, 1.0, 1.0, 1.0),
@@ -381,7 +385,10 @@ def test_definition_direction_is_authoritative_for_provider_milestones():
                 current_milestone=milestone,
                 milestones=(milestone,),
                 eta=request.as_of + 1.0,
-                delta_v=DeltaV(1.0, 1, "test schedule change"),
+                    delta_v=DeltaV(1.0, 1, "test schedule change"),
+                    mission_margin=MissionMargin(
+                        None, None, "declared tolerance",
+                        "Adequate Margin", value=1.0),
                 trajectory=(TrajectoryPoint(request.as_of, 50.0),),
                 forecast=(
                     ForecastPoint(request.as_of, 50.0, 50.0, 50.0),
@@ -409,6 +416,7 @@ def test_assessment_dimensions_are_independently_supplied():
         status="red", calculation_version="test-v1",
         trajectory_state="Accelerated",
         trajectory_tone="green",
+        trajectory_movement="receding",
         mission_margin=MissionMargin(
             1.0, -1.0, "mixed margin signals", "Low Margin"),
         confidence=MissionConfidence("Established", "verified evidence"),
@@ -416,8 +424,19 @@ def test_assessment_dimensions_are_independently_supplied():
 
     assert result.trajectory_state == "Accelerated"
     assert result.trajectory_tone == "green"
+    assert result.trajectory_movement == "receding"
     assert result.mission_margin.state == "Low Margin"
     assert result.confidence.state == "Established"
+
+
+def test_assessment_rejects_unknown_trajectory_movement_vocabulary():
+    with pytest.raises(ValueError, match="unsupported trajectory movement"):
+        MissionAssessment(
+            mission_id="mission-1", policy_id="alpha.mission.v1",
+            scope=Subject("party", "household-1"), as_of=1.0,
+            status="red", calculation_version="test-v1",
+            trajectory_movement="deteriorating",
+        )
 
 
 def test_milestone_direction_and_explicit_destination_are_domain_neutral():
@@ -427,7 +446,11 @@ def test_milestone_direction_and_explicit_destination_are_domain_neutral():
         destination_direction="lower_is_better", destination_value=12.0)
 
     assert milestone.target_value == 12.0
-    assert MissionPhaseAssessment is MissionMilestone
+    assert "phase" not in {field.name for field in fields(MissionAssessment)}
+    assert "phases" not in {field.name for field in fields(MissionAssessment)}
+    assert "phase_thresholds" not in {
+        field.name for field in fields(MissionAssessment)
+    }
 
 
 def test_core_assessment_contract_imports_no_product_domain():
@@ -449,8 +472,8 @@ def test_core_assessment_contract_imports_no_product_domain():
             for module_name in imported), name
 
 
-def test_extended_assessment_contract_is_backward_compatible_and_domain_neutral():
-    phase = MissionPhaseAssessment(
+def test_extended_assessment_contract_is_domain_neutral_after_alias_retirement():
+    milestone = MissionMilestone(
         id="phase-a", label="Phase A", lower_bound=0.0,
         upper_bound=10.0, completion=.5)
     delta_v = DeltaV(
@@ -462,14 +485,14 @@ def test_extended_assessment_contract_is_backward_compatible_and_domain_neutral(
         mission_id="mission-a", policy_id="domain.policy.v1",
         scope=Subject("party", "household-a"), as_of=1.0,
         status="green", calculation_version="domain-v1",
-        phase=phase, delta_v=delta_v,
+        current_milestone=milestone, milestones=(milestone,), delta_v=delta_v,
         recommendations=(recommendation,))
 
-    assert result.phases == ()
+    assert result.milestones == (milestone,)
     assert result.flight_status_id == ""
     assert result.forecast_resolution == "month"
-    assert phase.unit_or_currency is None
-    assert phase.completes_mission is False
+    assert milestone.unit_or_currency is None
+    assert milestone.completes_mission is False
     assert delta_v.months is None
     assert delta_v.period_label == ""
     assert delta_v.reference_start_at is None
@@ -527,13 +550,14 @@ def test_instrument_applicability_is_closed_and_defaults_to_applicable():
         applicability.delta_v,
         applicability.trajectory,
         applicability.forecast,
-    ) == ("applicable",) * 4
+        applicability.margin,
+    ) == ("applicable",) * 5
 
     with pytest.raises(ValueError, match="unsupported eta applicability"):
         InstrumentApplicability(eta="sometimes")
 
 
-def test_telemetry_regions_are_closed_inert_and_grouped_only_for_analysis():
+def test_telemetry_regions_are_closed_inert_and_grouped_for_disclosure():
     result = MetricResult(
         "domain.capacity",
         1.0,
@@ -544,82 +568,81 @@ def test_telemetry_regions_are_closed_inert_and_grouped_only_for_analysis():
         "domain-v1",
     )
     default = TelemetryItem(result, "CAPACITY")
-    hero = TelemetryItem(result, "CAPACITY", display_region="hero")
-    analysis = TelemetryItem(
-        result,
-        "CAPACITY",
-        display_region="analysis",
-        display_group="OPERATING POSITION",
-    )
 
     assert default.display_region == "drilldown"
     assert default.display_group == ""
-    assert hero.result == analysis.result == default.result
-    assert hero.label == analysis.label == default.label
 
-    with pytest.raises(ValueError, match="unsupported telemetry display region"):
-        TelemetryItem(result, "CAPACITY", display_region="sidebar")
-    with pytest.raises(ValueError, match="only valid in the analysis"):
+    for retired in ("hero", "analysis", "sidebar"):
+        with pytest.raises(
+                ValueError, match="unsupported telemetry display region"):
+            TelemetryItem(result, "CAPACITY", display_region=retired)
+    essential = TelemetryItem(
+        result, "CAPACITY", display_region="essential")
+    disclosure = TelemetryItem(
+        result, "CAPACITY", display_region="drilldown",
+        display_group="OPERATING POSITION")
+
+    assert essential.display_region == "essential"
+    assert disclosure.display_group == "OPERATING POSITION"
+
+    with pytest.raises(ValueError, match="cannot declare a display group"):
         TelemetryItem(
             result,
             "CAPACITY",
-            display_region="hero",
+            display_region="essential",
             display_group="POSITION",
         )
     with pytest.raises(ValueError, match="invalid telemetry display group"):
         TelemetryItem(
             result,
             "CAPACITY",
-            display_region="analysis",
+            display_region="drilldown",
             display_group="   ",
         )
     with pytest.raises(ValueError, match="invalid telemetry display group"):
         TelemetryItem(
             result,
             "CAPACITY",
-            display_region="analysis",
+            display_region="drilldown",
             display_group="X" * 81,
         )
 
 
-def test_provider_envelope_caps_hero_telemetry_at_four_items():
-    class HeroProvider(_Provider):
-        def __init__(self, count):
-            super().__init__()
-            self.count = count
-
+@pytest.mark.parametrize(
+    "count,status,expected",
+    [(6, "available", "green"), (7, "available", "unavailable"),
+     (1, "unavailable", "unavailable")],
+)
+def test_provider_envelope_caps_essential_telemetry_and_requires_evidence(
+        count, status, expected):
+    class EssentialProvider(_Provider):
         def assess(self, request):
+            base = super().assess(request)
             result = MetricResult(
                 "domain.capacity",
-                1.0,
+                1.0 if status == "available" else None,
                 "units",
                 request.scope,
                 request.as_of,
-                "available",
-                "domain-v1",
+                status,
+                "domain-v1" if status == "available" else "",
             )
-            base = super().assess(request)
-            return MissionAssessment(
-                **{
-                    **base.__dict__,
-                    "telemetry": tuple(
-                        TelemetryItem(
-                            result,
-                            f"CAPACITY {index}",
-                            display_region="hero",
-                        )
-                        for index in range(self.count)
-                    ),
-                }
-            )
+            return MissionAssessment(**{
+                **base.__dict__,
+                "telemetry": tuple(
+                    TelemetryItem(
+                        result,
+                        f"CAPACITY {index}",
+                        display_region="essential",
+                    )
+                    for index in range(count)
+                ),
+            })
 
-    accepted = MissionAssessmentRegistry()
-    accepted.register(HeroProvider(4))
-    rejected = MissionAssessmentRegistry()
-    rejected.register(HeroProvider(5))
+    registry = MissionAssessmentRegistry()
+    registry.register(EssentialProvider())
 
-    assert accepted.dispatch(_request()).status == "green"
-    assert rejected.dispatch(_request()).status == "unavailable"
+    assert registry.dispatch(_request()).status == expected
 
 
 @pytest.mark.parametrize(
@@ -683,6 +706,9 @@ def test_unavailable_instrument_may_use_renderer_fallback_explanation():
                 forecast=(
                     ForecastPoint(request.as_of, 1.0, 1.0, 1.0),
                 ),
+                mission_margin=MissionMargin(
+                    None, None, "declared tolerance", "Adequate Margin",
+                    value=1.0),
                 applicability=InstrumentApplicability(
                     trajectory="unavailable"),
             )
@@ -708,6 +734,7 @@ def test_fail_closed_assessment_declares_its_empty_instruments_unavailable():
         delta_v="unavailable",
         trajectory="unavailable",
         forecast="unavailable",
+        margin="unavailable",
     )
     assert result.eta is None
     assert result.delta_v is None
@@ -726,16 +753,19 @@ def test_applicability_metadata_does_not_mutate_assessment_state():
         delta_v=None,
         trajectory=(),
         forecast=(),
+        mission_margin=None,
         applicability=InstrumentApplicability(
             eta="not_applicable",
             delta_v="not_applicable",
             trajectory="not_applicable",
             forecast="not_applicable",
+            margin="not_applicable",
         ),
     )
 
     presentation_fields = {
-        "eta", "delta_v", "trajectory", "forecast", "applicability",
+        "eta", "delta_v", "trajectory", "forecast", "mission_margin",
+        "applicability",
     }
     for field in original.__dataclass_fields__:
         if field not in presentation_fields:

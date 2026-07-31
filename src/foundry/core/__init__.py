@@ -40,8 +40,8 @@ from .mission_evaluation import evaluate_mission_status, get_mission_status
 from .mission_assessment import (
     DeltaV, ForecastPoint, MissionAssessment, MissionAssessmentProvider,
     MissionAssessmentRegistry, MissionAssessmentRequest, MissionConfidence,
-    MissionDefinition, MissionMargin, MissionMilestone,
-    MissionPhaseAssessment, RecommendationAssessment, TelemetryItem,
+    MissionDefinition, MissionMargin, MissionMilestone, MissionTrajectoryView,
+    RecommendationAssessment, TelemetryItem,
     TrajectoryPoint,
 )
 
@@ -55,7 +55,7 @@ __all__ = [
     "evaluate_mission_status", "get_mission_status",
     "DeltaV", "ForecastPoint", "MissionAssessment", "MissionAssessmentProvider",
     "MissionAssessmentRegistry", "MissionAssessmentRequest", "MissionConfidence",
-    "MissionDefinition", "MissionMargin", "MissionMilestone",
-    "MissionPhaseAssessment", "RecommendationAssessment", "TelemetryItem",
+    "MissionDefinition", "MissionMargin", "MissionMilestone", "MissionTrajectoryView",
+    "RecommendationAssessment", "TelemetryItem",
     "TrajectoryPoint",
 ]

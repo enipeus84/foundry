@@ -286,6 +286,13 @@ def test_worst_factor_wins_without_policy_weights(tmp_path):
         weaker_log, weaker_household, weaker_mission)
 
     assert good.mission_margin.state == "High Margin"
+    assert good.mission_margin.label == "RUNWAY"
+    assert good.mission_margin.value == pytest.approx(
+        good.current_value.value)
+    assert sum(
+        item.display_region == "essential"
+        for item in good.telemetry
+    ) == 2
     assert weaker.mission_margin.state == "Adequate Margin"
     assert "income concentration band 2" \
         in weaker.mission_margin.description

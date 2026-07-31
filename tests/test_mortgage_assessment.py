@@ -225,9 +225,16 @@ def test_full_assessment_is_lower_is_better_and_has_complete_output(tmp_path):
         for item in result.milestones)
     assert result.eta is not None
     assert result.trajectory_state == "Accelerated"
+    assert result.trajectory_movement == "advancing"
     assert result.forecast
     assert result.delta_v.days > 0
     assert result.delta_v.direction == "accelerated"
+    assert result.mission_margin.label == "LTV BUFFER"
+    assert result.mission_margin.format_kind == "percent"
+    assert sum(
+        item.display_region == "essential"
+        for item in result.telemetry
+    ) == 2
     assert result.telemetry
     assert result.evidence_references
     assert result.assumption_references
@@ -503,7 +510,7 @@ def test_additive_equity_evidence_preserves_all_mission_policy_outputs(
     for attribute in (
         "status", "current_value", "mission_complete", "eta",
         "trajectory_state", "trajectory_tone", "confidence",
-        "current_milestone", "milestones", "phase", "phases",
+        "current_milestone", "milestones",
         "mission_margin", "delta_v", "trajectory", "forecast",
         "recommendations",
     ):
@@ -654,7 +661,11 @@ def test_financial_resilience_precedence_suppresses_recommendation(tmp_path):
 
     result = assessor.assess(request)
 
-    assert result.recommendations == ()
+    assert len(result.recommendations) == 1
+    recommendation = result.recommendations[0]
+    assert recommendation.status == "suppressed"
+    assert recommendation.action_label == "Preserve emergency liquidity"
+    assert "current runway is 6.0 months" in recommendation.action
     assert result.trajectory_state == "Accelerated"
     assert (
         "Overpayment is not recommended because current liquidity runway "

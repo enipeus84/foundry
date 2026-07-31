@@ -33,10 +33,12 @@ from foundry.finance.pension_evidence import (
 )
 from foundry.finance.pension_metrics import FinancePensionMetricProvider
 
+PENSION_FIXTURE_AS_OF = 1_785_170_000.0
+
 
 def _seed(tmp_path):
     log = EventLog(tmp_path / "events.jsonl")
-    household = build(log)
+    household = build(log, as_of=PENSION_FIXTURE_AS_OF)
     return log, household
 
 
@@ -60,7 +62,7 @@ def _assessment(log, household, *, mission_id=None, as_of=None):
     else:
         mission = core.missions[mission_id]
     if as_of is None:
-        as_of = max(event["ts"] for event in log.events())
+        as_of = household.as_of
     return assessor.assess(MissionAssessmentRequest(
         mission.id,
         POLICY_ID,
@@ -68,6 +70,27 @@ def _assessment(log, household, *, mission_id=None, as_of=None):
             "party", household.household_id),
         as_of,
     ))
+
+
+def test_pension_fixture_is_stable_across_calendar_boundaries(
+        monkeypatch, tmp_path):
+    snapshots = []
+    for index, frozen_clock in enumerate((1_609_459_200.0, 2_051_222_400.0)):
+        monkeypatch.setattr(
+            "foundry.eventlog.time.time", lambda: frozen_clock)
+        log, household = _seed(tmp_path / str(index))
+        assessment = _assessment(log, household)
+        snapshots.append((
+            assessment.as_of,
+            assessment.trajectory_state,
+            assessment.trajectory_movement,
+            assessment.eta,
+            assessment.current_value.value,
+            tuple((point.at, point.base) for point in assessment.forecast),
+            tuple((item.id, item.estimated_at) for item in assessment.milestones),
+        ))
+
+    assert snapshots[0] == snapshots[1]
 
 
 def _new_assumptions(log, original, **changes):
@@ -411,7 +434,7 @@ def test_liquidity_precedence_suppresses_contribution_recommendation(
 
     assert len(assessment.recommendations) == 1
     recommendation = assessment.recommendations[0]
-    assert recommendation.status == "unavailable"
+    assert recommendation.status == "suppressed"
     assert "3.0 months" in recommendation.action
     assert "36-month recommendation floor" not in recommendation.action
     assert "6-month recommendation floor" in recommendation.action
@@ -507,20 +530,25 @@ def test_future_evidence_is_excluded_with_visible_limitation(tmp_path):
     )
 
 
-def test_telemetry_hierarchy_has_four_hero_items_and_per_year_labels(tmp_path):
+def test_telemetry_hierarchy_has_three_essential_items_and_per_year_labels(
+        tmp_path):
     log, household = _seed(tmp_path)
     assessment = _assessment(log, household)
 
-    hero = [
+    essential = [
         item for item in assessment.telemetry
-        if item.display_region == "hero"
+        if item.display_region == "essential"
     ]
-    assert [item.label for item in hero] == [
+    assert [item.label for item in essential] == [
         "CURRENT PENSION",
-        "PROJECTED PENSION AT RETIREMENT",
-        "ESTIMATED RETIREMENT INCOME",
-        "THIS TAX YEAR'S CONTRIBUTIONS",
+        "REQUIRED RETIREMENT WEALTH",
+        "FUNDING RATIO",
     ]
+    assert not any(
+        item.display_region == "hero" for item in assessment.telemetry)
+    assert all(
+        item.display_group for item in assessment.telemetry
+        if item.display_region == "drilldown")
     for item in assessment.telemetry:
         if item.result.status in ("available", "stale"):
             assert (
@@ -538,6 +566,15 @@ def test_telemetry_hierarchy_has_four_hero_items_and_per_year_labels(tmp_path):
     ]
     assert projected
     assert all("PATH" in item.qualifier for item in projected)
+    scenarios = [
+        item.label for item in assessment.telemetry
+        if item.display_group == "PROJECTION SCENARIOS"
+    ]
+    assert scenarios == [
+        "EXPECTED PATH",
+        "CONSERVATIVE CASE",
+        "OPTIMISTIC CASE",
+    ]
 
 
 def test_assessment_and_render_inputs_are_deterministic_and_read_only(tmp_path):

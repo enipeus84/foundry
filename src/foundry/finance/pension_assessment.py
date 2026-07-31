@@ -843,7 +843,15 @@ class PensionIndependenceAssessor:
                 assumption_set,
             ))
         return MissionMargin(
-            None, None, description, state), tuple(factor_items)
+            None,
+            None,
+            description,
+            state,
+            label="INCOME GAP",
+            value=surplus,
+            unit_or_currency="GBP",
+            format_kind="currency",
+        ), tuple(factor_items)
 
     def _confidence(
         self,
@@ -1013,16 +1021,17 @@ class PensionIndependenceAssessor:
                 "CURRENT PENSION",
                 "currency",
                 "OBSERVED POT TODAY",
-                display_region="hero",
+                display_region="essential",
             ),
             derived(
                 "finance.projected_pension_expected",
                 terminal.base,
                 "GBP",
-                "PROJECTED PENSION AT RETIREMENT",
+                "EXPECTED PATH",
                 "currency",
                 "PROJECTED · EXPECTED PATH · DEFAULT VIEW · NOT A GUARANTEE",
-                "hero",
+                "drilldown",
+                "PROJECTION SCENARIOS",
             ),
             derived(
                 "finance.estimated_retirement_income",
@@ -1031,14 +1040,16 @@ class PensionIndependenceAssessor:
                 "ESTIMATED RETIREMENT INCOME",
                 "currency",
                 f"{annual} · PROJECTED · EXPECTED PATH · NOT A GUARANTEE",
-                "hero",
+                "drilldown",
+                "RETIREMENT INCOME COMPOSITION",
             ),
             TelemetryItem(
                 p7,
                 "THIS TAX YEAR'S CONTRIBUTIONS",
                 "currency",
                 "DECLARED DATED PAYMENTS",
-                display_region="hero",
+                display_region="drilldown",
+                display_group="CONTRIBUTIONS",
             ),
             TelemetryItem(
                 replace(
@@ -1047,8 +1058,7 @@ class PensionIndependenceAssessor:
                 "REQUIRED RETIREMENT WEALTH",
                 "currency",
                 "W* · DECLARED INCOME NEED AND WITHDRAWAL BASIS",
-                display_region="analysis",
-                display_group="CURRENT FUNDING POSITION",
+                display_region="essential",
             ),
             derived(
                 "finance.pension_funding_ratio",
@@ -1058,28 +1068,27 @@ class PensionIndependenceAssessor:
                 "FUNDING RATIO",
                 "percent",
                 "CURRENT PENSION ÷ REQUIRED RETIREMENT WEALTH",
-                "analysis",
-                "CURRENT FUNDING POSITION",
+                "essential",
             ),
             derived(
                 "finance.projected_pension_conservative",
                 terminal.low,
                 "GBP",
-                "CONSERVATIVE PROJECTED PENSION",
+                "CONSERVATIVE CASE",
                 "currency",
                 "PROJECTED · CONSERVATIVE PATH · NOT A GUARANTEE",
-                "analysis",
-                "PROJECTION",
+                "drilldown",
+                "PROJECTION SCENARIOS",
             ),
             derived(
                 "finance.projected_pension_optimistic",
                 terminal.high,
                 "GBP",
-                "OPTIMISTIC PROJECTED PENSION",
+                "OPTIMISTIC CASE",
                 "currency",
                 "PROJECTED · OPTIMISTIC PATH · NOT A GUARANTEE",
-                "analysis",
-                "PROJECTION",
+                "drilldown",
+                "PROJECTION SCENARIOS",
             ),
             derived(
                 "finance.sustainable_pension_income",
@@ -1088,8 +1097,8 @@ class PensionIndependenceAssessor:
                 "SUSTAINABLE PENSION INCOME · PER YEAR",
                 "currency",
                 "PROJECTED · EXPECTED PATH · WITHDRAWAL BASIS",
-                "analysis",
-                "RETIREMENT COMPOSITION",
+                "drilldown",
+                "RETIREMENT INCOME COMPOSITION",
             ),
             TelemetryItem(
                 replace(
@@ -1099,8 +1108,8 @@ class PensionIndependenceAssessor:
                 "STATE PENSION · PER YEAR",
                 "currency",
                 "DECLARED COMPONENT",
-                display_region="analysis",
-                display_group="RETIREMENT COMPOSITION",
+                display_region="drilldown",
+                display_group="RETIREMENT INCOME COMPOSITION",
             ),
         ]
         if results["finance.defined_benefit_income_annual"].value is not None:
@@ -1112,8 +1121,8 @@ class PensionIndependenceAssessor:
                 "DEFINED BENEFIT INCOME · PER YEAR",
                 "currency",
                 "DECLARED COMPONENT",
-                display_region="analysis",
-                display_group="RETIREMENT COMPOSITION",
+                display_region="drilldown",
+                display_group="RETIREMENT INCOME COMPOSITION",
             ))
         items.extend([
             derived(
@@ -1123,8 +1132,8 @@ class PensionIndependenceAssessor:
                 "COMBINED RETIREMENT INCOME · PER YEAR",
                 "currency",
                 "PROJECTED · EXPECTED PATH",
-                "analysis",
-                "RETIREMENT COMPOSITION",
+                "drilldown",
+                "RETIREMENT INCOME COMPOSITION",
             ),
             *self._contribution_items(
                 request, assumption_set, p7),
@@ -1135,6 +1144,7 @@ class PensionIndependenceAssessor:
                 "REQUIRED RETIREMENT INCOME · PER YEAR",
                 "currency",
                 "DECLARED NEED",
+                display_group="RETIREMENT REQUIREMENTS",
             ),
             derived(
                 "finance.projected_retirement_income_margin",
@@ -1143,6 +1153,8 @@ class PensionIndependenceAssessor:
                 "PROJECTED SURPLUS / SHORTFALL · PER YEAR",
                 "currency",
                 "SIGNED · EXPECTED PATH",
+                "drilldown",
+                "MISSION MARGIN EVIDENCE",
             ),
             *factor_items,
         ])
@@ -1154,8 +1166,20 @@ class PensionIndependenceAssessor:
                 "STATE PENSION RELIANCE",
                 "percent",
                 "STATE PENSION ÷ COMBINED RETIREMENT INCOME",
+                "drilldown",
+                "MISSION MARGIN EVIDENCE",
             ))
-        return tuple(items)
+        margin_metrics = {
+            "finance.pension_margin_income_band",
+            "finance.pension_margin_sensitivity_band",
+            "finance.pension_margin_reliance_band",
+        }
+        return tuple(
+            replace(item, display_group="MISSION MARGIN EVIDENCE")
+            if item.result.metric_id in margin_metrics and not item.display_group
+            else item
+            for item in items
+        )
 
     def _contribution_items(self, request, assumption_set, p7):
         person_ids = {
@@ -1196,8 +1220,8 @@ class PensionIndependenceAssessor:
                 label,
                 "currency",
                 "DECLARED ANNUAL RATE · PER YEAR",
-                display_region="analysis",
-                display_group="CONTRIBUTION ANALYSIS",
+                display_region="drilldown",
+                display_group="CONTRIBUTIONS",
             )
         return (
             item(
@@ -1220,8 +1244,8 @@ class PensionIndependenceAssessor:
                 "TAX YEAR TOTAL",
                 "currency",
                 "DECLARED DATED PAYMENTS",
-                display_region="analysis",
-                display_group="CONTRIBUTION ANALYSIS",
+                display_region="drilldown",
+                display_group="CONTRIBUTIONS",
             ),
         )
 
@@ -1313,7 +1337,7 @@ class PensionIndependenceAssessor:
                 ),
                 scenario_id=scenario.id,
                 estimated_delta_v_days=None,
-                status="unavailable",
+                status="suppressed",
                 limitations=(
                     "Preserve emergency liquidity before deploying "
                     "additional capital.",
@@ -1413,5 +1437,6 @@ class PensionIndependenceAssessor:
                 delta_v="unavailable",
                 trajectory="unavailable",
                 forecast="unavailable",
+                margin="unavailable",
             ),
         )
