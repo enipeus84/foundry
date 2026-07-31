@@ -1,8 +1,14 @@
 # RFC-010 — Mission Console UX Framework
 
-**Status: Proposed.** Architecture-only. No production code, tests, CSS,
-templates or runtime configuration are changed by this RFC. Implementation
-requires Governor approval, then a separate engineering Burn.
+**Status: Approved — architecture frozen.** Approved by the Governor on
+2026-07-31. Architecture-only: no production code, tests, CSS, templates or
+runtime configuration are changed by this RFC. Implementation proceeds as a
+separate engineering Burn.
+
+**The contracts in this document are frozen. Implementation must not change a
+frozen contract without a new Governor decision.** Where implementation
+discovers that a frozen contract cannot be built as specified, it stops and
+returns to the Governor rather than adapting the contract in code.
 
 Date: 2026-07-31
 
@@ -24,6 +30,55 @@ no scope was added and no concept redesigned:
 | 5 | Mission Console declared a **platform** capability, not a Finance one | Governing Principles (principle 0) |
 | 6 | Disclosure ownership split: Core owns ordering, slot identity and behaviour; providers own titles, content and telemetry | Region 5 |
 | 7 | Governor visual review made an explicit mandatory gate between reference mission and remaining migrations | Migration Plan, AC-19 |
+
+## Governor Approval — Architecture Freeze
+
+**Decision: GO — ARCHITECTURE FROZEN. Architecture-freeze date: 2026-07-31.**
+
+All seven Governor amendments are complete. **No open architecture questions
+remain**; the three previously unresolved questions are ruled below and the
+region-ordering tension is accepted for V1.
+
+### Approved contract amendments
+
+Three additive amendments are approved, each with an inert default so all four
+shipped missions replay and render unchanged:
+
+| # | Approved amendment | Precise identifier |
+|---|---|---|
+| 1 | Essential telemetry classification | **`TELEMETRY_REGION` gains the value `essential`**, consumed through `TelemetryItem.display_region` |
+| 2 | Trajectory movement axis | **`MissionTrajectoryView.movement`**, validated against the new `TRAJECTORY_MOVEMENT` closed vocabulary |
+| 3 | Margin applicability | **`InstrumentApplicability.margin`** |
+
+> **Recorded discrepancy, resolved in favour of this document.** The closeout
+> brief listed the first amendment as `InstrumentApplicability.essential`.
+> `essential` is a **telemetry display region**, not an applicability field:
+> `InstrumentApplicability` carries `eta`, `delta_v`, `trajectory`, `forecast`
+> and (by amendment 3) `margin`, while `essential` is a value in
+> `TELEMETRY_REGION` read via `TelemetryItem.display_region`. The three
+> approved amendments are otherwise exactly as listed and in the same order, so
+> the intent is unambiguous and this is treated as a transcription slip. The
+> identifiers frozen here are the ones implementation must build. Should the
+> Governor have intended a genuine fourth concept on
+> `InstrumentApplicability`, that is a new architecture decision and requires a
+> new RFC.
+
+### Governor rulings on the previously open questions
+
+| # | Question | **Ruling** |
+|---|---|---|
+| Q1 | Retire the legacy scalar adapter and RFC-005 `phase`/`phases` aliases in the RFC-010 Burn, or separately? | **Retire during the RFC-010 implementation Burn.** Decision 15 items 5 and 6 move from *recommended* to **mandatory** |
+| Q2 | Remove `MissionMargin`'s deprecated numerics in this Burn or after a compatibility release? | **Retain for one compatibility release.** `pace_percent` and `schedule_buffer_days` remain readable for one release after the Burn, then are removed as an explicit breaking change per the RFC-006 discipline |
+| Q3 | Are disclosure section names Core-owned slots or provider-supplied? | **Core owns disclosure ordering, slot identity, stable IDs and behaviour; providers own titles, content and telemetry.** As applied in Region 5 |
+
+### Region ordering — accepted for V1
+
+The structural tension recorded under self-review A7 — that Essential Telemetry
+sits between the answers to Q3 and Q4 — is **accepted for V1**. Regions 3 and 4
+are **not** reordered in this architecture burn. The mitigations stand: the
+hero's Next Burn preview is required, Region 3 is capped at six items, and
+Region 3 is omitted entirely when empty. Revisiting the order is a future
+Governor decision, not an implementation choice.
 
 ## Context
 
@@ -721,14 +776,17 @@ Trajectory Panel plus a bounded rail; `_MissionDataView` is replaced by
 4. **`MissionMargin.pace_percent` / `.schedule_buffer_days`** — superseded by
    the domain-neutral margin quantity.
 5. **`_legacy_scalar_mission_status`** (RFC-006 deprecated adapter) — its four
-   removal preconditions are now met for every live mission; RFC-010 is the
-   natural point to retire it.
+   removal preconditions are now met for every live mission.
 6. **RFC-005 `phase` / `phases` aliases and `phase_thresholds`** — superseded
    by `milestones` since RFC-006.
 
-Items 5 and 6 are **recommended but not required** by RFC-010; they are listed
-so the Governor can authorise their removal in the same Burn rather than
-carrying them further.
+**Items 5 and 6 are mandatory**, per the Governor's Q1 ruling of 2026-07-31:
+both are retired during the RFC-010 implementation Burn.
+
+Item 4 is the one exception to same-Burn removal: per the Q2 ruling,
+`MissionMargin.pace_percent` and `.schedule_buffer_days` are **deprecated but
+retained for one compatibility release**, then removed as an explicit breaking
+change.
 
 ## Migration Plan
 
@@ -867,15 +925,17 @@ Blocking for the implementation Burn:
 | 12 | Deterministic fixtures | DET-1 … DET-6; explicit clocks mandatory |
 | 13 | Critical warnings | Never disclosure-only; hoisted into the region they qualify; sections containing them render open |
 | 14 | Disclosure persistence | **No persistence in V1.** Server-rendered HTML with no client state; persistence would add storage, a privacy surface and cross-device inconsistency for negligible benefit. Revisit only with evidence of user need |
-| 15 | Paths to retire | Hero telemetry region; analysis-rail burn instruments; monolithic drill-down; margin schedule numerics. Recommended additionally: legacy scalar adapter and RFC-005 phase aliases |
+| 15 | Paths to retire | Hero telemetry region; analysis-rail burn instruments; monolithic drill-down; **legacy scalar adapter and RFC-005 phase aliases — all mandatory** per the Q1 ruling. Margin schedule numerics are deprecated but retained for one compatibility release per the Q2 ruling |
 
-## Unresolved Questions
+## Unresolved Questions — none remaining
 
-| # | Question | Recommendation pending ruling |
-|---|---|---|
-| Q1 | Should the legacy scalar adapter and RFC-005 `phase`/`phases` aliases be retired in the RFC-010 Burn, or separately? | Retire in the same Burn — their removal preconditions are met and carrying them adds a rendering path the console must otherwise tolerate |
-| Q2 | Should `MissionMargin`'s deprecated numerics be removed in this Burn or after one compatibility release? | After one compatibility release, per the RFC-006 removal discipline |
-| Q3 | Should disclosure section names be Core-owned slots or fully provider-supplied? | Core owns ordering slots; providers supply names via `display_group` — keeps Core domain-neutral while allowing domain language |
+**All architecture questions raised by this RFC are ruled and closed.** Q1, Q2
+and Q3 were each ruled by the Governor on 2026-07-31 and are recorded in
+[Governor Approval — Architecture Freeze](#governor-approval--architecture-freeze).
+The region-ordering tension is accepted for V1.
+
+Questions arising after this point are not open questions against RFC-010; they
+require a new Governor decision.
 
 ## References
 

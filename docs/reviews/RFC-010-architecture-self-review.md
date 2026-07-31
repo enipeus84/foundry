@@ -296,3 +296,32 @@ Governor amendment 2 (domain-specific margin labels) refines, and does not
 weaken, challenge 3's finding: the contract stays universal and only the
 displayed word varies. Challenge 10's binary-mission walkthrough remains valid
 because the `margin` applicability field from A3 is retained.
+
+---
+
+## Architecture Freeze — 2026-07-31
+
+**Decision: GO — ARCHITECTURE FROZEN.**
+
+- **All seven Governor amendments are complete.** Each was applied to the RFC
+  and verified present before commit; none redesigned a concept or added scope.
+- **No open architecture questions remain.** Q1, Q2 and Q3 are ruled and
+  recorded in the RFC's Governor Approval section, and the region-ordering
+  tension identified by challenge 7 (amendment A7) is **accepted for V1** —
+  Regions 3 and 4 are not reordered in this burn.
+- **Implementation must not change the frozen contracts without a new Governor
+  decision.** Where implementation finds a frozen contract cannot be built as
+  specified, it stops and returns to the Governor rather than adapting the
+  contract in code.
+
+The residual risks recorded above are accepted as stated. Two remain worth
+carrying into the implementation Burn as watch items rather than defects:
+`TELEMETRY_FORMAT` retains Finance-leaning values until a real second domain
+exists, and `movement` yields no information for two of the four current
+missions.
+
+One clarification was made at freeze: the closeout brief transcribed the first
+approved amendment as `InstrumentApplicability.essential`. `essential` is a
+`TELEMETRY_REGION` value read through `TelemetryItem.display_region`, not an
+applicability field. The RFC records the accurate identifier; the discrepancy
+is noted there in full.

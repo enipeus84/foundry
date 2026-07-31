@@ -45,7 +45,7 @@ Architecture is written and under Governor review; no implementation exists.
 
 | RFC | Title | Status | Architecture / decision doc | Self-review | PR |
 |---|---|---|---|---|---|
-| RFC-010 | Mission Console UX Framework | **Proposed — architecture only** | [`RFC-010-mission-console-ux-framework.md`](RFC-010-mission-console-ux-framework.md) | [`RFC-010-architecture-self-review.md`](../reviews/RFC-010-architecture-self-review.md) | — |
+| RFC-010 | Mission Console UX Framework | **Approved — architecture frozen 2026-07-31; not implemented** | [`RFC-010-mission-console-ux-framework.md`](RFC-010-mission-console-ux-framework.md) | [`RFC-010-architecture-self-review.md`](../reviews/RFC-010-architecture-self-review.md) | [#24](https://github.com/enipeus84/foundry/pull/24) |
 
 RFC-007 Revision 2 documents `initial_deposit`, optional
 `acquisition_costs`, optional explicit `valuation_basis`, visible

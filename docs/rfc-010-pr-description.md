@@ -1,8 +1,13 @@
 # RFC-010 — Mission Console UX Framework (architecture only)
 
-**Draft. Architecture-only burn — no implementation.** This PR contains
-documentation exclusively: no production source, tests, CSS, templates or
-runtime configuration are changed.
+**Approved — architecture frozen. Ready for review.** Architecture-only burn:
+this PR contains documentation exclusively — no production source, tests, CSS,
+templates or runtime configuration are changed.
+
+The Governor approved RFC-010 on **2026-07-31**. All seven Governor amendments
+are complete, **no open architecture questions remain**, and the contracts in
+this RFC are frozen: **implementation must not change a frozen contract without
+a new Governor decision.**
 
 ## What this is
 
@@ -118,15 +123,34 @@ slot identity, behaviour) and providers (titles, content, telemetry); and the
 Governor visual review becomes an explicit mandatory gate between the reference
 mission and the remaining migrations.
 
+## Closeout rulings
+
+All previously open questions are ruled and closed:
+
+- **Q1** — the legacy scalar adapter and the RFC-005 `phase`/`phases` aliases
+  are **retired during the RFC-010 implementation Burn**; Decision 15 items 5
+  and 6 become mandatory.
+- **Q2** — `MissionMargin`'s deprecated `pace_percent` and
+  `schedule_buffer_days` are **retained for one compatibility release**, then
+  removed as an explicit breaking change.
+- **Q3** — **Core owns disclosure ordering, slot identity, stable IDs and
+  behaviour; providers own titles, content and telemetry.**
+- **Region ordering accepted for V1** — Essential Telemetry and Next Burn are
+  not reordered in this burn.
+
+The three additive contract amendments are approved:
+`TELEMETRY_REGION` gains `essential` (consumed via
+`TelemetryItem.display_region`), `MissionTrajectoryView.movement` with the new
+`TRAJECTORY_MOVEMENT` vocabulary, and `InstrumentApplicability.margin`. The
+RFC records a transcription discrepancy in the closeout brief, which listed the
+first as `InstrumentApplicability.essential`; the accurate identifiers are
+frozen in the RFC.
+
 ## Review path
 
-Governor architecture review → Architecture Gate → Security Gate. Fifteen
-required decisions each carry an explicit recommendation; three unresolved
-questions carry recommendations pending ruling, of which Q1 (whether to retire
-the legacy scalar adapter and RFC-005 phase aliases in the same Burn) most
-affects scope.
+Architecture Gate → Security Gate → merge. Fifteen required decisions each
+carry an explicit recommendation; no unresolved question remains.
 
-**Do not merge.** This PR is a draft and must remain so until Governor
-architecture review completes.
+**Do not merge yet.** Ready for review, pending the remaining gates.
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
