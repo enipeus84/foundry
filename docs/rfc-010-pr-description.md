@@ -101,6 +101,23 @@ event-sourcing, authentication or navigation change. No frontend framework. No
 mission-specific renderer branch. No implementation, no page migration, no test
 or CSS modification in this PR.
 
+## Governor review outcome
+
+**GO WITH MINOR AMENDMENTS** (2026-07-31). Seven amendments applied in
+`ce7cc17`, none redesigning a concept or adding scope: the seam is renamed the
+**Mission Console Model**; Mission Margin is confirmed as the architectural
+concept with an optional domain-specific label (Runway, Income Gap, LTV Buffer,
+Recovery Reserve); a hero five-second success criterion is added as an
+architecture principle with structural proxies as its testable form; the
+Mission Console Model is made the explicit owner of ordering, grouping,
+visibility, disclosure placement and card priority, with the renderer owning
+presentation only; **Mission Console is declared a platform capability rather
+than a Finance one**, so all future domains render through it unless an RFC
+approves an exception; disclosure ownership is split between Core (ordering,
+slot identity, behaviour) and providers (titles, content, telemetry); and the
+Governor visual review becomes an explicit mandatory gate between the reference
+mission and the remaining migrations.
+
 ## Review path
 
 Governor architecture review → Architecture Gate → Security Gate. Fifteen
