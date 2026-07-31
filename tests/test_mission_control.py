@@ -4,6 +4,7 @@ missing metrics, intact authentication, deterministic rendering — plus
 the read-only guarantee. Skips cleanly without the [web] extra."""
 
 import hashlib
+from itertools import count
 import re
 
 import pytest
@@ -19,6 +20,7 @@ from foundry.finance.fixtures import build_parker_brads_household  # noqa: E402
 from foundry.web import app, _build_console  # noqa: E402
 
 ALLOWED = "cparkerbrads@gmail.com"
+MISSION_CONTROL_FIXTURE_AS_OF = 1_785_170_000.0  # 2026-07-27T16:33:20Z
 
 # Everything the Finance provider owns (registered by the composition
 # root) — unchanged by RFC-004, which only changed what the opening
@@ -38,6 +40,9 @@ HOME_KPI_IDS = {
 
 @pytest.fixture(autouse=True)
 def auth_env(monkeypatch, tmp_path):
+    event_clock = count(MISSION_CONTROL_FIXTURE_AS_OF, step=0.001)
+    monkeypatch.setattr(
+        "foundry.eventlog.time.time", event_clock.__next__)
     monkeypatch.setenv("SUPABASE_URL", "https://example.supabase.co")
     monkeypatch.setenv("SUPABASE_PUBLISHABLE_KEY", "test-publishable-key")
     monkeypatch.setenv("FOUNDRY_ALLOWED_EMAIL", ALLOWED)
@@ -536,7 +541,9 @@ def _seed_financial_independence(tmp_path):
     from foundry.demo_data import build
 
     log = EventLog(tmp_path / "events.jsonl")
-    build(log)
+    # Route goldens must never inherit wall-clock time: event timestamps
+    # become Mission Control's as_of and can move calendar projections.
+    build(log, as_of=MISSION_CONTROL_FIXTURE_AS_OF)
     return log
 
 
@@ -1055,11 +1062,11 @@ def test_rfc009_route_goldens_and_narrow_d13_diff(tmp_path):
     c = client()
 
     assert _normalized_render_hash(c.get("/").text) == (
-        "8c89b1fbba97598b2fa28cc24207d58cdd871be66d4132a62bed3afd6a90526c"
+        "6b61b5ed5e671c5996db95cd818d777393a1f56eb0b0f7ce97f92d90953d5d4c"
     )
     resilience = c.get("/missions/financial-resilience").text
     assert _normalized_render_hash(resilience) == (
-        "7906d20f014876f8183ab8edf51bbcee029a0c909ecf372fd570464dd2bdf623"
+        "9cece404e125b3f36f7146070e154563258378315a4f07b36744386104622672"
     )
     new_tile = """<div><p class="k">TRAJECTORY</p>
         <p class="v green">COMPLETE</p>
@@ -1070,16 +1077,16 @@ def test_rfc009_route_goldens_and_narrow_d13_diff(tmp_path):
     assert new_tile in resilience
     assert _normalized_render_hash(
         resilience.replace(new_tile, old_tile, 1)
-    ) == "96510b24c43f38d22a6e935ea65ae6007ed5713bb910c93c55f9ca73614acf15"
+    ) == "0967cd9fd736ebe82ce4e8c2df4331fb05ebec24d75206f1944b5187ae1442f6"
     assert _normalized_render_hash(
         c.get("/missions/financial-independence").text
-    ) == "586b255faf03b3512cb87487c902371886577d4de298f75d53a733053bdfef12"
+    ) == "544e41a8e8f1b5e0da4937b87227b4cd32813eb8eef2a573e2d375439f4015c1"
     assert _normalized_render_hash(
         c.get("/missions/mortgage-freedom").text
-    ) == "b3fc0e6fef1a612bf06ccff025216502529c97feda1cd79597c31c8ad47ea20c"
+    ) == "410cd6a65bb298cc230203f1dbdf78e737899aacbd42544d419e948838ef67d6"
     assert _normalized_render_hash(
         c.get("/missions/pension-independence").text
-    ) == "84f3b148a00cb6f0e8f8e79df0c6fa8b556a9bfd4fefcc9ad472c5f1cd6a2fde"
+    ) == "affcfbf2e3a1bd687538e3e56e81c6c4090094ef64c7a4e728b419797a0578f1"
 
 
 def test_d13_resilience_detail_and_home_agree_without_inventing_history(
