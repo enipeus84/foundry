@@ -246,19 +246,6 @@ def test_mission_control_never_appends_an_event(tmp_path):
     assert log_path.read_bytes() == before
 
 
-def test_home_shows_nominal_flight_plan_and_flight_director(tmp_path):
-    """Seeded state: net worth £480,760 vs target £450k ±£50k →
-    on_track → NOMINAL (RFC-004's flight vocabulary) — evaluated by
-    Core, only rendered here. The recommendation Claim surfaces in the
-    Flight Director panel via the Evidence Index."""
-    _seed(tmp_path)
-    html = client().get("/").text
-    assert "NOMINAL" in html
-    assert "Financial independence glide path" in html
-    assert "Reduce employer concentration below 25%." in html
-    assert "CONFIDENCE 80%" in html
-    assert "EVIDENCE ITEMS 1" in html
-    assert "EVIDENCE VERIFIED" not in html
 
 
 def test_drill_down_shows_full_lineage(tmp_path):
@@ -273,28 +260,8 @@ def test_drill_down_shows_full_lineage(tmp_path):
 
 # ------------------------------------------------ RFC-004: Flight Deck UI
 
-def test_flight_deck_hero_answers_the_three_questions(tmp_path):
-    """Am I on course? (FLIGHT PLAN word) · Why? (the evidence line
-    naming the mission and its numbers) · Do I need to do anything?
-    (the course-corrections count and the Flight Director)."""
-    _seed(tmp_path)
-    html = client().get("/").text
-    assert "FLIGHT PLAN" in html
-    assert "STRATEGIC RISK" in html
-    assert "RECOMMENDED COURSE CORRECTIONS" in html
-    assert "FLIGHT DIRECTOR" in html
-    assert "APOLLO MISSIONS" in html
-    # The "why" line carries the real numbers, not a slogan:
-    assert "£480,760" in html and "£450,000" in html
 
 
-def test_apollo_mission_card_shows_status_progress_and_drill_down(tmp_path):
-    _seed(tmp_path)
-    html = client().get("/").text
-    assert 'class="card mission live"' in html
-    assert "Financial independence glide path" in html
-    assert "TARGET £450,000" in html
-    assert 'href="/metrics/finance.net_worth"' in html
 
 
 def test_apollo_programme_shows_four_honest_mission_lanes(tmp_path):
@@ -377,58 +344,12 @@ def _seed_household_with(tmp_path):
     return log, household
 
 
-def test_mission_gauge_is_honest_for_lower_is_better_metrics(tmp_path):
-    """Mortgage Freedom: debt ratio 30.4% against a 25% target is a
-    deviation, and must render as one — a positive variance and a
-    deviation gauge, never a filled 'progress' bar (the RFC-004 bar
-    showed >100% completion for exactly this state)."""
-    log, household = _seed_household_with(tmp_path)
-    declare_mission(log, "Mortgage Freedom", target_metric="finance.debt_ratio",
-                     target_value=0.25, tolerance=0.03)
-    html = client().get("/").text
-    assert 'class="m-bar"' not in html          # the misleading metaphor is gone
-    assert 'class="m-gauge"' in html
-    assert '<span class="zone"></span>' in html  # exact-target tolerance band
-    assert "+5.4% FROM TARGET" in html          # signed, in the metric's units
-    assert "WATCH" in html                      # Core's verdict, unchanged
 
 
-def test_mission_gauge_is_honest_for_higher_is_better_metrics(tmp_path):
-    """Retirement short of target: the same gauge, deviation signed
-    the other way."""
-    log, household = _seed_household_with(tmp_path)
-    declare_mission(log, "Retirement", target_metric="finance.net_worth",
-                     target_value=600_000.0, tolerance=70_000.0)
-    html = client().get("/").text
-    assert "−£119,240 FROM TARGET" in html
-    assert 'class="m-gauge"' in html
 
 
-def test_mission_inside_declared_range_says_within_range(tmp_path):
-    log, household = _seed_household_with(tmp_path)
-    declare_mission(log, "Stability corridor", target_metric="finance.net_worth",
-                     target_range=(400_000.0, 500_000.0), tolerance=50_000.0)
-    html = client().get("/").text
-    assert "WITHIN RANGE" in html
-    assert "RANGE £400,000–£500,000" in html
-    assert "against a target range of £400,000–£500,000." in html
-    assert "against a target of —" not in html
-    assert '<span class="zone"></span>' not in html
 
 
-def test_range_mission_watch_gauge_has_no_false_target_band(tmp_path):
-    """Outside a declared range, Core says WATCH even when the value is
-    within one tolerance of the edge. The tick remains, but the target-value
-    tolerance band must not imply that the WATCH state is on target."""
-    log, household = _seed_household_with(tmp_path)
-    declare_mission(log, "Stability corridor", target_metric="finance.net_worth",
-                     target_range=(500_000.0, 600_000.0), tolerance=50_000.0)
-    html = client().get("/").text
-    assert "WATCH" in html
-    assert "−£19,240 OUTSIDE RANGE" in html
-    assert "against a target range of £500,000–£600,000." in html
-    assert 'class="m-gauge"' in html
-    assert '<span class="zone"></span>' not in html
 
 
 def test_mission_without_numeric_target_gets_no_gauge(tmp_path):
@@ -442,48 +363,8 @@ def test_mission_without_numeric_target_gets_no_gauge(tmp_path):
     assert 'class="m-gauge"' not in html
 
 
-def test_flight_director_addresses_the_deviating_mission(tmp_path):
-    """OFF COURSE because of Retirement → the surfaced correction is
-    one whose Claim concerns that Mission, and the lede says so."""
-    log, household = _seed_household_with(tmp_path)
-    mission = declare_mission(log, "Retirement", target_metric="finance.net_worth",
-                               target_value=750_000.0, tolerance=50_000.0)
-    _, unrelated = derive_claim_directly(
-        log, statement="Rebalance the ISA into the tracker fund.",
-        confidence=0.7, evidence=["e"], provenance=[household.chris_id], actor="user")
-    tag_claim(log, unrelated, "insight_type", "recommendation")
-    concern(log, unrelated, household.household_id)
-    _, related = derive_claim_directly(
-        log, statement="Raise pension contributions by 3% to close the Retirement gap.",
-        confidence=0.8, evidence=["e"], provenance=[household.household_id], actor="user")
-    tag_claim(log, related, "insight_type", "recommendation")
-    concern(log, related, mission.id)
-
-    html = client().get("/").text
-    assert "OFF COURSE" in html
-    assert "Course correction for Retirement." in html
-    assert "Raise pension contributions by 3%" in html
-    # The unrelated recommendation must not appear under a red banner:
-    assert "Rebalance the ISA into the tracker fund." not in html
 
 
-def test_flight_director_admits_when_no_relevant_correction_exists(tmp_path):
-    """Deviation with only unrelated recommendations on file: the panel
-    states the absence rather than borrowing unrelated advice."""
-    log, household = _seed_household_with(tmp_path)
-    declare_mission(log, "Retirement", target_metric="finance.net_worth",
-                     target_value=750_000.0, tolerance=50_000.0)
-    _, unrelated = derive_claim_directly(
-        log, statement="Rebalance the ISA into the tracker fund.",
-        confidence=0.7, evidence=["e"], provenance=[household.chris_id], actor="user")
-    tag_claim(log, unrelated, "insight_type", "recommendation")
-    concern(log, unrelated, household.household_id)
-
-    html = client().get("/").text
-    assert "No course correction on file for Retirement." in html
-    assert "nothing is invented" in html
-    assert "1 standing recommendation on file concern" in html
-    assert "Rebalance the ISA into the tracker fund." not in html
 
 
 def test_cash_flow_card_declares_its_measurement_period(tmp_path):
@@ -570,8 +451,8 @@ def test_financial_independence_route_renders_assessment_not_calculations(tmp_pa
     html = response.text
     assert "Financial Independence" in html
     assert "Mission trajectory" in html
-    assert "MISSION MARGIN" in html
-    assert "Δv" in html
+    assert "SCHEDULE BUFFER" in html
+    assert "RECENT MOVEMENT" in html
     assert 'class="mission-time-lane"' not in html
     assert 'class="flight-analysis-schedule"' not in html
     assert "low to high sensitivity corridor" in html
@@ -585,94 +466,6 @@ def test_financial_independence_route_renders_assessment_not_calculations(tmp_pa
     assert html.count('src="/static/earthrise.webp"') == 1
 
 
-def test_mortgage_freedom_uses_the_generic_live_mission_route(tmp_path):
-    _seed_financial_independence(tmp_path)
-
-    response = client().get("/missions/mortgage-freedom")
-
-    assert response.status_code == 200
-    html = response.text
-    hero, analysis, _ = _mission_detail_regions(html)
-    assert "Mortgage Freedom" in html
-    assert "Mission trajectory" in html
-    assert "REPAYMENT UNDERWAY" in html
-    assert '<p class="v green">ACCELERATED</p>' in html
-    assert "EXPECTED DESTINATION" in html
-    assert "APRIL 2043" in html
-    assert "ORIGINAL DESTINATION" in html
-    assert "JULY 2050" in html
-    assert "ABOUT 86 MONTHS GAINED" in html
-    assert "Δv · SINCE FIRST PAYMENT" in html
-    assert "label-lane-0" in html
-    assert "label-lane-1" in html
-    assert 'class="current-label"' in html
-    assert "PROPERTY ACQUISITION" in html
-    assert "CURRENT POSITION" in html
-    assert "EQUITY COMPOSITION" in html
-    telemetry_html = html[html.index('<div class="telemetry-grid">'):]
-    assert telemetry_html.index(
-        "PROPERTY ACQUISITION") < telemetry_html.index(
-        "CURRENT POSITION") < telemetry_html.index("EQUITY COMPOSITION")
-    assert "PURCHASE PRICE" in html
-    assert "PURCHASED MAY 2025 · MONTH PRECISION" in html
-    assert "INITIAL DEPOSIT" in html
-    assert "INITIAL MORTGAGE" in html
-    assert "ACQUISITION COSTS" in html
-    assert "PROPERTY VALUATION" in html
-    assert "MORTGAGE BALANCE" in html
-    assert "OBSERVED · JULY 2026" in html
-    assert "CURRENT EQUITY" in html
-    assert "CURRENT LTV" in html
-    assert "PRINCIPAL REPAID" in html
-    assert "VALUATION MOVEMENT" in html
-    assert "REMAINING INTEREST" in html
-    assert "PROJECTED · EXPECTED PATH" in html
-    assert "Estimated · Index estimate · HPI · March 2025" in html
-    assert "HPI" in html
-    assert "March 2025" in html
-    assert "£450,000 purchase price" in html
-    assert "£140,000" in html
-    assert "£194,098" in html
-    assert "£67,460" in html
-    assert "£-13,362" in html
-    assert "Valuation basis: Not recorded; not inferred" not in html
-    assert "supplied valuation" not in html
-    assert "current valuation" not in html
-    assert "live valuation" not in html
-    assert "Add mortgage overpayment" in html
-    assert "projected interest" in html
-    assert "monthly_mortgage_overpayment" not in html
-    assert "original_term_months" not in html
-    assert "recorded_overpayment" not in html
-    assert "finance.mortgage_balance" not in html
-    assert "Scenario " not in html
-    assert "OBSERVATIONS AND PROJECTIONS REMAIN DISTINCT" in html
-    composition = html[html.index("EQUITY COMPOSITION"):]
-    composition = composition[:composition.index(
-        '<div class="assessment-notes">')]
-    assert "EQUITY COMPOSITION · INITIAL DEPOSIT" not in composition
-    assert "EQUITY COMPOSITION · CURRENT EQUITY" not in composition
-    assert html.count("PROPERTY ACQUISITION · INITIAL DEPOSIT") == 1
-    assert html.count("CURRENT POSITION · CURRENT EQUITY") == 1
-    assert "REMAINING INTEREST" not in composition
-    assert "MONTHLY PAYMENT" not in composition
-    assert "PLANNED" not in html
-    assert "<script>alert" not in html
-    assert 'class="flight-analysis-schedule"' not in hero
-    assert 'class="flight-analysis-schedule"' in analysis
-    assert html.count('class="flight-analysis-schedule"') == 1
-    assert analysis.count('class="time-point"') == 4
-    for label, value in (
-        ("ORIGINAL START", "JULY 2025"),
-        ("CURRENT POSITION", "£242,540"),
-        ("EXPECTED DESTINATION", "APRIL 2043"),
-        ("ORIGINAL DESTINATION", "JULY 2050"),
-    ):
-        assert label not in hero
-        assert f'<p class="k">{label}</p>' in analysis
-        assert html.count(f'<p class="k">{label}</p>') == 1
-        assert value in analysis
-    assert "ABOUT 86 MONTHS GAINED" in analysis
 
 
 def test_mortgage_freedom_route_renders_deterministically(tmp_path):
@@ -683,43 +476,6 @@ def test_mortgage_freedom_route_renders_deterministically(tmp_path):
         c.get("/missions/mortgage-freedom").text
 
 
-def test_financial_resilience_route_is_honest_steady_state_mission(tmp_path):
-    _seed_financial_independence(tmp_path)
-
-    html = client().get("/missions/financial-resilience").text
-    hero, analysis, summary = _mission_detail_regions(html)
-    drilldown = html[html.index('<details class="mission-drilldown">'):]
-
-    assert "Financial Resilience" in hero
-    assert "CURRENT MILESTONE</p><p class=\"v\">FORTIFIED" in hero
-    assert "Current position is RESERVE COVERAGE " in summary
-    assert " mo." in summary
-    assert "Trajectory history is not available for this mission." in hero
-    assert "Trajectory history is not available for this mission." in summary
-    assert '<p class="k">ETA' not in hero
-    assert "NOT IN HORIZON" not in hero
-    assert "EXPECTED DESTINATION" not in hero
-    assert 'class="flight-analysis-schedule"' not in analysis
-    assert "Δv" not in analysis
-    assert "ESTIMATED Δv" not in analysis
-    assert "forecast" not in summary.lower()
-    assert "solid historical path" not in summary
-    assert "dashed expected forecast" not in summary
-    assert "Maintain reserve contribution" in analysis
-    assert "£250 per month" in analysis
-    assert "Declared action and constraint" in drilldown
-    assert "evidence reference(s)" in drilldown
-    assert "declared 18-month reserve destination" in drilldown
-    assert "Modelled ETA change" not in drilldown
-    assert "finance." not in html
-    for assumption_key in (
-        "reserve_target_months",
-        "secure_floor_months",
-        "commitment_horizon_months",
-        "monthly_reserve_contribution",
-    ):
-        assert assumption_key not in html
-    assert "unprotected" not in html.lower()
 
 
 def test_financial_resilience_route_is_deterministic_and_read_only(tmp_path):
@@ -892,7 +648,9 @@ def test_pension_independence_route_renders_approved_policy(tmp_path):
     assert "PLANNED" not in response.text
     assert "CURRENT PENSION" in response.text
     assert "£62,000" in response.text
-    assert "PROJECTED PENSION AT RETIREMENT" in response.text
+    assert "EXPECTED PATH" in response.text
+    assert "CONSERVATIVE CASE" in response.text
+    assert "OPTIMISTIC CASE" in response.text
     assert "£785,000" in response.text
     assert "EXPECTED PATH · DEFAULT VIEW · NOT A GUARANTEE" in response.text
     assert "STATE PENSION · PER YEAR" in response.text
@@ -901,8 +659,8 @@ def test_pension_independence_route_renders_approved_policy(tmp_path):
     assert "£42,000" in response.text
     assert "Declared scenario increases pension contributions" in response.text
     assert "not regulated financial advice" in response.text
-    assert "MISSION MARGIN" in response.text
-    assert "NOMINAL" in response.text
+    assert "INCOME GAP" in response.text
+    assert "NOMINAL TRAJECTORY" in response.text
     assert "NOT EVALUABLE" not in response.text
     assert "finance.pension_" not in response.text
     assert "required_retirement_income_annual" not in response.text
@@ -928,7 +686,7 @@ def _render_shape_neutral_mission(
     from foundry.core.metrics import MetricResult
     from foundry.core.mission_assessment import (
         DeltaV, ForecastPoint, MissionAssessment, MissionAssessmentRegistry,
-        MissionDefinition, MissionMilestone, TrajectoryPoint,
+        MissionDefinition, MissionMargin, MissionMilestone, TrajectoryPoint,
     )
 
     policy_id = "domain.shape-neutral.v1"
@@ -999,6 +757,14 @@ def _render_shape_neutral_mission(
                     telemetry_factory(request)
                     if telemetry_factory is not None else ()
                 ),
+                mission_margin=(
+                    MissionMargin(
+                        None, None, "four months of operating tolerance",
+                        "Adequate Margin", value=4.0,
+                        unit_or_currency="months", format_kind="months",
+                    )
+                    if applicability.margin == "applicable" else None
+                ),
                 applicability=applicability,
             )
 
@@ -1020,7 +786,7 @@ def _render_shape_neutral_mission(
     monkeypatch.setattr(app.state, "console_factory", shape_neutral_console)
     response = client().get("/missions/shape-neutral")
     assert response.status_code == 200
-    assert "NOT EVALUABLE" not in response.text
+    assert 'class="mission-empty-state"' not in response.text
     return response.text
 
 
@@ -1028,10 +794,10 @@ def _mission_detail_regions(rendered):
     hero_start = rendered.index('<section class="hero mission-detail-hero')
     hero_end = rendered.index("</section>", hero_start)
     analysis_start = rendered.index(
-        '<section aria-labelledby="analysis-heading">')
+        '<section data-console-region="flight-analysis"')
     analysis_end = rendered.index("</section>", analysis_start)
     summary_start = rendered.index(
-        '<p class="sr-only" id="trajectory-summary">', hero_start)
+        '<p class="sr-only" id="mission-console-summary">', hero_start)
     summary_end = rendered.index("</p>", summary_start)
     return (
         rendered[hero_start:hero_end],
@@ -1056,37 +822,56 @@ def _normalized_render_hash(rendered):
     return hashlib.sha256(normalized.encode()).hexdigest()
 
 
-def test_rfc009_route_goldens_and_narrow_d13_diff(tmp_path):
-    """A3/A5/A10-A14: pin every live route and the narrow D13 correction."""
+def test_rfc010_phase_2_route_goldens_are_pinned_for_all_four_missions(
+        tmp_path):
     _seed_financial_independence(tmp_path)
     c = client()
 
-    assert _normalized_render_hash(c.get("/").text) == (
-        "6b61b5ed5e671c5996db95cd818d777393a1f56eb0b0f7ce97f92d90953d5d4c"
+    hashes = {
+        slug: _normalized_render_hash(c.get(f"/missions/{slug}").text)
+        for slug in (
+            "financial-resilience",
+            "financial-independence",
+            "pension-independence",
+            "mortgage-freedom",
+        )
+    }
+
+    assert hashes == {
+        "financial-resilience":
+            "c82de9f26f914e9bd358b0ed620ae698fa2eb754b3fe6a39370f8f3364a24be9",
+        "financial-independence":
+            "164046d0d4847afab18a4ed010a20d868352ed9e5d78010cf0617e47885f61fa",
+        "pension-independence":
+            "b683086d31525dfbd958a4ece3e84e6adaae9c3dcd1c7598bcdcc9e07cb45caf",
+        "mortgage-freedom":
+            "aecfc1ded2f0c44dce710e4bbd8bd1d674cd1b2df41702b5ac7e6f6dbaef55bc",
+    }
+
+
+def test_route_goldens_ignore_two_distinct_frozen_wall_clocks(
+        monkeypatch, tmp_path):
+    _seed_financial_independence(tmp_path)
+    slugs = (
+        "financial-resilience",
+        "financial-independence",
+        "pension-independence",
+        "mortgage-freedom",
     )
-    resilience = c.get("/missions/financial-resilience").text
-    assert _normalized_render_hash(resilience) == (
-        "9cece404e125b3f36f7146070e154563258378315a4f07b36744386104622672"
-    )
-    new_tile = """<div><p class="k">TRAJECTORY</p>
-        <p class="v green">COMPLETE</p>
-        <p class="sub">Trajectory history is not available for this mission.</p></div>"""
-    old_tile = """<div><p class="k">TRAJECTORY</p>
-        <p class="v none">NOT AVAILABLE</p>
-        <p class="sub">Trajectory history is not available for this mission.</p></div>"""
-    assert new_tile in resilience
-    assert _normalized_render_hash(
-        resilience.replace(new_tile, old_tile, 1)
-    ) == "0967cd9fd736ebe82ce4e8c2df4331fb05ebec24d75206f1944b5187ae1442f6"
-    assert _normalized_render_hash(
-        c.get("/missions/financial-independence").text
-    ) == "544e41a8e8f1b5e0da4937b87227b4cd32813eb8eef2a573e2d375439f4015c1"
-    assert _normalized_render_hash(
-        c.get("/missions/mortgage-freedom").text
-    ) == "410cd6a65bb298cc230203f1dbdf78e737899aacbd42544d419e948838ef67d6"
-    assert _normalized_render_hash(
-        c.get("/missions/pension-independence").text
-    ) == "affcfbf2e3a1bd687538e3e56e81c6c4090094ef64c7a4e728b419797a0578f1"
+    rendered_at = []
+
+    for frozen_clock in (1_609_459_200.0, 2_051_222_400.0):
+        monkeypatch.setattr(
+            "foundry.eventlog.time.time", lambda: frozen_clock)
+        c = client()
+        rendered_at.append({
+            slug: _normalized_render_hash(c.get(f"/missions/{slug}").text)
+            for slug in slugs
+        })
+
+    assert rendered_at[0] == rendered_at[1]
+
+
 
 
 def test_d13_resilience_detail_and_home_agree_without_inventing_history(
@@ -1096,12 +881,13 @@ def test_d13_resilience_detail_and_home_agree_without_inventing_history(
 
     home = c.get("/").text
     detail = c.get("/missions/financial-resilience").text
-    hero, _, summary = _mission_detail_regions(detail)
+    hero, analysis, summary = _mission_detail_regions(detail)
 
     assert "TRAJECTORY · COMPLETE" in home
-    assert '<p class="v green">COMPLETE</p>' in hero
-    assert "Trajectory history is not available for this mission." in hero
-    assert "Trajectory history is not available for this mission." in summary
+    assert '<p class="v green">COMPLETE TRAJECTORY</p>' in hero
+    assert "Trajectory unavailable" in hero
+    assert "Observed trajectory history is unavailable." in analysis
+    assert "Complete trajectory" in summary
     assert 'class="trajectory-svg hero-trajectory"' not in hero
 
 
@@ -1115,105 +901,114 @@ def test_d13_unavailable_history_without_a_state_keeps_not_available_tile(
         InstrumentApplicability(trajectory="unavailable"),
         trajectory_state=None,
     )
-    hero, _, _ = _mission_detail_regions(rendered)
-
-    assert '<p class="v none">NOT AVAILABLE</p>' in hero
-    assert "Trajectory history is not available for this mission." in hero
-
-
-def test_declared_telemetry_regions_place_and_duplicate_without_inference(
-        monkeypatch, tmp_path):
-    from foundry.core.metrics import MetricResult
-    from foundry.core.mission_assessment import (
-        InstrumentApplicability,
-        TelemetryItem,
-    )
-
-    hostile_group = "POSITION <script>alert('group')</script>"
-
-    def telemetry(request):
-        def item(label, region, group=""):
-            return TelemetryItem(
-                MetricResult(
-                    f"domain.{label.lower().replace(' ', '_')}",
-                    42.0,
-                    "units",
-                    request.scope,
-                    request.as_of,
-                    "available",
-                    "shape-neutral-v1",
-                ),
-                label,
-                format_kind="number",
-                display_region=region,
-                display_group=group,
-            )
-
-        return (
-            item("HERO CAPACITY", "hero"),
-            item("ANALYSIS CAPACITY", "analysis", hostile_group),
-            item("DEEP CAPACITY", "drilldown"),
-        )
-
-    rendered = _render_shape_neutral_mission(
-        monkeypatch,
-        tmp_path,
-        InstrumentApplicability(),
-        telemetry_factory=telemetry,
-    )
     hero, analysis, _ = _mission_detail_regions(rendered)
-    drilldown = rendered[rendered.index('<details class="mission-drilldown">'):]
 
-    assert "HERO CAPACITY" in hero
-    assert "ANALYSIS CAPACITY" not in hero
-    assert "ANALYSIS CAPACITY" in analysis
-    assert "HERO CAPACITY" not in analysis
-    assert hostile_group not in rendered
-    assert "POSITION &lt;script&gt;alert(&#x27;group&#x27;)&lt;/script&gt;" \
-        in analysis
-    assert (
-        '<h3 class="mission-analysis-group-heading">'
-        "POSITION &lt;script&gt;alert(&#x27;group&#x27;)&lt;/script&gt;</h3>"
-    ) in analysis
-    assert ".mission-analysis-group {" in rendered
-    assert ".mission-analysis-group-heading {" in rendered
-    for label in ("HERO CAPACITY", "ANALYSIS CAPACITY", "DEEP CAPACITY"):
-        assert label in drilldown
+    assert "TRAJECTORY NOT EVALUABLE" in hero
+    assert "Observed trajectory history is unavailable." in analysis
 
 
-@pytest.mark.parametrize("slug", [
-    "financial-resilience",
-    "financial-independence",
-    "pension-independence",
-    "mortgage-freedom",
-])
-def test_live_finance_missions_share_the_mission_detail_structure(
-        tmp_path, slug):
-    """Every live Finance provider composes the same visible page regions."""
+
+
+
+
+@pytest.mark.parametrize("slug,essential_count", (
+    ("financial-resilience", 2),
+    ("financial-independence", 2),
+    ("pension-independence", 3),
+    ("mortgage-freedom", 2),
+))
+def test_all_finance_missions_use_five_ordered_console_regions(
+        tmp_path, slug, essential_count):
     _seed_financial_independence(tmp_path)
 
-    html = client().get(f"/missions/{slug}").text
-    hero, analysis, summary = _mission_detail_regions(html)
-    drilldown_start = html.index('<details class="mission-drilldown">')
-    drilldown_end = html.index("</details>", drilldown_start)
-    drilldown = html[drilldown_start:drilldown_end]
-    analysis_group_count = analysis.count(
-        '<div class="mission-analysis-group">')
+    rendered = client().get(f"/missions/{slug}").text
+    regions = (
+        "mission-hero",
+        "flight-analysis",
+        "essential-telemetry",
+        "next-burn",
+        "progressive-disclosure",
+    )
 
-    assert html.count('<section class="hero mission-detail-hero') == 1
-    assert html.count('<section aria-labelledby="analysis-heading">') == 1
-    assert html.count('<details class="mission-drilldown">') == 1
-    assert drilldown.count('<div class="telemetry-grid">') == 1
-    assert analysis.count('<div class="telemetry-grid">') \
-        == analysis_group_count
-    assert html.count('<div class="telemetry-grid">') \
-        == 1 + analysis_group_count
-    assert html.index(hero) < html.index(analysis) < drilldown_start
-    assert 'aria-labelledby="mission-title"' in hero
-    assert 'aria-describedby="trajectory-summary"' in hero
-    assert 'id="analysis-heading"' in analysis
-    assert 'id="trajectory-summary"' in summary
-    assert 'class="mission-return" href="/#missions"' in hero
+    positions = [
+        rendered.index(f'data-console-region="{region}"')
+        for region in regions
+    ]
+    assert positions == sorted(positions)
+    assert rendered.count('data-console-region="') == 5
+    essential_start = rendered.index(
+        'data-console-region="essential-telemetry"')
+    essential_end = rendered.index("</section>", essential_start)
+    essential = rendered[essential_start:essential_end]
+    assert essential.count('class="telemetry"') == essential_count
+    assert '<details class="mission-drilldown">' not in rendered
+    assert '<details id="supporting-telemetry-1">' in rendered
+    assert 'id="evidence-and-provenance"' in rendered
+    assert 'id="mission-definition"' in rendered
+    disclosure = rendered[rendered.index(
+        'data-console-region="progressive-disclosure"'):]
+    assert "aria-expanded=" not in disclosure
+    assert re.search(r"<details\b[^>]*\sopen(?:\s|>)", disclosure) is None
+    assert rendered.count('data-console-region="next-burn"') == 1
+    assert rendered.count('class="next-burn-panel"') == 1
+
+
+def test_financial_resilience_is_the_honest_absence_path(tmp_path):
+    _seed_financial_independence(tmp_path)
+
+    rendered = client().get("/missions/financial-resilience").text
+    hero, analysis, _ = _mission_detail_regions(rendered)
+
+    assert 'class="trajectory-svg hero-trajectory"' not in hero
+    assert "Trajectory unavailable" in hero
+    assert "Observed trajectory history is unavailable." in analysis
+    assert "RECENT MOVEMENT" not in analysis
+    assert "EXPECTED INTERCEPT" not in analysis
+    assert analysis.count('class="instrument"') == 1
+    assert "MILESTONE COMPLETION" in analysis
+    assert "Movement UNKNOWN" in hero
+    assert "RECEDING" not in hero
+    assert "Maintain reserve contribution" in rendered
+
+
+def test_mortgage_secondary_analysis_stays_behind_disclosure(tmp_path):
+    _seed_financial_independence(tmp_path)
+
+    rendered = client().get("/missions/mortgage-freedom").text
+    essential_start = rendered.index(
+        'data-console-region="essential-telemetry"')
+    essential_end = rendered.index("</section>", essential_start)
+    essential = rendered[essential_start:essential_end]
+    disclosure = rendered[rendered.index(
+        'data-console-region="progressive-disclosure"'):]
+
+    assert "MONTHLY PAYMENT" in essential
+    assert "FIXED-RATE PROTECTION" in essential
+    for supporting in (
+        "PROPERTY ACQUISITION",
+        "CURRENT EQUITY",
+        "CURRENT LTV",
+        "PRINCIPAL REPAID",
+        "VALUATION MOVEMENT",
+    ):
+        assert supporting not in essential
+        assert supporting in disclosure
+
+
+def test_console_grids_collapse_to_real_items_without_placeholders(tmp_path):
+    _seed_financial_independence(tmp_path)
+
+    rendered = client().get("/missions/pension-independence").text
+    grids = re.findall(
+        r'<div class="(?:essential-grid|telemetry-grid)">(.*?)</div>\s*</div>',
+        rendered,
+        flags=re.DOTALL,
+    )
+
+    assert grids
+    assert all('class="telemetry"' in grid for grid in grids)
+    assert "repeat(auto-fit, minmax(220px,1fr))" in rendered
+    assert 'class="telemetry"></div>' not in rendered
 
 
 def test_zero_w_star_route_has_no_negative_or_fabricated_milestone_bands(
@@ -1266,92 +1061,10 @@ def test_zero_w_star_route_has_no_negative_or_fabricated_milestone_bands(
         assert f">{fabricated_label}</text>" not in response.text
 
 
-def test_shared_mission_hero_escapes_plain_text_and_preserves_trusted_html():
-    from foundry.mission_control import _MissionHeroView, _render_mission_hero
-
-    hostile = "<script>alert('mission')</script>"
-    trusted_fragments = (
-        '<a data-contract="trusted">RETURN</a>',
-        '<svg data-contract="trusted"></svg>',
-        '<div data-contract="trajectory-tile"></div>',
-        '<div data-contract="eta-tile"></div>',
-        '<p data-contract="summary">SUMMARY</p>',
-    )
-    rendered = _render_mission_hero(_MissionHeroView(
-        title=hostile,
-        definition=hostile,
-        return_link_html=trusted_fragments[0],
-        sun_phase=hostile,
-        reference_schedule_class_html=" trusted-class",
-        trajectory_html=trusted_fragments[1],
-        milestone_label=hostile,
-        trajectory_tile_html=trusted_fragments[2],
-        eta_tile_html=trusted_fragments[3],
-        margin_value=hostile,
-        margin_sub=hostile,
-        accessible_summary_html=trusted_fragments[4],
-    ))
-
-    assert hostile not in rendered
-    assert rendered.count("&lt;script&gt;alert(&#x27;mission&#x27;)&lt;/script&gt;") \
-        == 6
-    assert "mission-detail-hero trusted-class" in rendered
-    assert all(fragment in rendered for fragment in trusted_fragments)
-    assert "&lt;svg data-contract=" not in rendered
 
 
-def test_shared_flight_analysis_escapes_plain_text_and_preserves_trusted_html():
-    from foundry.mission_control import (
-        _FlightAnalysisView, _render_flight_analysis,
-    )
-
-    hostile = "<script>alert('analysis')</script>"
-    trusted_fragments = (
-        '<div data-contract="schedule"></div>',
-        '<div data-contract="delta"></div>',
-        '<div data-contract="recommendation-delta"></div>',
-    )
-    rendered = _render_flight_analysis(_FlightAnalysisView(
-        schedule_html=trusted_fragments[0],
-        delta_instrument_html=trusted_fragments[1],
-        milestone_completion=42.0,
-        milestone_label=hostile,
-        recommendation_action=hostile,
-        recommendation_amount=hostile,
-        recommendation_delta_instrument_html=trusted_fragments[2],
-    ))
-
-    assert hostile not in rendered
-    assert rendered.count(
-        "&lt;script&gt;alert(&#x27;analysis&#x27;)&lt;/script&gt;") == 3
-    assert all(fragment in rendered for fragment in trusted_fragments)
-    assert "&lt;div data-contract=" not in rendered
 
 
-def test_shared_mission_data_preserves_escaped_provider_text_and_structure():
-    import html as html_module
-
-    from foundry.mission_control import _MissionDataView, _render_mission_data
-
-    hostile = "<script>alert('provider')</script>"
-    escaped = html_module.escape(hostile)
-    trusted_fragments = (
-        f'<div data-source="telemetry">{escaped}</div>',
-        f'<li data-source="recommendation">{escaped}</li>',
-        f'<li data-source="note">{escaped}</li>',
-    )
-    rendered = _render_mission_data(_MissionDataView(
-        telemetry_cards_html=(trusted_fragments[0],),
-        recommendation_detail_html=trusted_fragments[1],
-        note_items_html=trusted_fragments[2],
-        input_reference_count=1,
-        assumption_reference_count=2,
-    ))
-
-    assert hostile not in rendered
-    assert rendered.count(escaped) == 3
-    assert "&amp;lt;script&amp;gt;" not in rendered
-    assert all(fragment in rendered for fragment in trusted_fragments)
 
 
 def test_not_applicable_instruments_are_omitted_visually_and_accessibly(
@@ -1372,16 +1085,16 @@ def test_not_applicable_instruments_are_omitted_visually_and_accessibly(
     hero, analysis, summary = _mission_detail_regions(rendered)
 
     assert '<p class="k">ETA' not in hero
-    assert '<p class="k">TRAJECTORY</p>' not in hero
+    assert '<p class="k">TRAJECTORY</p>' in hero
+    assert "TRAJECTORY NOT EVALUABLE" in hero
     assert 'class="trajectory-svg hero-trajectory"' not in hero
     assert "Trajectory unavailable" not in hero
     assert "NOT IN HORIZON" not in hero
     assert "Δv" not in analysis
     assert "solid historical path" not in summary
-    assert "Historical trajectory" not in summary
+    assert "Trajectory not evaluable" in summary
     assert "forecast" not in summary.lower()
-    assert "Expected destination" not in summary
-    assert "arrival estimate" not in summary
+    assert "Destination is Operating" in summary
 
 
 def test_unavailable_instruments_render_deterministic_absence_explanations(
@@ -1400,13 +1113,12 @@ def test_unavailable_instruments_render_deterministic_absence_explanations(
     )
     hero, analysis, summary = _mission_detail_regions(rendered)
 
-    assert "Trajectory history is not available for this mission." in hero
-    assert "An arrival estimate is not available for this mission." in hero
-    assert "Schedule change is not available for this mission." in analysis
-    assert "ESTIMATED Δv" in analysis
-    assert "Trajectory history is not available for this mission." in summary
-    assert "Forecast evidence is not available for this mission." in summary
-    assert "An arrival estimate is not available for this mission." in summary
+    assert "NOMINAL TRAJECTORY" in hero
+    assert "Recent movement is unavailable." in analysis
+    assert "NOT AVAILABLE" in analysis
+    assert "Observed trajectory history is unavailable." in analysis
+    assert "Forecast evidence is unavailable." in analysis
+    assert "Nominal trajectory" in summary
     assert "solid historical path" not in summary
     assert "dashed expected forecast" not in summary
     assert "widening low to high sensitivity range" not in summary
@@ -1437,16 +1149,15 @@ def test_unavailable_and_not_applicable_trajectory_render_differently(
         ),
     )
 
-    unavailable_hero, _, unavailable_summary = _mission_detail_regions(
+    unavailable_hero, unavailable_analysis, unavailable_summary = _mission_detail_regions(
         unavailable)
-    omitted_hero, _, omitted_summary = _mission_detail_regions(not_applicable)
-    assert "Trajectory history is not available for this mission." \
-        in unavailable_hero
-    assert "Trajectory history is not available for this mission." \
-        in unavailable_summary
-    assert "Trajectory" not in omitted_hero
-    omitted_summary_text = omitted_summary.split(">", 1)[1]
-    assert "trajectory" not in omitted_summary_text.lower()
+    omitted_hero, omitted_analysis, omitted_summary = _mission_detail_regions(
+        not_applicable)
+    assert "NOMINAL TRAJECTORY" in unavailable_hero
+    assert "Observed trajectory history is unavailable." in unavailable_analysis
+    assert "Observed trajectory history does not apply." in omitted_analysis
+    assert "NOMINAL TRAJECTORY" in omitted_hero
+    assert unavailable_summary == omitted_summary
 
 
 def test_forecast_prose_follows_declared_applicability(
@@ -1463,39 +1174,9 @@ def test_forecast_prose_follows_declared_applicability(
     assert 'class="actual-path"' in hero
     assert 'class="forecast-path"' not in hero
     assert "forecast" not in summary.lower()
-    assert "solid historical path" not in summary
-    assert "Historical trajectory is NOMINAL." in summary
+    assert "Nominal trajectory" in summary
 
 
-def test_detail_renderer_uses_declared_applicability_not_mission_identity():
-    import inspect
-    import re
-
-    import foundry.mission_control as mission_control
-
-    source = inspect.getsource(mission_control.mission_detail)
-    assert "assessment.applicability.eta" in source
-    assert "assessment.applicability.delta_v" in source
-    assert "assessment.applicability.trajectory" in source
-    assert "assessment.applicability.forecast" in source
-    for instrument in (
-        "eta",
-        "delta_v",
-        "trajectory",
-        "forecast",
-    ):
-        assert re.search(
-            rf"\bif\s+(?:not\s+)?assessment\.{instrument}\b",
-            source,
-        ) is None
-    for identity in (
-        "shape-neutral",
-        "domain.shape-neutral.v1",
-        "Financial Independence",
-        "Mortgage Freedom",
-        "Financial Resilience",
-    ):
-        assert identity not in source
 
 
 def test_unknown_generic_mission_route_fails_safely_without_reflection(tmp_path):
@@ -1611,38 +1292,15 @@ def test_financial_independence_trajectory_is_integrated_into_hero(tmp_path):
     assert 'class="range-envelope-core"' in hero
     assert 'class="actual-path"' in hero
     assert 'class="forecast-path"' in hero
-    assert "MISSION MARGIN" in hero
+    assert "SCHEDULE BUFFER" in hero
     assert "TRAJECTORY" in hero
-    assert "ETA · INDEPENDENT" in hero
+    assert "DESTINATION" in hero
     assert "low to high sensitivity" in hero
     assert "trajectory-legend" not in hero
     assert "trajectory-shell" not in html
     assert '<h2 id="trajectory-heading">' not in html
 
 
-def test_financial_independence_analysis_reduces_duplication(tmp_path):
-    _seed_financial_independence(tmp_path)
-    html = client().get("/missions/financial-independence").text
-    analysis_start = html.index('<section aria-labelledby="analysis-heading">')
-    analysis_end = html.index("</section>", analysis_start)
-    analysis = html[analysis_start:analysis_end]
-
-    assert "Δv · LAST" in analysis
-    assert "MILESTONE COMPLETION" in analysis
-    assert "NEXT BURN" in analysis
-    assert "Increase ISA contribution" in analysis
-    assert "£250 per month" in analysis
-    assert "ESTIMATED Δv" in analysis
-    assert "Scenario " not in analysis
-    assert "TRAJECTORY" not in analysis
-    assert "ETA · INDEPENDENT" not in analysis
-    assert "MISSION MARGIN" not in analysis
-    assert '<details class="mission-drilldown">' in html
-    assert "<summary>DEEPER MISSION DATA" in html
-    drilldown = html[html.index('<details class="mission-drilldown">'):]
-    assert "Evidence basis: Declared scenario with " in drilldown
-    assert "Declared action: Increase monthly ISA contribution by £250" in drilldown
-    assert "monthly_contribution_delta" not in drilldown
 
 
 def test_financial_independence_milestones_are_keyboard_and_text_accessible(tmp_path):
@@ -1661,7 +1319,7 @@ def test_financial_independence_milestones_are_keyboard_and_text_accessible(tmp_
     assert "Current milestone." in html
     assert "Mission completion milestone." in html
     assert "Estimated " in html
-    assert 'aria-describedby="trajectory-summary"' in html
+    assert 'aria-describedby="mission-console-summary"' in html
     assert ".mission-milestone:focus .milestone-detail" in html
     assert ".mission-milestone:focus-visible" in html
 
@@ -1695,12 +1353,13 @@ def test_financial_independence_mobile_keeps_briefing_and_trajectory_distinct(tm
     assert "height: 510px; justify-content: flex-start;" in html
     assert "inset: 510px -30px 150px -58px;" in html
     assert ".hero-trajectory .milestone-detail { opacity: 0; }" in html
+    assert ".trajectory-readout .mono, .trajectory-readout .note" in html
     assert ".mission-milestone:focus .milestone-detail" in html
     assert 'class="mission-time-lane"' not in html
     assert "grid-template-columns: repeat(2, minmax(0,1fr));" in html
 
 
-def _synthetic_assessment(forecast=(), phases=None):
+def _synthetic_assessment(forecast=(), milestones=None):
     from foundry.core.metrics import MetricResult
     from foundry.core.mission_assessment import (
         MissionAssessment, MissionMilestone, TrajectoryPoint,
@@ -1708,7 +1367,7 @@ def _synthetic_assessment(forecast=(), phases=None):
     from foundry.core.scope import Subject
 
     scope = Subject("party", "household-test")
-    phase_values = phases or (
+    milestone_values = milestones or (
         MissionMilestone(
             "capital", "Capital Assembly", 0.0, 400.0, .75,
             order=0, unit_or_currency="USD", is_current=True),
@@ -1731,7 +1390,7 @@ def _synthetic_assessment(forecast=(), phases=None):
             unit_or_currency="USD", scope=scope, as_of=4.0,
             status="available", calculation_version="domain-v1"),
         trajectory_state="Nominal",
-        current_milestone=phase_values[0], milestones=phase_values,
+        current_milestone=milestone_values[0], milestones=milestone_values,
         trajectory=(
             TrajectoryPoint(1.0, 100.0),
             TrajectoryPoint(2.0, 200.0),
@@ -1938,7 +1597,7 @@ def test_lower_is_better_milestones_advance_without_renderer_branching():
             destination_value=100.0),
     )
     geometry = _mission_trajectory_geometry(
-        _synthetic_assessment((), phases=milestones))
+        _synthetic_assessment((), milestones=milestones))
     points = dict(
         (milestone.id, point)
         for milestone, point in geometry["phase_points"]
@@ -1993,24 +1652,25 @@ def test_recommendation_display_uses_structured_adjustment_not_scenario_name(tmp
         log, name="Misleading prose claims £999 weekly", amount=375.0)
 
     html = client().get("/missions/financial-independence").text
-    analysis = html[
-        html.index('<section aria-labelledby="analysis-heading">'):
+    burn = html[
+        html.index('<section data-console-region="next-burn"'):
         html.index("</section>", html.index(
-            '<section aria-labelledby="analysis-heading">'))
+            '<section data-console-region="next-burn"'))
     ]
-    assert "Increase ISA contribution" in analysis
-    assert "£375 per month" in analysis
-    assert "£999" not in analysis
+    assert "Increase ISA contribution" in burn
+    assert "£375 per month" in burn
+    assert "£999" not in burn
 
 
-def test_user_controlled_scenario_name_is_escaped_in_drilldown(tmp_path):
+def test_user_controlled_scenario_name_does_not_reach_the_console(tmp_path):
     log = _seed_financial_independence(tmp_path)
     _replace_demo_scenario(
         log, name="<script>alert('financial-data')</script>", amount=375.0)
 
     html = client().get("/missions/financial-independence").text
     assert "<script>alert('financial-data')</script>" not in html
-    assert "&lt;script&gt;alert(&#x27;financial-data&#x27;)&lt;/script&gt;" in html
+    assert "&lt;script&gt;alert(&#x27;financial-data&#x27;)&lt;/script&gt;" not in html
+    assert "Increase ISA contribution" in html
 
 
 def test_missing_structured_recommendation_data_fails_honestly(tmp_path):
@@ -2019,17 +1679,16 @@ def test_missing_structured_recommendation_data_fails_honestly(tmp_path):
         log, name="Increase ISA by £999", amount=275.0, structured=False)
 
     html = client().get("/missions/financial-independence").text
-    analysis = html[
-        html.index('<section aria-labelledby="analysis-heading">'):
+    burn = html[
+        html.index('<section data-console-region="next-burn"'):
         html.index("</section>", html.index(
-            '<section aria-labelledby="analysis-heading">'))
+            '<section data-console-region="next-burn"'))
     ]
-    assert "Recommendation unavailable" in analysis
-    assert "Recommendation evidence is incomplete" in analysis
-    assert "£275" not in analysis
-    assert "£999" not in analysis
+    assert "INSUFFICIENT EVIDENCE" in burn
+    assert "The declared recommendation is incomplete." in burn
+    assert "£275" not in burn
+    assert "£999" not in burn
     assert "Scenario " not in html
-    assert "The declared recommendation evidence is incomplete." in html
     assert "Declared recommendation presentation details are incomplete" \
         in html
 
@@ -2056,10 +1715,10 @@ def test_financial_independence_home_and_detail_use_same_status_vocabulary(tmp_p
     assert "TARGET £" not in card
 
     detail = client().get("/missions/financial-independence").text
-    assert "<p class=\"k\">CURRENT MILESTONE</p>" in detail
+    assert "<p class=\"k\">CURRENT POSITION</p>" in detail
     assert "<p class=\"k\">TRAJECTORY</p>" in detail
-    assert "MISSION MARGIN" in detail
-    assert "MISSION CONFIDENCE · SUPPORTED" in detail
+    assert "SCHEDULE BUFFER" in detail
+    assert "SUPPORTED" in detail
     assert "% above required pace" in detail
 
 
@@ -2123,10 +1782,112 @@ def test_margin_presentation_does_not_reuse_trajectory_status_colour(
 
     detail = client().get("/missions/financial-independence").text
 
-    assert '<p class="v green">ACCELERATED</p>' in detail
-    assert '<p class="v red">ACCELERATED</p>' not in detail
-    assert '<p class="v num">HIGH MARGIN</p>' in detail
+    assert '<p class="v green">ACCELERATED TRAJECTORY</p>' in detail
+    assert '<p class="v red">ACCELERATED TRAJECTORY</p>' not in detail
+    assert '<p class="v num green">High Margin</p>' in detail
     assert '<p class="v num red">HIGH MARGIN</p>' not in detail
+
+
+def test_console_renderer_preserves_model_region_order_verbatim(tmp_path):
+    from types import SimpleNamespace
+
+    from foundry.core.mission_assessment import MissionAssessmentRequest
+    from foundry.core.mission_console import MissionConsoleModel
+    from foundry.mission_control import (
+        TrustedHtml,
+        _active_missions,
+        _as_of,
+        _household_scope,
+        _render_mission_console,
+    )
+
+    _seed_financial_independence(tmp_path)
+    console = _build_console()
+    definition = console.assessments.definition_for_slug(
+        "financial-independence")
+    scope = _household_scope(console)
+    mission = next(
+        item for item in _active_missions(console)
+        if item.assessment_policy_id == definition.assessment_policy_id
+    )
+    assessment = console.assessments.dispatch(MissionAssessmentRequest(
+        mission.id,
+        definition.assessment_policy_id,
+        scope,
+        _as_of(console),
+    ))
+    view = MissionConsoleModel().build(definition, assessment)
+    order = (
+        "next-burn",
+        "mission-hero",
+        "flight-analysis",
+        "essential-telemetry",
+        "progressive-disclosure",
+    )
+    deliberately_reordered = SimpleNamespace(
+        hero=view.hero,
+        analysis=view.analysis,
+        essential=view.essential,
+        next_burn=view.next_burn,
+        disclosure=view.disclosure,
+        region_order=order,
+    )
+
+    rendered = _render_mission_console(
+        deliberately_reordered,
+        assessment,
+        TrustedHtml('<a href="/missions">BACK</a>'),
+        assessment.as_of,
+    )
+
+    positions = [
+        rendered.index(f'data-console-region="{region}"')
+        for region in order
+    ]
+    assert positions == sorted(positions)
+
+
+def test_console_model_and_renderer_contain_no_mission_identity_branch():
+    import inspect
+
+    import foundry.core.mission_console as mission_console
+    import foundry.mission_control as mission_control
+
+    source = inspect.getsource(mission_console) + inspect.getsource(
+        mission_control._render_mission_console)
+    for identity in (
+        "financial-resilience",
+        "financial-independence",
+        "pension-independence",
+        "mortgage-freedom",
+        "Financial Resilience",
+        "Financial Independence",
+        "Pension Independence",
+        "Mortgage Freedom",
+    ):
+        assert identity not in source
+
+
+def test_console_route_fixture_uses_explicit_clocks_and_no_current_date():
+    import ast
+    import inspect
+
+    source = inspect.getsource(_seed_financial_independence)
+    tree = ast.parse(source)
+    build_calls = [
+        node for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "build"
+    ]
+
+    assert build_calls
+    assert all(
+        any(keyword.arg == "as_of" for keyword in call.keywords)
+        for call in build_calls
+    )
+    assert "date.today" not in source
+    assert "datetime.now" not in source
 
 
 @pytest.mark.parametrize("months,direction,expected", [

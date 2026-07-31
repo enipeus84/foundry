@@ -9,7 +9,7 @@ probabilities, and assessment never appends an event.
 from __future__ import annotations
 
 from calendar import monthrange
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 import math
 import time
@@ -730,6 +730,43 @@ class MortgageFreedomAssessor:
                 "EQUITY COMPOSITION · VALUATION MOVEMENT", "currency",
                 "CURRENT VALUE − PURCHASE PRICE"),
         )
+        essential_metric_ids = {
+            "finance.mortgage_payment",
+            "finance.mortgage_fixed_protection",
+        }
+        acquisition_metric_ids = {
+            "finance.property_purchase_price",
+            "finance.mortgage_initial_deposit",
+            "finance.mortgage_initial_advance",
+            "finance.property_acquisition_costs",
+        }
+        equity_metric_ids = {
+            "finance.property_valuation",
+            "finance.property_current_equity",
+            "finance.mortgage_ltv",
+            "finance.mortgage_principal_repaid",
+            "finance.property_valuation_movement",
+        }
+        telemetry = tuple(
+            replace(
+                item,
+                display_region=(
+                    "essential"
+                    if item.result.metric_id in essential_metric_ids
+                    else "drilldown"
+                ),
+                display_group=(
+                    ""
+                    if item.result.metric_id in essential_metric_ids
+                    else "PROPERTY ACQUISITION"
+                    if item.result.metric_id in acquisition_metric_ids
+                    else "EQUITY AND VALUATION ANALYSIS"
+                    if item.result.metric_id in equity_metric_ids
+                    else "MORTGAGE POSITION"
+                ),
+            )
+            for item in telemetry
+        )
         limitations = [
             f"Primary residence dated valuation reference: "
             f"£{valuation:,.2f} · {valuation_record.source} · "
@@ -852,8 +889,6 @@ class MortgageFreedomAssessor:
             confidence=confidence,
             current_milestone=current_milestone,
             milestones=milestones,
-            phase=current_milestone,
-            phases=milestones,
             mission_margin=margin,
             delta_v=delta_v,
             trajectory=trajectory,
@@ -1200,6 +1235,10 @@ class MortgageFreedomAssessor:
             pace_percent=None,
             schedule_buffer_days=None,
             state=state,
+            label="LTV BUFFER",
+            value=1.0 - ltv,
+            unit_or_currency=None,
+            format_kind="percent",
             description=(
                 f"LTV {ltv * 100:.1f}%, runway "
                 f"{runway_value:.1f} months"
@@ -1265,10 +1304,24 @@ class MortgageFreedomAssessor:
         runway_value: float | None,
         evidence_refs: tuple[str, ...],
     ) -> tuple[RecommendationAssessment, ...]:
-        if runway_value is None \
-                or runway_value < inputs.liquidity_floor_months \
-                or baseline.payoff_base is None:
+        if runway_value is None or baseline.payoff_base is None:
             return ()
+        if runway_value < inputs.liquidity_floor_months:
+            action = (
+                f"Preserve emergency liquidity: current runway is "
+                f"{runway_value:.1f} months, below the declared "
+                f"{inputs.liquidity_floor_months:g}-month overpayment floor."
+            )
+            return (RecommendationAssessment(
+                action=action,
+                scenario_id="financial-resilience-precedence",
+                estimated_delta_v_days=None,
+                status="suppressed",
+                action_type="preserve_liquidity",
+                action_label="Preserve emergency liquidity",
+                limitations=(action,),
+                evidence_references=evidence_refs,
+            ),)
         candidates = []
         for scenario in self.finance.scenarios.values():
             if scenario.status != "active" \

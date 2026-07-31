@@ -31,6 +31,7 @@ from .vocab import (
     MISSION_TRAJECTORY,
     TELEMETRY_FORMAT,
     TELEMETRY_REGION,
+    TRAJECTORY_MOVEMENT,
 )
 from ..errors import DuplicateMissionAssessmentError
 
@@ -127,6 +128,7 @@ class InstrumentApplicability:
     delta_v: str = "applicable"
     trajectory: str = "applicable"
     forecast: str = "applicable"
+    margin: str = "applicable"
 
     def __post_init__(self) -> None:
         for field, value in (
@@ -134,6 +136,7 @@ class InstrumentApplicability:
             ("delta_v", self.delta_v),
             ("trajectory", self.trajectory),
             ("forecast", self.forecast),
+            ("margin", self.margin),
         ):
             _require_text(value, f"{field} applicability")
             if value not in INSTRUMENT_APPLICABILITY:
@@ -200,16 +203,16 @@ class MissionMilestone:
         return self.lower_bound
 
 
-# RFC-005 compatibility name. New consumers use MissionMilestone.
-MissionPhaseAssessment = MissionMilestone
-
-
 @dataclass(frozen=True)
 class MissionMargin:
     pace_percent: float | None
     schedule_buffer_days: float | None
     description: str
     state: str | None = None
+    label: str = ""
+    value: float | None = None
+    unit_or_currency: str | None = None
+    format_kind: str = "plain"
 
     def __post_init__(self) -> None:
         _require_finite(
@@ -224,6 +227,12 @@ class MissionMargin:
             _require_text(self.state, "mission margin")
             if self.state not in MISSION_MARGIN:
                 raise ValueError("unsupported mission margin")
+        _require_text(self.label, "mission margin label", allow_empty=True)
+        _require_finite(self.value, "mission margin value", allow_none=True)
+        if self.unit_or_currency is not None:
+            _require_text(self.unit_or_currency, "mission margin unit")
+        if self.format_kind not in TELEMETRY_FORMAT:
+            raise ValueError("unsupported mission margin format")
 
 
 @dataclass(frozen=True)
@@ -260,9 +269,9 @@ class TelemetryItem:
             raise ValueError("unsupported telemetry display region")
         _require_text(
             self.display_group, "telemetry display group", allow_empty=True)
-        if self.display_region != "analysis" and self.display_group:
+        if self.display_region == "essential" and self.display_group:
             raise ValueError(
-                "telemetry display group is only valid in the analysis region")
+                "essential telemetry cannot declare a display group")
         if self.display_group and (
             not self.display_group.strip()
             or len(self.display_group) > _MAX_DISPLAY_GROUP_LENGTH
@@ -332,6 +341,47 @@ class DeltaV:
 
 
 @dataclass(frozen=True)
+class MissionTrajectoryView:
+    """Domain-neutral trajectory instrument consumed by Mission Console."""
+
+    state: str | None
+    tone: str
+    movement: str = "unknown"
+    destination_direction: str = "higher_is_better"
+    history: str = "unavailable"
+    forecast: str = "unavailable"
+    intercept_at: float | None = None
+    intercept_label: str = ""
+    recent_change: DeltaV | None = None
+    confidence_state: str = "Insufficient"
+    evidence_note: str = ""
+
+    def __post_init__(self) -> None:
+        if self.state is not None and self.state not in MISSION_TRAJECTORY:
+            raise ValueError("unsupported mission trajectory")
+        if self.tone not in ("", "green", "amber", "red", "none"):
+            raise ValueError("unsupported trajectory presentation tone")
+        if self.movement not in TRAJECTORY_MOVEMENT:
+            raise ValueError("unsupported trajectory movement")
+        if self.destination_direction not in DESTINATION_DIRECTION:
+            raise ValueError("unsupported destination direction")
+        for field, value in (("history", self.history), ("forecast", self.forecast)):
+            if value not in INSTRUMENT_APPLICABILITY:
+                raise ValueError(f"unsupported trajectory {field} applicability")
+        _require_utc_timestamp(
+            self.intercept_at, "trajectory intercept", allow_none=True)
+        _require_text(
+            self.intercept_label, "trajectory intercept label", allow_empty=True)
+        if self.recent_change is not None \
+                and not isinstance(self.recent_change, DeltaV):
+            raise ValueError("trajectory recent change must be DeltaV")
+        if self.confidence_state not in MISSION_CONFIDENCE:
+            raise ValueError("unsupported trajectory confidence")
+        _require_text(
+            self.evidence_note, "trajectory evidence note", allow_empty=True)
+
+
+@dataclass(frozen=True)
 class RecommendationAssessment:
     action: str
     scenario_id: str
@@ -368,8 +418,6 @@ class MissionAssessment:
     milestones: tuple[MissionMilestone, ...] = ()
     flight_status_id: str = ""
     flight_status_label: str = ""
-    phase: MissionPhaseAssessment | None = None
-    phases: tuple[MissionPhaseAssessment, ...] = ()
     mission_margin: MissionMargin | None = None
     delta_v: DeltaV | None = None
     trajectory: tuple[TrajectoryPoint, ...] = ()
@@ -383,9 +431,6 @@ class MissionAssessment:
     confidence_basis: str = ""
     forecast_resolution: str = "month"
     applicability: InstrumentApplicability = InstrumentApplicability()
-    # Backward-compatible V1 field. New renderers use `phases`, which
-    # carries complete bounds, unit, order, completion and ETA metadata.
-    phase_thresholds: tuple[tuple[str, float], ...] = ()
 
     def __post_init__(self) -> None:
         if (
@@ -410,6 +455,7 @@ class MissionAssessment:
                 delta_v="unavailable",
                 trajectory="unavailable",
                 forecast="unavailable",
+                margin="unavailable",
             ),
         )
 
@@ -583,11 +629,19 @@ class MissionAssessmentRegistry:
         self._validate_applicability(result)
         if any(not isinstance(item, TelemetryItem) for item in result.telemetry):
             raise TypeError("provider returned unsupported telemetry")
-        if sum(
-            item.display_region == "hero" for item in result.telemetry
-        ) > 4:
+        essential = tuple(
+            item for item in result.telemetry
+            if item.display_region == "essential"
+        )
+        if len(essential) > 6:
             raise ValueError(
-                "provider returned more than four hero telemetry items")
+                "provider returned more than six essential telemetry items")
+        if any(
+            item.result.status not in ("available", "stale")
+            for item in essential
+        ):
+            raise ValueError(
+                "essential telemetry must carry current evidence")
         metric_results = tuple(item.result for item in result.telemetry)
         if result.current_value is not None:
             metric_results += (result.current_value,)
@@ -630,6 +684,11 @@ class MissionAssessmentRegistry:
                 "forecast",
                 result.applicability.forecast,
                 len(result.forecast) > 0,
+            ),
+            (
+                "margin",
+                result.applicability.margin,
+                result.mission_margin is not None,
             ),
         )
         for name, applicability, present in instruments:

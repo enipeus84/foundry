@@ -89,8 +89,10 @@ through a documented compatibility release.
 - Holdings freshness relies on dated contributing transactions or valuations.
   A richer undated-evidence disposition should be defined before a new holding
   type can contribute value without one of those dated records.
-- RFC-005 aliases and the RFC-006 legacy scalar adapter retain their existing
-  removal conditions and gain no new consumer.
+- RFC-005 phase aliases and the RFC-006 legacy scalar adapter were subsequently
+  retired by RFC-010 Phase 2 after all supported Finance missions migrated to
+  the Mission Console Model. Remaining compatibility fields retain their
+  separately governed lifecycle.
 - Two pre-existing FI early-unavailable construction paths (missing accessible
   assets and reporting-currency mismatch) still inherit all-applicable
   metadata, so registry validation replaces their specific reason and

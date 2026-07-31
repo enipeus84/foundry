@@ -306,18 +306,41 @@ class FinancialIndependenceAssessor:
         current_phase = next(
             (phase for phase in phases if phase.is_current), None)
 
+        cash_flow = self._metric(
+            "finance.cash_flow", request, request.as_of)
+        runway = self._metric(
+            "finance.liquidity_runway", request, request.as_of)
+
+        def supporting_or_essential(
+            result: MetricResult,
+            label: str,
+            format_kind: str,
+            qualifier: str = "",
+        ) -> TelemetryItem:
+            essential = result.status in ("available", "stale")
+            return TelemetryItem(
+                result,
+                label,
+                format_kind,
+                qualifier,
+                display_region="essential" if essential else "drilldown",
+                display_group="" if essential else "OPERATING EVIDENCE",
+            )
+
         telemetry = (
             TelemetryItem(
-                self._metric(
-                    "finance.accessible_assets", request, request.as_of),
-                "ACCESSIBLE ASSETS", "currency"),
-            TelemetryItem(
-                self._metric("finance.cash_flow", request, request.as_of),
-                "NET CASH FLOW", "currency", "SINCE FIRST OBSERVATION"),
-            TelemetryItem(
-                self._metric(
-                    "finance.liquidity_runway", request, request.as_of),
-                "RUNWAY", "months"),
+                current,
+                "ACCESSIBLE ASSETS",
+                "currency",
+                display_group="ACCESSIBLE INVESTMENT BANDS",
+            ),
+            supporting_or_essential(
+                cash_flow,
+                "NET CASH FLOW",
+                "currency",
+                "SINCE FIRST OBSERVATION",
+            ),
+            supporting_or_essential(runway, "RUNWAY", "months"),
         )
         limitations = list(current.limitations)
         limitations.append(
@@ -372,7 +395,6 @@ class FinancialIndependenceAssessor:
             flight_status_id=(
                 trajectory_state.lower() if trajectory_state else "unavailable"),
             flight_status_label=trajectory_state or "Not Evaluable",
-            phase=current_phase, phases=phases,
             mission_margin=margin, delta_v=delta_v,
             trajectory=trajectory, forecast=sampled_forecast,
             telemetry=telemetry, recommendations=recommendations,
@@ -383,8 +405,6 @@ class FinancialIndependenceAssessor:
             confidence_basis=(
                 "LOW / BASE / HIGH SENSITIVITY ENVELOPE · NOT A PROBABILITY"),
             forecast_resolution="month",
-            phase_thresholds=tuple(
-                (phase.label, phase.lower_bound) for phase in self.policy.phases),
         )
 
     def _metric(self, metric_id: str, request: MissionAssessmentRequest,
@@ -511,7 +531,12 @@ class FinancialIndependenceAssessor:
             return MissionMargin(
                 pace_percent=None, schedule_buffer_days=buffer_days,
                 description="Insufficient schedule history for pace margin",
-                state=self._margin_state(None, buffer_days))
+                state=self._margin_state(None, buffer_days),
+                label="SCHEDULE BUFFER",
+                value=buffer_days,
+                unit_or_currency="days",
+                format_kind="number",
+            )
 
         elapsed_months = max((as_of - prior_at) / MONTH, 1e-9)
         remaining_months = max((target_date - as_of) / MONTH, 1e-9)
@@ -530,7 +555,12 @@ class FinancialIndependenceAssessor:
         return MissionMargin(
             pace_percent=pace_percent, schedule_buffer_days=buffer_days,
             description=description,
-            state=self._margin_state(pace_percent, buffer_days))
+            state=self._margin_state(pace_percent, buffer_days),
+            label="SCHEDULE BUFFER",
+            value=buffer_days,
+            unit_or_currency="days",
+            format_kind="number",
+        )
 
     @staticmethod
     def _margin_state(
@@ -647,7 +677,10 @@ class FinancialIndependenceAssessor:
                 continue
             impact_days = (base_eta - scenario_eta) / DAY
             candidates.append(RecommendationAssessment(
-                action=scenario.name, scenario_id=scenario.id,
+                action=(
+                    f"{scenario.action_label} by £{delta:,.0f} per month."
+                ),
+                scenario_id=scenario.id,
                 estimated_delta_v_days=impact_days,
                 status="available",
                 action_type=scenario.action_type or "",

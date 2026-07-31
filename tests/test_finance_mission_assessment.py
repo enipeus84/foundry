@@ -321,7 +321,7 @@ def test_recommendation_amount_comes_from_structured_adjustment_not_name(tmp_pat
     assert recommendation.status == "available"
     assert recommendation.amount == 250.0
     assert recommendation.action == \
-        "Descriptive name says £999 and must not drive presentation"
+        "Increase ISA contribution by £250 per month."
     assert recommendation.action_label == "Increase ISA contribution"
     assert recommendation.adjustment_key == "monthly_contribution_delta"
     assert recommendation.unit_or_currency == "GBP"
@@ -490,14 +490,15 @@ def test_full_financial_independence_assessment_is_read_only(tmp_path):
     assert result.current_value.metric_id == "finance.accessible_assets"
     assert result.current_value.value < registry.dispatch(MetricRequest(
         "finance.net_worth", result.scope, as_of)).value
-    assert result.phase.label == "Building Capital"
-    assert result.current_milestone == result.phase
+    assert result.current_milestone.label == "Building Capital"
     assert result.trajectory_state in ("Accelerated", "Nominal", "Divergent")
     assert result.flight_status_label == result.trajectory_state
-    assert len(result.phases) == 4
-    assert result.milestones == result.phases
-    assert result.phases[2].completes_mission
-    assert all(phase.unit_or_currency == "GBP" for phase in result.phases)
+    assert len(result.milestones) == 4
+    assert result.milestones[2].completes_mission
+    assert all(
+        milestone.unit_or_currency == "GBP"
+        for milestone in result.milestones
+    )
     assert result.eta is not None
     assert result.forecast
     assert result.forecast[-1].high > result.forecast[-1].low
@@ -510,10 +511,16 @@ def test_full_financial_independence_assessment_is_read_only(tmp_path):
     assert result.confidence.state == "Supported"
     assert result.mission_margin.state in (
         "High Margin", "Adequate Margin", "Low Margin", "Negative Margin")
+    assert result.mission_margin.label == "SCHEDULE BUFFER"
+    assert result.mission_margin.value \
+        == result.mission_margin.schedule_buffer_days
+    assert result.mission_margin.format_kind == "number"
     assert tuple(item.label for item in result.telemetry) == (
         "ACCESSIBLE ASSETS", "NET CASH FLOW", "RUNWAY")
     assert tuple(item.format_kind for item in result.telemetry) == (
         "currency", "currency", "months")
+    assert tuple(item.display_region for item in result.telemetry) == (
+        "drilldown", "essential", "essential")
     assert "NOT A PROBABILITY" in result.confidence_basis
     assert "%" not in result.confidence_basis
 

@@ -411,7 +411,7 @@ def test_liquidity_precedence_suppresses_contribution_recommendation(
 
     assert len(assessment.recommendations) == 1
     recommendation = assessment.recommendations[0]
-    assert recommendation.status == "unavailable"
+    assert recommendation.status == "suppressed"
     assert "3.0 months" in recommendation.action
     assert "36-month recommendation floor" not in recommendation.action
     assert "6-month recommendation floor" in recommendation.action
@@ -507,20 +507,25 @@ def test_future_evidence_is_excluded_with_visible_limitation(tmp_path):
     )
 
 
-def test_telemetry_hierarchy_has_four_hero_items_and_per_year_labels(tmp_path):
+def test_telemetry_hierarchy_has_three_essential_items_and_per_year_labels(
+        tmp_path):
     log, household = _seed(tmp_path)
     assessment = _assessment(log, household)
 
-    hero = [
+    essential = [
         item for item in assessment.telemetry
-        if item.display_region == "hero"
+        if item.display_region == "essential"
     ]
-    assert [item.label for item in hero] == [
+    assert [item.label for item in essential] == [
         "CURRENT PENSION",
-        "PROJECTED PENSION AT RETIREMENT",
-        "ESTIMATED RETIREMENT INCOME",
-        "THIS TAX YEAR'S CONTRIBUTIONS",
+        "REQUIRED RETIREMENT WEALTH",
+        "FUNDING RATIO",
     ]
+    assert not any(
+        item.display_region == "hero" for item in assessment.telemetry)
+    assert all(
+        item.display_group for item in assessment.telemetry
+        if item.display_region == "drilldown")
     for item in assessment.telemetry:
         if item.result.status in ("available", "stale"):
             assert (
@@ -538,6 +543,15 @@ def test_telemetry_hierarchy_has_four_hero_items_and_per_year_labels(tmp_path):
     ]
     assert projected
     assert all("PATH" in item.qualifier for item in projected)
+    scenarios = [
+        item.label for item in assessment.telemetry
+        if item.display_group == "PROJECTION SCENARIOS"
+    ]
+    assert scenarios == [
+        "EXPECTED PATH",
+        "CONSERVATIVE CASE",
+        "OPTIMISTIC CASE",
+    ]
 
 
 def test_assessment_and_render_inputs_are_deterministic_and_read_only(tmp_path):
