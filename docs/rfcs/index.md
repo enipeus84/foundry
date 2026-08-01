@@ -55,7 +55,7 @@ Foundry does, and is listed separately for that reason.
 
 | RFC | Title | Status | Document | Self-review | PR |
 |---|---|---|---|---|---|
-| RFC-100 | Flight Operations Manual | **Proposed — awaiting Governor ratification** | [`RFC-100-flight-operations-manual.md`](RFC-100-flight-operations-manual.md) | [`RFC-100-architecture-self-review.md`](../reviews/RFC-100-architecture-self-review.md) | pending |
+| RFC-100 | Flight Operations Manual | **Revision 2 — Governor amendments applied; awaiting final architecture review and freeze** | [`RFC-100-flight-operations-manual.md`](RFC-100-flight-operations-manual.md) | [`RFC-100-architecture-self-review.md`](../reviews/RFC-100-architecture-self-review.md) | pending |
 
 RFC-007 Revision 2 documents `initial_deposit`, optional
 `acquisition_costs`, optional explicit `valuation_basis`, visible

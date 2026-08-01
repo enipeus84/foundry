@@ -1,12 +1,20 @@
 # RFC-100 — Architecture Self-Review
 
-Adversarial self-review performed by EECOM before commit, against the draft of
+Adversarial self-review performed by EECOM before commit, against
 [`../rfcs/RFC-100-flight-operations-manual.md`](../rfcs/RFC-100-flight-operations-manual.md)
 at 2026-08-01.
 
-**Outcome: four amendments made to the RFC as a result of this review** (A1–A4
-below). Six challenges produced no amendment and are recorded with the reasoning
-that cleared them, including one accepted residual and two watch items.
+**Revision 1 outcome: four amendments** (A1–A4). Six challenges produced no
+amendment and are recorded with the reasoning that cleared them, including one
+accepted residual and two watch items.
+
+**Revision 2 outcome: two further amendments** (A5–A6), after applying the five
+Governor amendments. Four Revision 2 challenges produced no amendment. See
+[Revision 2](#revision-2--review-of-the-governor-amendments) below.
+
+---
+
+# Revision 1
 
 The governing constraint on this burn is unusual and worth naming: the brief
 says *capture proven behaviour only; do not invent process.* A governance
@@ -269,6 +277,206 @@ instruction", not "without further content").
 
 **W1.** §12's model table is operational guidance inside a constitutional
 document; consider extraction on a later revision if GD-4 is confirmed.
+*Substantially addressed in Revision 2 by Governor Amendment 4 and §1.5: the
+table is now explicitly Layer 3 and non-normative. It remains physically inside
+the document, so the watch item is narrowed rather than closed.*
 
 **W2.** Pre-flight checks 6 and 7 are environment-specific; move to an appendix
-if a second engineering environment appears.
+if a second engineering environment appears. *Open; now also recorded in
+Appendix A.4.*
+
+---
+
+# Revision 2 — review of the Governor amendments
+
+Performed at 2026-08-01, against the amended document, after applying Governor
+Amendments 1–5. Scope is the amendments and their interaction with the frozen-in-
+principle material — **not** a re-review of Revision 1, whose material the
+Governor accepted.
+
+**Outcome: two amendments (A5, A6).** Four challenges produced no amendment.
+
+The specific risk in an amendment burn is different from a design burn: the
+failure mode is not a bad idea, it is **drift** — refinements that quietly alter
+something the brief said to preserve, or that read as refinement while removing
+discipline. Challenge R6 exists solely to test for that.
+
+---
+
+## Challenge R1 — Does the three-layer split create a route to weaken Layer 1?
+
+**No amendment; defence recorded.**
+
+The obvious attack on Amendment 1 is that it manufactures a cheap path: move an
+inconvenient obligation into Layer 2 or 3, then amend it away with a
+Documentation Burn instead of a constitutional act.
+
+Three properties close it. The layer assignment is itself Layer 1 material
+(§1.5 sits inside §1, which the table lists as Constitution), so reassigning a
+section is a constitutional act, not a documentation one. The **layer discipline
+clause** states that a lower layer may never weaken a higher one and that the
+Layer 1 clause wins any conflict. And Layer 2 is scoped to *how* a Layer 1
+obligation is met, explicitly "may never remove one."
+
+I checked the assignment for a smuggled obligation and found none: every
+blocking rule — the Flight Rules, merge authority, the lifecycle, the
+classifications — is Layer 1. Layer 2 holds procedure for exercising them and
+Layer 3 holds forms. §9 is the one that needed care, and it is annotated in
+place: Governor *authority* is Layer 1 (§2.1); §9 is the *procedure* by which it
+is exercised.
+
+---
+
+## Challenge R2 — Does §1.6 P2 contradict the Flight Rules?
+
+**Contradiction confirmed; amendment made.**
+
+P2 as first drafted said that within product architecture the product RFC is
+authoritative and "RFC-100 has no opinion whatsoever." That is a clean line, and
+it is false about RFC-100's own contents.
+
+**FR-008** requires that a missing input be represented as unknown rather than
+zero. **FR-009** requires that guards refuse rather than degrade. **FR-011**
+forbids domain vocabulary in a platform module. **FR-012** forbids a model on a
+canon write path. Every one of those constrains **how the software behaves**,
+not merely how work is conducted. A product RFC proposing a permissive-on-
+failure guard would breach FR-009 while remaining, under a literal reading of
+P2, entirely within its own authority.
+
+Left unfixed, this is the worst kind of governance defect: the precedence
+section — the part written specifically to remove ambiguity — would itself be
+the ambiguity, and the four rules with the strongest provenance in the whole
+manual (all four came from real RFC-011 findings) would be the ones a product
+RFC could argue away.
+
+**Amendment A5.** §1.6 gains **P8**: those four rules are **floors, not
+designs**. They state what any product architecture must not do, never what it
+must be; a product RFC may exceed them and may not lower them, and remains free
+to choose every contract, vocabulary and seam above them. A product RFC that
+believes a floor is wrong invokes P6 rather than deviating. The rationale under
+the table names the defect rather than hiding the repair.
+
+This preserves the brief's instruction not to alter existing Flight Rules — none
+is altered. What changes is that the new precedence section stops
+misdescribing them.
+
+---
+
+## Challenge R3 — Is every Verification field actually verification?
+
+**Overstatement found; amendment made.**
+
+Amendment 3's stated objective is to make Flight Rules "auditable rather than
+descriptive." I wrote seventeen Verification fields and then audited them
+against that objective rather than against my own intent.
+
+Four are genuinely test-verified — FR-007, FR-008, FR-009 and FR-011 each name
+an assertion that fails when the rule is breached, three of them citing tests
+that already exist in the repository. The other thirteen are **artefact
+inspection**: read the pre-flight output, the diff, a report section, a
+checklist, a run identifier, a ruling. Those are objective and checkable, but
+they depend on a role actually looking, which is a materially weaker guarantee.
+
+Presenting all seventeen in an identical bold **Verification.** field implies a
+uniform standard of proof that does not exist — the same defect class as
+Revision 1's A1, where invented report shapes sat beside observed ones with no
+visible distinction. An amendment intended to create an audit would instead have
+created the appearance of one.
+
+**Amendment A6.** The §5 preamble gains a **verification-mode table** splitting
+the rules into test-verified and artefact-verified, stating plainly that
+artefact verification is weaker, and naming FR-012 as the strongest candidate
+for promotion to a test. RFC-100 does not build that test — it is documentation
+(§15) — but the gap is now visible rather than smoothed over.
+
+---
+
+## Challenge R4 — Does Appendix A claim more than the record supports?
+
+**No amendment; every row checked.**
+
+Appendix A is the section most able to launder assertion into authority, since
+its whole function is to say "this was validated." I checked each row against
+the repository rather than against memory: PR numbers, merge and freeze dates,
+commit `775812c`, commit `ce7cc17`, the `gh api` empty-comment result, the 334
+CSS-pixel preview, the B1–B4 and S1–S7 dispositions, the two named regression
+tests. Each is traceable.
+
+Two properties keep it honest. Every row separates *observed* from *produced*,
+so a reader can reject the inference while keeping the fact. And **A.4** states
+what the appendix does not cover — Guido and TELMU are unvalidated, no SAFE
+artefact exists, four gates are unbuilt, FR-016 and FR-017 are lessons rather
+than operating rules, and every burn ran in one environment with one maintainer.
+
+A validation appendix without A.4 would be the strongest argument in the
+document for exactly the things it has the least evidence for. That asymmetry is
+worth stating explicitly, so it is.
+
+---
+
+## Challenge R5 — Does making §12 non-normative weaken the independence rule?
+
+**No amendment; the risk was live and is closed by construction.**
+
+Amendment 4 declares the model table non-normative. §12 also contained the
+independence rule — the model that implements never reviews its own
+implementation, the model that authors architecture never approves it. Declaring
+the whole section non-normative would have made the project's central separation
+advisory, by accident, in the act of making model choice flexible.
+
+The applied amendment separates them: §12.0 marks the *table* non-normative and
+states explicitly that "what *is* normative is §12.2"; §12.2 carries
+*(normative)* in its heading; and the underlying separation is stated
+independently in §1.2 and enforced through §2.9's occupancy rules, so it does
+not depend on §12 at all. Independence constrains relationships between roles,
+never the identity of the occupant — which is precisely why it survives any
+model change.
+
+---
+
+## Challenge R6 — Did the amendments alter anything the brief said to preserve?
+
+**No amendment; audit recorded.**
+
+The brief preserved six things. I diffed each against Revision 1:
+
+| Preserved | Result |
+|---|---|
+| Flight Director responsibilities | Unchanged. §2.1–§2.10 are untouched except for the Layer 1 tag on §2 |
+| Mission lifecycle | Unchanged. §4 and its diagram are byte-identical except for the layer tag |
+| Burn classifications | Unchanged. Ten classifications, same owners, outputs and gates |
+| Governor authority | Unchanged. §9's substance is identical; the layer tag records that §9 is *procedure* while the *authority* in §2.1 is Layer 1 |
+| Existing Flight Rules | **All fifteen rule statements are verbatim.** Only the field labels changed (`Why` → `Rationale`, `Evidence` → `Provenance`) and the new Verification field was added. No rule was weakened, merged or dropped |
+| Existing architecture | Unchanged. No decision reversed |
+
+Two edits deserve to be called out rather than buried, because both *removed*
+text:
+
+1. **§1.3 lost a bullet.** The "a product RFC may not redefine a Flight Rule…"
+   bullet moved into §1.6 as **P3**, verbatim in substance and now normative
+   rather than explanatory. This is duplication removal, not a reduction — the
+   rule is stronger where it now sits.
+2. **GD-4 and GD-5 were restated.** The brief says to retain all six decisions
+   and change none "unless required by the amendments." Both were required:
+   GD-4 asked the Governor to confirm the model table is "a default", which
+   Amendment 4 supersedes with the sharper non-normative framing; GD-5 described
+   amendment procedure by section number, which Amendment 1 supersedes with the
+   three layers. **Both decisions are the same decisions** — the same question,
+   the same recommendation — expressed in the vocabulary the amendments created.
+   GD-1, GD-2, GD-3 and GD-6 are untouched.
+
+---
+
+## What Revision 2 did not fix
+
+- **TD1, TD3, GD-6 and the unproven Guido/TELMU roles** are unchanged from
+  Revision 1 and remain open.
+- **FR-012 remains artefact-verified.** A test asserting that no model
+  invocation exists on a canon or Identity Index write path is buildable and
+  would be a genuine strengthening. It is implementation and therefore outside
+  an architecture burn (§15).
+- **Appendix A validates one environment.** No amount of documentation changes
+  that; only a second environment would.
+- **§11.3 and §11.4 remain specified, not observed.** The first SAFE Review run
+  under RFC-100 should be compared against them, as the §11 provenance note
+  already directs.
