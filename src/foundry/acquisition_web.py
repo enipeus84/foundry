@@ -8,6 +8,9 @@ household through an explicit inbox route.
 from __future__ import annotations
 
 import html
+import json
+import os
+from pathlib import Path
 from urllib.parse import parse_qs, quote
 
 from fastapi import APIRouter, Request
@@ -15,8 +18,9 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 
 from foundry import webauth
 from foundry.core.acquisition import (
-    AcquisitionError, AssetRegistry, ConfirmationGate, EnvelopeProjection, IdentityIndex,
-    ProposalInbox, TelemetryStreamRegistry,
+    AcquisitionError, AssetRegistry, ConfirmationGate, EnvelopeProjection, EvidenceUnavailable,
+    EvidenceVault, IdentityIndex, ProposalInbox, ProvenanceService, TelemetryStreamRegistry,
+    redact_credentials,
 )
 from foundry.finance.acquisition import FINANCE_MANUAL_DRAFT_CONTRACT
 
@@ -46,6 +50,31 @@ def _proposal_recorded_at(log, proposal_id: str) -> float | None:
         if event["kind"] == "core.observation_proposal.declared" and event["payload"].get("id") == proposal_id:
             return event["ts"]
     return None
+
+
+def _vault_root() -> Path:
+    configured = os.environ.get("FOUNDRY_EVIDENCE_VAULT_PATH")
+    if configured:
+        return Path(configured)
+    return Path(os.environ.get("FOUNDRY_DATA_PATH", "foundry_data/events.jsonl")).with_suffix(".vault")
+
+
+def _vault(email: str) -> EvidenceVault:
+    return EvidenceVault(_vault_root(), authorized=lambda actor: actor == email)
+
+
+def _scoped_proposal(request: Request, proposal_id: str):
+    email = _email(request)
+    if email is None:
+        return None, None, None, RedirectResponse("/login", status_code=303)
+    console = _console(request)
+    proposal = ProposalInbox(console.log).proposals.get(proposal_id)
+    if proposal is None or proposal.household_id != _household_id(console):
+        return None, None, None, HTMLResponse("Not found", status_code=404)
+    envelope = EnvelopeProjection(console.log).envelopes.get(proposal.envelope_id)
+    if envelope is None:
+        return None, None, None, HTMLResponse("Not found", status_code=404)
+    return email, console, (proposal, envelope), None
 
 
 def _timestamp(value: float | None) -> str:
@@ -104,10 +133,52 @@ def inbox(request: Request):
 <dt>recorded_at</dt><dd>{_timestamp(_proposal_recorded_at(console.log, proposal.id))}</dd>
 <dt>Evidence grade</dt><dd>{html.escape(proposal.evidence_grade)}</dd>
 <dt>Interpreter</dt><dd>{html.escape(proposal.interpreter_id)} {html.escape(proposal.interpreter_version)}</dd>
-<dt>Canonical events on confirmation</dt><dd>{events}</dd></dl>{warning_html}
+<dt>Canonical events on confirmation</dt><dd>{events}</dd>
+<dt>Evidence</dt><dd><a href="/acquisition/proposals/{proposal_id}/evidence">Review captured evidence</a></dd></dl>{warning_html}
 <form method="post" action="/acquisition/proposals/{proposal_id}/confirm"><input type="hidden" name="csrf" value="{csrf}"><button type="submit">Confirm</button></form>
 <form method="post" action="/acquisition/proposals/{proposal_id}/reject"><input type="hidden" name="csrf" value="{csrf}"><button type="submit">Reject</button></form></article>""")
     return _page(cards)
+
+
+@router.get("/acquisition/proposals/{proposal_id}/evidence", response_class=HTMLResponse)
+def evidence_preview(request: Request, proposal_id: str):
+    email, console, scoped, error = _scoped_proposal(request, proposal_id)
+    if error is not None:
+        return error
+    proposal, envelope = scoped
+    try:
+        raw = _vault(email).get(envelope.payload_hash, email)
+        if envelope.payload_media_type == "application/json":
+            preview = json.dumps(redact_credentials(json.loads(raw.decode("utf-8"))),
+                                 sort_keys=True, indent=2, ensure_ascii=False)
+        elif envelope.payload_media_type == "text/plain":
+            preview = str(redact_credentials(raw.decode("utf-8")))
+        else:
+            raise EvidenceUnavailable("evidence preview media type is unavailable")
+    except (EvidenceUnavailable, UnicodeDecodeError, json.JSONDecodeError):
+        return HTMLResponse("Evidence unavailable", status_code=404)
+    return _page([f"<article><h2>Evidence review</h2><dl><dt>Evidence identifier</dt><dd><code>{html.escape(envelope.payload_hash)}</code></dd>"
+                  f"<dt>Source</dt><dd>{html.escape(envelope.source_identity)}</dd></dl>"
+                  f"<pre>{html.escape(preview)}</pre><p><a href=\"/acquisition/inbox\">Back to inbox</a></p></article>"])
+
+
+@router.get("/acquisition/proposals/{proposal_id}/provenance", response_class=HTMLResponse)
+def provenance(request: Request, proposal_id: str):
+    _, console, scoped, error = _scoped_proposal(request, proposal_id)
+    if error is not None:
+        return error
+    proposal, _ = scoped
+    canonical = next((event for event in console.log.events()
+                      if event["payload"].get("provenance", {}).get("proposal_id") == proposal.id), None)
+    if canonical is None:
+        return HTMLResponse("Provenance unavailable", status_code=404)
+    try:
+        chain = ProvenanceService(console.log).explain(canonical["id"])
+    except AcquisitionError:
+        return HTMLResponse("Provenance unavailable", status_code=404)
+    rendered = html.escape(json.dumps(chain, sort_keys=True, indent=2))
+    return _page([f"<article><h2>Confirmation provenance</h2><pre>{rendered}</pre>"
+                  f"<p><a href=\"/acquisition/inbox\">Back to inbox</a></p></article>"])
 
 
 def _gate(request: Request, proposal_id: str, csrf: str | None):
@@ -156,7 +227,7 @@ async def confirm(request: Request, proposal_id: str):
         gate.confirm(proposal_id, actor=_email(request) or "")
     except AcquisitionError as exc:
         return HTMLResponse("Confirmation refused: " + html.escape(str(exc)), status_code=409)
-    return RedirectResponse("/acquisition/inbox", status_code=303)
+    return RedirectResponse(f"/acquisition/proposals/{quote(proposal_id, safe='')}/provenance", status_code=303)
 
 
 @router.post("/acquisition/proposals/{proposal_id}/reject")

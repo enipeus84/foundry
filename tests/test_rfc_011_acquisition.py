@@ -12,7 +12,7 @@ from foundry.core.acquisition import (
     AcquisitionError, AcquisitionProviderRegistry, AssetRegistration,
     AssetRegistry, CanonicalObservationProjection, ConfirmationGate,
     EnvelopeProjection, EvidenceUnavailable, EvidenceVault, ExternalRef,
-    IdentityIndex, ManualAcquisitionProvider, ProposalInbox,
+    IdentityIndex, ManualAcquisitionProvider, ProposalInbox, ProvenanceService,
     ResolutionService, TelemetryStream, TelemetryStreamRegistry, ValuationLenses,
 )
 from foundry.eventlog import EventLog
@@ -54,10 +54,10 @@ def acquisition(deterministic_log, tmp_path):
     return log, vault, streams, envelopes, inbox, identity, registry, resolver
 
 
-def _stream(identifier, subject, property):
+def _stream(identifier, subject, property, confirmation_policy="review_each"):
     return TelemetryStream(
         id=identifier, subject_id=subject, property=property, channel="manual",
-        refresh_policy="monthly", confirmation_policy="review_each",
+        refresh_policy="monthly", confirmation_policy=confirmation_policy,
         source_identity="user:reviewer", unit_or_currency="GBP",
         validation_contract="numeric observation", household_id=HOUSEHOLD,
         expected_cadence="monthly",
@@ -124,7 +124,7 @@ def test_manual_pipeline_captures_verbatim_evidence_then_confirms_canonical_stat
     envelope, proposal = _capture_and_propose(provider, interpreter, envelopes, "holding-register", holding)
     assert not any(event["kind"].startswith("finance.position") for event in log.events())
     assert b"this belongs in the evidence vault only" not in Path(log.path).read_bytes()
-    gate.confirm(proposal.id, actor="reviewer")
+    confirmed = gate.confirm(proposal.id, actor="reviewer")
     registry = AssetRegistry(log, entity_exists=lambda entity_id: entity_id in {ACCOUNT, HOLDING})
     registry.register(AssetRegistration(HOLDING, "finance", HOUSEHOLD,
                                         (ExternalRef("isin", "GB00TRACKER"),)))
@@ -135,6 +135,13 @@ def test_manual_pipeline_captures_verbatim_evidence_then_confirms_canonical_stat
         HOUSEHOLD, ExternalRef("isin", "GB00TRACKER")).outcome == "resolved"
     assert vault.get(envelope.payload_hash, "reviewer")
     assert inbox.proposals[proposal.id].state == "confirmed"
+    chain = ProvenanceService(log).explain(confirmed[0]["id"])
+    assert chain["evidence"]["id"] == envelope.payload_hash
+    assert chain["proposal"]["id"] == proposal.id
+    assert chain["interpreter"] == {"id": "manual-json", "version": "1", "class": "deterministic"}
+    assert chain["confirmation"]["actor"] == "reviewer"
+    assert chain["canonical_event"]["id"] == confirmed[0]["id"]
+    assert ProvenanceService(EventLog(log.path)).explain(confirmed[0]["id"]) == chain
     assert log.verify()
 
 
@@ -224,9 +231,21 @@ def test_vault_authorization_hash_integrity_redaction_and_hostile_input(acquisit
     provider, _ = _provider(log, streams, vault, {"units"})
     with pytest.raises(EvidenceUnavailable):
         vault.put(b"x", "intruder")
-    with pytest.raises(AcquisitionError, match="secrets"):
+    with pytest.raises(AcquisitionError, match="credentials"):
         provider.capture("units", {"observations": [{"password": "no"}]}, received_at=1,
                          actor="reviewer", source_identity="user:reviewer")
+    fact = _fact("units", HOLDING, 1, {
+        "kind": "finance.position.updated", "payload": {"entity_id": HOLDING, "quantity": 1}}, value=1)
+    for hostile in (
+        {"api_key": "key-123"},
+        {"nested": {"private_key": "key-456"}},
+        {"note": "session_id=opaque-session"},
+        {"note": "credentials: opaque-credential"},
+        {"note": "-----BEGIN PRIVATE KEY-----"},
+    ):
+        with pytest.raises(AcquisitionError, match="credentials"):
+            provider.capture("units", {"observations": [fact], **hostile}, received_at=1,
+                             actor="reviewer", source_identity="user:reviewer")
     envelope = provider.capture("units", {"observations": [_fact("units", HOLDING, 1, {
         "kind": "finance.position.updated", "payload": {"entity_id": HOLDING, "quantity": 1}}, value=1)]},
         received_at=2, actor="reviewer", source_identity="user:reviewer")
@@ -383,6 +402,33 @@ def test_identity_and_duplicate_protection_refuse_operation_when_inbox_is_unavai
     envelopes.rebuild()
     with pytest.raises(AcquisitionError, match="duplicate protection"):
         FinanceManualInterpreter(vault, envelopes, streams, resolver).interpret(envelope.id, "reviewer")
+
+
+def test_confirmation_policy_controls_individual_batch_and_auto_commit(acquisition):
+    log, vault, streams, envelopes, inbox, identity, registry, _ = acquisition
+    streams.declare(_stream("batch-units", HOLDING, "units", "review_batch"))
+    streams.declare(_stream("auto-units", HOLDING, "units", "auto_commit"))
+    provider, _ = _provider(log, streams, vault, {"batch-units", "auto-units"})
+    resolver = ResolutionService(identity, registry, inbox)
+    interpreter = FinanceManualInterpreter(vault, envelopes, streams, resolver)
+    gate = _gate(log, inbox, streams, identity, registry)
+    batch_fact = _fact("units", HOLDING, 10.0, {"kind": "finance.position.updated",
+                       "payload": {"entity_id": HOLDING, "quantity": 1.0}}, value=1.0)
+    _, batch = _capture_and_propose(provider, interpreter, envelopes, "batch-units", batch_fact, 20.0)
+    with pytest.raises(AcquisitionError, match="individual"):
+        gate.confirm(batch.id, actor="reviewer")
+    assert gate.confirm_batch([batch.id], actor="reviewer")
+    inbox.rebuild()
+    auto_fact = _fact("units", HOLDING, 11.0, {"kind": "finance.position.updated",
+                      "payload": {"entity_id": HOLDING, "quantity": 2.0}}, value=2.0)
+    interpreter = FinanceManualInterpreter(vault, EnvelopeProjection(log), streams,
+                                           ResolutionService(identity, registry, inbox))
+    _, automatic = _capture_and_propose(provider, interpreter, EnvelopeProjection(log), "auto-units", auto_fact, 21.0)
+    with pytest.raises(AcquisitionError, match="individual"):
+        gate.confirm(automatic.id, actor="reviewer")
+    assert gate.apply_confirmation_policy(automatic.id, actor="system")
+    inbox.rebuild()
+    assert inbox.proposals[automatic.id].state == "confirmed"
 
 
 def test_core_acquisition_contract_contains_no_finance_event_vocabulary():

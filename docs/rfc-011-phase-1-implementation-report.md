@@ -30,9 +30,9 @@ The manual provider accepts bounded structured facts and writes a
 content-addressed envelope only. Its evidence is stored outside JSONL in a
 private `0700` vault with `0600` blobs; access is authorized, hashes are
 verified on every read, redaction appends an event after removing the blob,
-and no raw manual payload is written to the log. The storage control is
-deliberately not an improvised cipher: production deployment must place the
-vault on encrypted storage or replace it with a reviewed encryption adapter.
+and no raw manual payload is written to the log. Per the Governor's S6 ruling,
+encryption at rest is explicitly deferred to Phase 2; Phase 1 does not claim
+or implement it.
 
 The deterministic `manual-json@1` interpreter reads only captured evidence,
 records its identity/version, emits proposals and cannot append `finance.*`.
@@ -140,6 +140,50 @@ an actionable technical claim and cannot authorize speculative changes to a
 frozen architecture. This is evidence of absence of a finding text, not a
 claim that the system is defect-free. A supplied review artefact can reopen
 the named item without redesign.
+
+## SAFE remediation burn 2 — 2026-08-01
+
+### S1 — Secret detection — remediated
+
+Manual evidence now undergoes deterministic recursive inspection of both
+mapping keys and string values. It rejects common credential names including
+`api_key`, `private_key`, `session_id` and `credentials`, assignment-style
+credential values, bearer tokens, recognised token prefixes and PEM private
+keys. No detector uses a model. The regression suite covers keys, nested keys,
+embedded values and PEM text.
+
+### S3 — Confirmation evidence — remediated
+
+An authenticated proposal card links to its evidence review surface. The route
+looks up the scoped proposal and envelope, then reads the content-addressed
+blob through the configured `EvidenceVault` as the authenticated user. Missing,
+corrupt or unauthorised evidence is unavailable rather than rendered. JSON and
+text previews use escaping and deterministic credential redaction; a legacy
+credential-shaped value never reaches HTML. The evidence identifier and
+source remain visible for review.
+
+### S4 — Confirmation policy — remediated
+
+`ConfirmationGate` now enforces `review_each`, exposes a governed
+`confirm_batch()` for `review_batch`, and applies `auto_commit` only through
+the gate for deterministic authoritative or declared evidence. Individual
+confirmation cannot bypass a stream's declared batch or automatic policy.
+The policy is therefore executable behaviour, not inert metadata.
+
+### S5 — Provenance chain — remediated
+
+Every canonical write records evidence, proposal, interpreter identity and
+interpreter version with the confirming actor. `ProvenanceService.explain()`
+rebuilds and verifies the Evidence → Proposal → Interpreter → Confirmation →
+Canonical Event chain from append-only events. After confirmation, the inbox
+redirects to an authenticated provenance display. Regression coverage proves
+the chain and byte-stable replay.
+
+### S6 — Governor ruling applied
+
+Evidence Vault encryption at rest is deferred to Phase 2. No encryption code
+was added; the former implementer-owned encryption-adapter debt is removed
+from this Phase 1 register and recorded as a Governor decision instead.
 
 ## Validation evidence
 

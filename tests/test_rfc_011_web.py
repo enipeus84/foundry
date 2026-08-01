@@ -10,7 +10,7 @@ pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient  # noqa: E402
 
 from foundry import webauth  # noqa: E402
-from foundry.core.acquisition import TelemetryStream, TelemetryStreamRegistry  # noqa: E402
+from foundry.core.acquisition import EvidenceVault, TelemetryStream, TelemetryStreamRegistry  # noqa: E402
 from foundry.core.entities import declare_party  # noqa: E402
 from foundry.eventlog import EventLog  # noqa: E402
 from foundry.web import app  # noqa: E402
@@ -29,6 +29,7 @@ def environment(monkeypatch, tmp_path):
     monkeypatch.setenv("SESSION_SECRET", "unit-test-secret-0123456789abcdef")
     monkeypatch.setenv("APP_BASE_URL", "http://testserver")
     monkeypatch.setenv("FOUNDRY_DATA_PATH", str(tmp_path / "events.jsonl"))
+    monkeypatch.setenv("FOUNDRY_EVIDENCE_VAULT_PATH", str(tmp_path / "vault"))
     return tmp_path
 
 
@@ -38,8 +39,11 @@ def _client() -> TestClient:
     return client
 
 
-def _pending_proposal(path):
+def _pending_proposal(path, payload=None):
     log = EventLog(path / "events.jsonl")
+    vault = EvidenceVault(path / "vault", authorized=lambda actor: actor == ALLOWED)
+    payload = payload or b'{"evidence_marker":"captured evidence for proposal-1","observations":[{"quantity":4.0}]}'
+    payload_hash, payload_ref = vault.put(payload, ALLOWED)
     household = declare_party(log, "household")
     streams = TelemetryStreamRegistry(log)
     streams.declare(TelemetryStream(
@@ -51,11 +55,11 @@ def _pending_proposal(path):
     log.append("core.telemetry_envelope.declared", {
         "id": "envelope-1", "stream_id": "units", "channel": "manual",
         "source_identity": "user:reviewer", "received_at": 1_990.0,
-        "payload_hash": "a" * 64, "payload_ref": "vault:" + "a" * 64,
+        "payload_hash": payload_hash, "payload_ref": payload_ref,
         "payload_media_type": "application/json", "external_ref": "statement-1",
         "evidence_grade": "declared"})
     log.append("core.observation_proposal.declared", {
-        "id": "proposal-1", "evidence_id": "a" * 64, "envelope_id": "envelope-1",
+        "id": "proposal-1", "evidence_id": payload_hash, "envelope_id": "envelope-1",
         "household_id": household.id, "interpreter_id": "manual-json",
         "interpreter_version": "1", "interpreter_class": "deterministic",
         "stream_id": "units", "draft_events": [{"kind": "finance.position.updated",
@@ -83,9 +87,31 @@ def test_inbox_requires_session_csrf_escapes_content_and_confirms(environment):
     assert client.post("/acquisition/proposals/proposal-1/confirm", params={"csrf": csrf}).status_code == 403
     confirmed = client.post("/acquisition/proposals/proposal-1/confirm", data={"csrf": csrf})
     assert confirmed.status_code == 303
+    assert confirmed.headers["location"] == "/acquisition/proposals/proposal-1/provenance"
+    provenance = client.get(confirmed.headers["location"])
+    assert provenance.status_code == 200
+    assert "manual-json" in provenance.text and "evidence" in provenance.text
     assert any(event["kind"] == "finance.position.updated" for event in log.events())
     assert any(event["kind"] == "core.observation_proposal.updated" and
                event["payload"]["resolution"] == "confirmed" for event in log.events())
+
+
+def test_evidence_preview_reads_authorized_vault_artifact_and_fails_closed(environment):
+    _pending_proposal(environment)
+    anonymous = TestClient(app, follow_redirects=False)
+    assert anonymous.get("/acquisition/proposals/proposal-1/evidence").status_code == 303
+    preview = _client().get("/acquisition/proposals/proposal-1/evidence")
+    assert preview.status_code == 200
+    assert "captured evidence for proposal-1" in preview.text
+    assert "Evidence identifier" in preview.text
+
+
+def test_evidence_preview_redacts_legacy_credential_values(environment):
+    _pending_proposal(environment, b'{"note":"credentials=opaque-credential","observations":[]}')
+    preview = _client().get("/acquisition/proposals/proposal-1/evidence")
+    assert preview.status_code == 200
+    assert "opaque-credential" not in preview.text
+    assert "[redacted]" in preview.text
 
 
 def test_inbox_rejects_cross_household_proposal(environment):

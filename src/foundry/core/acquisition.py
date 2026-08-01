@@ -32,6 +32,17 @@ _GRADE_ORDER = {"authoritative": 0, "confirmed": 1, "declared": 2,
 _CADENCE_SECONDS = {"continuous": 0, "daily": 86400, "weekly": 7 * 86400,
                     "monthly": 31 * 86400, "quarterly": 92 * 86400,
                     "annual": 366 * 86400}
+_CREDENTIAL_NAME = re.compile(
+    r"(?:^|[_.-])(?:api[_-]?key|private[_-]?key|session[_-]?id|credentials?|"
+    r"authorization|password|secret|access[_-]?token|refresh[_-]?token|"
+    r"id[_-]?token|token|cookie)(?:$|[_.-])", re.IGNORECASE)
+_CREDENTIAL_VALUE = re.compile(
+    r"(?:-----BEGIN [A-Z ]*PRIVATE KEY-----|"
+    r"\b(?:api[_ -]?key|private[_ -]?key|session[_ -]?id|credentials?|"
+    r"authorization|password|secret|access[_ -]?token|refresh[_ -]?token|"
+    r"id[_ -]?token|token|cookie)\b\s*[:=]\s*\S+|"
+    r"\bbearer\s+[A-Za-z0-9._~+/=-]{8,}|"
+    r"\b(?:sk|ghp|github_pat)_[A-Za-z0-9_=-]{8,})", re.IGNORECASE)
 
 
 class AcquisitionError(ValueError):
@@ -79,6 +90,28 @@ def _timestamp(value: Any, label: str) -> float:
     if not isinstance(value, (int, float)) or isinstance(value, bool):
         raise AcquisitionError(f"{label} must be a numeric timestamp")
     return float(value)
+
+
+def contains_credential(value: Any) -> bool:
+    """Conservative deterministic detection for append-only evidence input."""
+    if isinstance(value, dict):
+        return any((isinstance(key, str) and _CREDENTIAL_NAME.search(key)) or
+                   contains_credential(nested) for key, nested in value.items())
+    if isinstance(value, (list, tuple)):
+        return any(contains_credential(item) for item in value)
+    return isinstance(value, str) and bool(_CREDENTIAL_VALUE.search(value))
+
+
+def redact_credentials(value: Any) -> Any:
+    """Return a structurally equivalent display value without credentials."""
+    if isinstance(value, dict):
+        return {key: "[redacted]" if isinstance(key, str) and _CREDENTIAL_NAME.search(key)
+                else redact_credentials(nested) for key, nested in value.items()}
+    if isinstance(value, list):
+        return [redact_credentials(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(redact_credentials(item) for item in value)
+    return "[redacted]" if isinstance(value, str) and _CREDENTIAL_VALUE.search(value) else value
 
 
 def weakest_grade(grades: Iterable[str]) -> str:
@@ -409,18 +442,8 @@ class ManualAcquisitionProvider:
         encoded = _stable(payload).encode("utf-8")
         if len(encoded) > MAX_EVIDENCE_BYTES:
             raise AcquisitionError("manual evidence exceeds the size limit")
-        # Tokens and credentials have no business in an append-only audit trail.
-        forbidden = {"token", "password", "secret", "authorization", "cookie"}
-        def walk(value: Any) -> None:
-            if isinstance(value, dict):
-                for key, nested in value.items():
-                    if any(word in key.lower() for word in forbidden):
-                        raise AcquisitionError("secrets are forbidden in evidence")
-                    walk(nested)
-            elif isinstance(value, list):
-                for nested in value:
-                    walk(nested)
-        walk(payload)
+        if contains_credential(payload):
+            raise AcquisitionError("credentials are forbidden in evidence")
 
     def capture(self, stream_id: str, payload: dict[str, Any], *, received_at: float,
                 actor: str, source_identity: str, external_ref: str | None = None,
@@ -720,13 +743,44 @@ class ConfirmationGate:
             raise AcquisitionError("domain draft validation is unavailable")
         self.draft_contract.validate_confirmation(draft, observation)
 
-    def confirm(self, proposal_id: str, *, actor: str, reason: str = "confirmed after review") -> tuple[dict, ...]:
+    def _proposal_and_stream(self, proposal_id: str) -> tuple[Proposal, TelemetryStream]:
         proposal = self.inbox.proposals.get(proposal_id)
         if proposal is None or proposal.state != "pending":
             raise AcquisitionError("proposal is not pending")
         stream = self.streams.streams.get(proposal.stream_id)
         if stream is None or stream.household_id != proposal.household_id:
             raise AcquisitionError("proposal stream is unknown or cross-household")
+        return proposal, stream
+
+    def confirm(self, proposal_id: str, *, actor: str,
+                reason: str = "confirmed after review") -> tuple[dict, ...]:
+        proposal, stream = self._proposal_and_stream(proposal_id)
+        if stream.confirmation_policy != "review_each":
+            raise AcquisitionError("stream confirmation policy does not permit individual confirmation")
+        return self._confirm(proposal, stream, actor=actor, reason=reason)
+
+    def confirm_batch(self, proposal_ids: Iterable[str], *, actor: str,
+                      reason: str = "confirmed as review batch") -> tuple[dict, ...]:
+        items = [self._proposal_and_stream(proposal_id) for proposal_id in proposal_ids]
+        if not items or any(stream.confirmation_policy != "review_batch" for _, stream in items):
+            raise AcquisitionError("review batch requires pending review_batch proposals")
+        if len({proposal.id for proposal, _ in items}) != len(items):
+            raise AcquisitionError("review batch contains a duplicate proposal")
+        return tuple(event for proposal, stream in items
+                     for event in self._confirm(proposal, stream, actor=actor, reason=reason))
+
+    def apply_confirmation_policy(self, proposal_id: str, *, actor: str) -> tuple[dict, ...]:
+        """Apply only a stream's declared automatic policy through the gate."""
+        proposal, stream = self._proposal_and_stream(proposal_id)
+        if stream.confirmation_policy != "auto_commit":
+            return ()
+        if proposal.interpreter_class != "deterministic" or proposal.evidence_grade not in {"authoritative", "declared"}:
+            raise AcquisitionError("auto-commit requires deterministic authoritative or declared evidence")
+        return self._confirm(proposal, stream, actor=actor,
+                             reason="confirmed by declared auto_commit policy")
+
+    def _confirm(self, proposal: Proposal, stream: TelemetryStream, *, actor: str,
+                 reason: str) -> tuple[dict, ...]:
         if proposal.interpreter_class != "deterministic":
             raise AcquisitionError("model-class proposals require a dedicated review workflow")
         if (self.draft_contract is None or
@@ -763,7 +817,10 @@ class ConfirmationGate:
         for draft, observation in zip(proposal.draft_events, proposal.observations):
             payload = dict(draft["payload"])
             payload["provenance"] = {"evidence_id": proposal.evidence_id,
-                                     "proposal_id": proposal.id, "confirmed_by": actor}
+                                     "proposal_id": proposal.id,
+                                     "interpreter_id": proposal.interpreter_id,
+                                     "interpreter_version": proposal.interpreter_version,
+                                     "confirmed_by": actor}
             payload["observation"] = {**observation, "evidence_grade": proposal.evidence_grade}
             confirmed.append(self.log.append(draft["kind"], payload, actor=actor))
         for resolution in proposal.resolutions:
@@ -782,6 +839,48 @@ class ConfirmationGate:
 
     def reject(self, proposal_id: str, *, actor: str, reason: str) -> dict:
         return self.inbox.resolve(proposal_id, "rejected", reason, actor)
+
+
+class ProvenanceService:
+    """Rebuild the complete, immutable evidence-to-canonical explanation."""
+
+    def __init__(self, log: EventLog):
+        self.log = log
+
+    def explain(self, canonical_event_id: str) -> dict[str, dict[str, Any]]:
+        canonical = self.log.get(canonical_event_id)
+        if canonical is None or not isinstance(canonical.get("payload"), dict):
+            raise AcquisitionError("canonical event is unavailable")
+        provenance = canonical["payload"].get("provenance")
+        if not isinstance(provenance, dict):
+            raise AcquisitionError("canonical event has no acquisition provenance")
+        proposal_id, evidence_id = provenance.get("proposal_id"), provenance.get("evidence_id")
+        if not isinstance(proposal_id, str) or not isinstance(evidence_id, str):
+            raise AcquisitionError("canonical event provenance is incomplete")
+        proposal = ProposalInbox(self.log).proposals.get(proposal_id)
+        envelope = next((item for item in EnvelopeProjection(self.log).envelopes.values()
+                         if item.id == (proposal.envelope_id if proposal else None)), None)
+        confirmation = next((event for event in self.log.events()
+                             if event["kind"] == "core.observation_proposal.updated" and
+                             event["payload"].get("entity_id") == proposal_id and
+                             event["payload"].get("resolution") == "confirmed"), None)
+        if (proposal is None or envelope is None or envelope.payload_hash != evidence_id or
+                confirmation is None):
+            raise AcquisitionError("acquisition provenance chain is incomplete")
+        if ((provenance.get("interpreter_id"), provenance.get("interpreter_version")) !=
+                (proposal.interpreter_id, proposal.interpreter_version)):
+            raise AcquisitionError("canonical interpreter provenance does not match proposal")
+        return {
+            "evidence": {"id": evidence_id, "envelope_id": envelope.id,
+                         "source_identity": envelope.source_identity},
+            "proposal": {"id": proposal.id},
+            "interpreter": {"id": proposal.interpreter_id, "version": proposal.interpreter_version,
+                            "class": proposal.interpreter_class},
+            "confirmation": {"event_id": confirmation["id"], "actor": confirmation["payload"].get("resolved_by"),
+                             "reason": confirmation["payload"].get("reason")},
+            "canonical_event": {"id": canonical["id"], "kind": canonical["kind"],
+                                "recorded_at": canonical["ts"]},
+        }
 
 
 @dataclass(frozen=True)
