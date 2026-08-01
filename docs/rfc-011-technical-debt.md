@@ -37,3 +37,31 @@ workflow.
 The absence of PayPal RSUs, model interpreters, email/PDF, APIs, CSV, OCR,
 Open Banking, cash/bank accounts, bills, precious metals and private/director
 equity is scope discipline, not deferred implementation hidden in this burn.
+
+## SAFE remediation disposition — 2026-08-01
+
+**Closed: B3 — Information Honesty.** Missing material market inputs now
+remain unknown through every derived lens and reconciliation; they do not
+become a monetary zero. The confidence cap is `Insufficient` until the input
+exists.
+
+**Closed: B4 — Identity Resolution availability.** Duplicate detection is a
+required dependency of interpretation. Missing inbox state now refuses the
+operation rather than disabling the guard.
+
+**Closed: S2 — URL CSRF transport.** The signed form credential is submitted
+in the POST body only. URL parsing cannot satisfy the check.
+
+**Closed: B1 — Core neutrality.** Finance canonical event validation moved
+to the Finance adapter. Core retains only the generic domain-contract seam.
+
+**Governor decision required, not technical debt: B2 — phase sequencing.**
+The implementation combined frozen RFC phases 1–4 in one branch. This cannot
+be repaired by a code change or honestly called a Phase 1-only burn. The
+Governor must decide whether to reclassify and review the combined burn; no
+Phase 5 work is authorized meanwhile.
+
+**Not actionable from supplied evidence: S1, S3, S4, S5, S6, S7.** No SAFE
+finding text was published locally or on PR #27. They are not silently
+accepted debt and no speculative change was made. A concrete finding can be
+assessed against the frozen RFC in a later, bounded remediation burn.

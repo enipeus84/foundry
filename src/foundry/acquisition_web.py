@@ -8,7 +8,7 @@ household through an explicit inbox route.
 from __future__ import annotations
 
 import html
-from urllib.parse import quote
+from urllib.parse import parse_qs, quote
 
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -18,6 +18,7 @@ from foundry.core.acquisition import (
     AcquisitionError, AssetRegistry, ConfirmationGate, EnvelopeProjection, IdentityIndex,
     ProposalInbox, TelemetryStreamRegistry,
 )
+from foundry.finance.acquisition import FINANCE_MANUAL_DRAFT_CONTRACT
 
 
 router = APIRouter()
@@ -90,7 +91,7 @@ def inbox(request: Request):
         warning_html = "".join(f'<p class="warn">{html.escape(value)}</p>' for value in warnings)
         events = "<br>".join("<code>" + html.escape(item["kind"]) + "</code>" for item in proposal.draft_events)
         proposal_id = quote(proposal.id, safe="")
-        csrf = quote(token, safe="")
+        csrf = html.escape(token, quote=True)
         cards.append(f"""<article><h2>Proposal {html.escape(proposal.id)}</h2>
 <dl><dt>Evidence summary</dt><dd><code>{html.escape(proposal.evidence_id)}</code></dd>
 <dt>Source</dt><dd>{html.escape(envelope.source_identity if envelope else "missing envelope")}</dd>
@@ -104,8 +105,8 @@ def inbox(request: Request):
 <dt>Evidence grade</dt><dd>{html.escape(proposal.evidence_grade)}</dd>
 <dt>Interpreter</dt><dd>{html.escape(proposal.interpreter_id)} {html.escape(proposal.interpreter_version)}</dd>
 <dt>Canonical events on confirmation</dt><dd>{events}</dd></dl>{warning_html}
-<form method="post" action="/acquisition/proposals/{proposal_id}/confirm?csrf={csrf}"><button type="submit">Confirm</button></form>
-<form method="post" action="/acquisition/proposals/{proposal_id}/reject?csrf={csrf}"><button type="submit">Reject</button></form></article>""")
+<form method="post" action="/acquisition/proposals/{proposal_id}/confirm"><input type="hidden" name="csrf" value="{csrf}"><button type="submit">Confirm</button></form>
+<form method="post" action="/acquisition/proposals/{proposal_id}/reject"><input type="hidden" name="csrf" value="{csrf}"><button type="submit">Reject</button></form></article>""")
     return _page(cards)
 
 
@@ -123,11 +124,31 @@ def _gate(request: Request, proposal_id: str, csrf: str | None):
         return None, HTMLResponse("Not found", status_code=404)
     registry = AssetRegistry(console.log, entity_exists=lambda _entity_id: True)
     return ConfirmationGate(console.log, proposals, TelemetryStreamRegistry(console.log),
-                            IdentityIndex(console.log), registry), None
+                            IdentityIndex(console.log), registry,
+                            FINANCE_MANUAL_DRAFT_CONTRACT), None
+
+
+async def _form_csrf(request: Request) -> str | None:
+    """Accept the signed CSRF credential from the POST body only.
+
+    Query strings leak into browser history, proxies and access logs.  The
+    token is intentionally unavailable to URL parsing, including forged query
+    parameters.
+    """
+    content_type = request.headers.get("content-type", "").split(";", 1)[0]
+    if content_type != "application/x-www-form-urlencoded":
+        return None
+    try:
+        fields = parse_qs((await request.body()).decode("utf-8"), strict_parsing=True)
+    except (UnicodeDecodeError, ValueError):
+        return None
+    values = fields.get("csrf")
+    return values[0] if set(fields) == {"csrf"} and values and len(values) == 1 else None
 
 
 @router.post("/acquisition/proposals/{proposal_id}/confirm")
-def confirm(request: Request, proposal_id: str, csrf: str | None = None):
+async def confirm(request: Request, proposal_id: str):
+    csrf = await _form_csrf(request)
     gate, error = _gate(request, proposal_id, csrf)
     if error is not None:
         return error
@@ -139,7 +160,8 @@ def confirm(request: Request, proposal_id: str, csrf: str | None = None):
 
 
 @router.post("/acquisition/proposals/{proposal_id}/reject")
-def reject(request: Request, proposal_id: str, csrf: str | None = None):
+async def reject(request: Request, proposal_id: str):
+    csrf = await _form_csrf(request)
     gate, error = _gate(request, proposal_id, csrf)
     if error is not None:
         return error

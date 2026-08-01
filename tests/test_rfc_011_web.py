@@ -76,9 +76,12 @@ def test_inbox_requires_session_csrf_escapes_content_and_confirms(environment):
     assert page.status_code == 200
     assert "ACQUISITION INBOX" in page.text
     assert "&lt;script&gt;" not in page.text  # notes are not rendered as trusted HTML
+    assert "?csrf=" not in page.text
+    assert 'name="csrf"' in page.text
     assert client.post("/acquisition/proposals/proposal-1/confirm").status_code == 403
     csrf = webauth.csrf_token(ALLOWED, webauth.load_config(), "rfc011-confirmation")
-    confirmed = client.post("/acquisition/proposals/proposal-1/confirm", params={"csrf": csrf})
+    assert client.post("/acquisition/proposals/proposal-1/confirm", params={"csrf": csrf}).status_code == 403
+    confirmed = client.post("/acquisition/proposals/proposal-1/confirm", data={"csrf": csrf})
     assert confirmed.status_code == 303
     assert any(event["kind"] == "finance.position.updated" for event in log.events())
     assert any(event["kind"] == "core.observation_proposal.updated" and
@@ -100,6 +103,6 @@ def test_inbox_rejects_cross_household_proposal(environment):
         "interpreter_class": "deterministic", "stream_id": "units", "draft_events": [],
         "observations": [], "resolutions": [], "evidence_grade": "declared"})
     csrf = webauth.csrf_token(ALLOWED, webauth.load_config(), "rfc011-confirmation")
-    response = _client().post("/acquisition/proposals/other-proposal/reject", params={"csrf": csrf})
+    response = _client().post("/acquisition/proposals/other-proposal/reject", data={"csrf": csrf})
     assert response.status_code == 404
     assert proposal_id == "proposal-1"

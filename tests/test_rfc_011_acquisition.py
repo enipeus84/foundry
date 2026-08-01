@@ -9,14 +9,19 @@ import uuid
 import pytest
 
 from foundry.core.acquisition import (
-    AccessibilityProjection, AcquisitionError, AcquisitionProviderRegistry, AssetRegistration,
+    AcquisitionError, AcquisitionProviderRegistry, AssetRegistration,
     AssetRegistry, CanonicalObservationProjection, ConfirmationGate,
     EnvelopeProjection, EvidenceUnavailable, EvidenceVault, ExternalRef,
-    IdentityIndex, ManualAcquisitionProvider, ManualInterpreter, ProposalInbox,
+    IdentityIndex, ManualAcquisitionProvider, ProposalInbox,
     ResolutionService, TelemetryStream, TelemetryStreamRegistry, ValuationLenses,
 )
 from foundry.eventlog import EventLog
 from foundry.finance import entities as finance
+from foundry.finance.acquisition import (
+    FINANCE_MANUAL_DRAFT_CONTRACT,
+    FinanceAccessibilityProjection,
+    FinanceManualInterpreter,
+)
 
 
 HOUSEHOLD = "household-1"
@@ -66,6 +71,11 @@ def _provider(log, streams, vault, stream_ids):
     return provider, providers
 
 
+def _gate(log, inbox, streams, identity, registry):
+    return ConfirmationGate(log, inbox, streams, identity, registry,
+                            FINANCE_MANUAL_DRAFT_CONTRACT)
+
+
 def _fact(kind, subject_id, valid_at, canonical_event, **extra):
     return {"kind": kind, "subject_id": subject_id, "valid_at": valid_at,
             "canonical_event": canonical_event, **extra}
@@ -95,7 +105,7 @@ def _foundation(acquisition):
     streams.declare(_stream("holding-register", HOLDING, "holding_exists"))
     streams.declare(_stream("holding-units", HOLDING, "units"))
     streams.declare(_stream("holding-price", HOLDING, "price"))
-    return ManualInterpreter(vault, envelopes, streams, resolver), ConfirmationGate(
+    return FinanceManualInterpreter(vault, envelopes, streams, resolver), _gate(
         log, inbox, streams, identity, registry)
 
 
@@ -143,7 +153,7 @@ def test_units_price_and_container_total_are_distinct_streams_with_reconciliatio
     registry.register(AssetRegistration(HOLDING, "finance", HOUSEHOLD))
     registry.contain(ACCOUNT, HOLDING)
     identity.rebuild(); inbox.rebuild()
-    interpreter = ManualInterpreter(vault, EnvelopeProjection(log), streams,
+    interpreter = FinanceManualInterpreter(vault, EnvelopeProjection(log), streams,
                                     ResolutionService(identity, registry, inbox))
     units = _fact("units", HOLDING, 20.0, {"kind": "finance.position.updated", "payload": {
         "entity_id": HOLDING, "quantity": 12.0}}, value=12.0, unit="units",
@@ -151,7 +161,7 @@ def test_units_price_and_container_total_are_distinct_streams_with_reconciliatio
     _, unit_proposal = _capture_and_propose(provider, interpreter, EnvelopeProjection(log), "holding-units", units, 30.0, "statement-1")
     gate.confirm(unit_proposal.id, actor="reviewer")
     inbox.rebuild(); identity.rebuild()
-    interpreter = ManualInterpreter(vault, EnvelopeProjection(log), streams,
+    interpreter = FinanceManualInterpreter(vault, EnvelopeProjection(log), streams,
                                     ResolutionService(identity, registry, inbox))
     price = _fact("price", HOLDING, 20.0, {"kind": "finance.position.updated", "payload": {
         "entity_id": HOLDING, "unit_price": 2.5, "valuation_date": 20.0}}, value=2.5, unit="GBP",
@@ -159,7 +169,7 @@ def test_units_price_and_container_total_are_distinct_streams_with_reconciliatio
     _, price_proposal = _capture_and_propose(provider, interpreter, EnvelopeProjection(log), "holding-price", price, 31.0, "statement-2")
     gate.confirm(price_proposal.id, actor="reviewer")
     inbox.rebuild(); identity.rebuild()
-    interpreter = ManualInterpreter(vault, EnvelopeProjection(log), streams,
+    interpreter = FinanceManualInterpreter(vault, EnvelopeProjection(log), streams,
                                     ResolutionService(identity, registry, inbox))
     total = _fact("statement_total", ACCOUNT, 20.0, {"kind": "finance.account.reconciliation_observed", "payload": {
         "entity_id": ACCOUNT, "supplied_total": 31.0}}, value=31.0, unit="GBP")
@@ -193,8 +203,8 @@ def test_unresolved_update_ambiguous_identity_and_rejection_fail_closed(acquisit
     log, vault, streams, envelopes, inbox, identity, registry, resolver = acquisition
     streams.declare(_stream("units", HOLDING, "units"))
     provider, _ = _provider(log, streams, vault, {"units"})
-    interpreter = ManualInterpreter(vault, envelopes, streams, resolver)
-    gate = ConfirmationGate(log, inbox, streams, identity, registry)
+    interpreter = FinanceManualInterpreter(vault, envelopes, streams, resolver)
+    gate = _gate(log, inbox, streams, identity, registry)
     fact = _fact("units", HOLDING, 10, {"kind": "finance.position.updated", "payload": {
         "entity_id": HOLDING, "quantity": 1}}, value=1, external_ref={"namespace": "isin", "value": "UNKNOWN"})
     _, proposal = _capture_and_propose(provider, interpreter, envelopes, "units", fact)
@@ -253,8 +263,8 @@ def test_bitemporal_reads_preserve_late_arrival_and_substrate_recorded_at(acquis
     log, vault, streams, envelopes, inbox, identity, registry, resolver = acquisition
     streams.declare(_stream("units", HOLDING, "units"))
     provider, _ = _provider(log, streams, vault, {"units"})
-    interpreter = ManualInterpreter(vault, envelopes, streams, resolver)
-    gate = ConfirmationGate(log, inbox, streams, identity, registry)
+    interpreter = FinanceManualInterpreter(vault, envelopes, streams, resolver)
+    gate = _gate(log, inbox, streams, identity, registry)
     # A new holding declaration makes the unresolved ISIN a reviewable new subject.
     register = _fact("holding_exists", HOLDING, 1, {"kind": "finance.position.declared", "payload": {
         "entity_id": HOLDING, "account_id": ACCOUNT, "instrument": "Tracker", "quantity": 0,
@@ -266,7 +276,7 @@ def test_bitemporal_reads_preserve_late_arrival_and_substrate_recorded_at(acquis
     _, registration = _capture_and_propose(provider, interpreter, envelopes, "register", register, 50, "document-0")
     gate.confirm(registration.id, actor="reviewer")
     inbox.rebuild(); identity.rebuild()
-    interpreter = ManualInterpreter(vault, EnvelopeProjection(log), streams, ResolutionService(identity, registry, inbox))
+    interpreter = FinanceManualInterpreter(vault, EnvelopeProjection(log), streams, ResolutionService(identity, registry, inbox))
     first = _fact("units", HOLDING, 10, {"kind": "finance.position.updated", "payload": {
         "entity_id": HOLDING, "quantity": 2}}, value=2, external_ref={"namespace": "isin", "value": "TIME"})
     _, proposal = _capture_and_propose(provider, interpreter, EnvelopeProjection(log), "units", first, 100, "document-1")
@@ -293,7 +303,7 @@ def test_accessibility_lifecycle_and_mission_lenses_are_derived_not_stored(acqui
     registry = AssetRegistry(log, entity_exists=lambda entity_id: entity_id in {ACCOUNT, HOLDING})
     registry.register(AssetRegistration(HOLDING, "finance", HOUSEHOLD)); registry.contain(ACCOUNT, HOLDING)
     inbox.rebuild(); identity.rebuild()
-    interpreter = ManualInterpreter(vault, EnvelopeProjection(log), streams, ResolutionService(identity, registry, inbox))
+    interpreter = FinanceManualInterpreter(vault, EnvelopeProjection(log), streams, ResolutionService(identity, registry, inbox))
     for stream_id, kind, value, payload in (
         ("holding-units", "units", 10.0, {"entity_id": HOLDING, "quantity": 10.0}),
         ("holding-price", "price", 4.0, {"entity_id": HOLDING, "unit_price": 4.0, "valuation_date": 5.0}),
@@ -303,7 +313,7 @@ def test_accessibility_lifecycle_and_mission_lenses_are_derived_not_stored(acqui
         _, proposal = _capture_and_propose(provider, interpreter, EnvelopeProjection(log), stream_id, fact, 6, stream_id)
         gate.confirm(proposal.id, actor="reviewer")
         inbox.rebuild(); identity.rebuild()
-        interpreter = ManualInterpreter(vault, EnvelopeProjection(log), streams, ResolutionService(identity, registry, inbox))
+        interpreter = FinanceManualInterpreter(vault, EnvelopeProjection(log), streams, ResolutionService(identity, registry, inbox))
     # Profiles and condition transitions are Finance assertions, read through
     # Core's domain-neutral lifecycle projection; no statutory rule enters Core.
     log.append("finance.accessibility_profile.declared", {"entity_id": HOLDING, "components": [
@@ -311,7 +321,7 @@ def test_accessibility_lifecycle_and_mission_lenses_are_derived_not_stored(acqui
         "provenance": {"proposal_id": "p", "evidence_id": "e", "confirmed_by": "reviewer"}})
     log.append("finance.accessibility_condition.declared", {"entity_id": "gate-1", "subject_id": HOLDING,
         "condition": "age_gate", "state": "pending", "provenance": {"proposal_id": "p"}})
-    access = AccessibilityProjection(log)
+    access = FinanceAccessibilityProjection(log)
     lenses = ValuationLenses(registry, streams, CanonicalObservationProjection(log, EnvelopeProjection(log)))
     restricted = lenses.accessibility_value(HOLDING, valid_at=5, known_at=9_999,
                                             profile=access.profile_for(HOLDING), conditions=access.condition_states())
@@ -329,5 +339,52 @@ def test_accessibility_lifecycle_and_mission_lenses_are_derived_not_stored(acqui
         "provenance": {"proposal_id": "p", "evidence_id": "e", "confirmed_by": "reviewer"}})
     log.append("finance.accessibility_condition.updated", {"entity_id": "gate-1", "state": "revoked",
         "provenance": {"proposal_id": "p", "evidence_id": "e", "confirmed_by": "reviewer"}})
-    access = AccessibilityProjection(log)
+    access = FinanceAccessibilityProjection(log)
     assert access.conditions["gate-1"].state == "satisfied"  # terminal states never rewind
+
+
+def test_missing_material_market_evidence_remains_unknown_not_zero(acquisition):
+    log, _, streams, _, _, _, registry, _ = acquisition
+    registry.register(AssetRegistration(HOLDING, "finance", HOUSEHOLD))
+    streams.declare(_stream("holding-units", HOLDING, "units"))
+    log.append("finance.position.updated", {
+        "entity_id": HOLDING,
+        "provenance": {"evidence_id": "evidence-1", "proposal_id": "proposal-1", "confirmed_by": "reviewer"},
+        "observation": {"subject_id": HOLDING, "stream_id": "holding-units", "kind": "units",
+                        "value": 12.0, "valid_at": 10.0, "observed_at": 10.0,
+                        "evidence_grade": "declared"},
+    })
+    lenses = ValuationLenses(registry, streams, CanonicalObservationProjection(log, EnvelopeProjection(log)))
+    market = lenses.market_value(HOLDING, valid_at=10.0, known_at=9_999.0)
+    accessible = lenses.accessibility_value(HOLDING, valid_at=10.0, known_at=9_999.0,
+                                            profile={"components": [{"condition": "none", "portion": 1.0}]},
+                                            conditions={})
+    mission = lenses.mission_value(HOLDING, valid_at=10.0, known_at=9_999.0,
+                                   profile={"components": [{"condition": "none", "portion": 1.0}]},
+                                   conditions={}, horizon=None, policy=lambda value, quality: value)
+    reconciliation = lenses.reconciliation(HOLDING, valid_at=10.0, known_at=9_999.0)
+    assert market["value"] is None and market["confidence"] == "Insufficient"
+    assert accessible["value"] is None and mission["value"] is None
+    assert reconciliation.derived_total is None and reconciliation.difference is None
+    assert reconciliation.confidence == "Insufficient"
+    assert lenses.market_value(HOLDING, valid_at=10.0, known_at=9_999.0) == market
+
+
+def test_identity_and_duplicate_protection_refuse_operation_when_inbox_is_unavailable(acquisition):
+    log, vault, streams, envelopes, _, identity, registry, _ = acquisition
+    streams.declare(_stream("units", HOLDING, "units"))
+    provider, _ = _provider(log, streams, vault, {"units"})
+    resolver = ResolutionService(identity, registry)
+    with pytest.raises(AcquisitionError, match="duplicate protection"):
+        resolver.semantic_duplicate("units", HOLDING, "units", 10.0, "statement")
+    envelope = provider.capture("units", {"observations": [_fact("units", HOLDING, 10.0, {
+        "kind": "finance.position.updated", "payload": {"entity_id": HOLDING, "quantity": 1.0}}, value=1.0)]},
+        received_at=20.0, actor="reviewer", source_identity="user:reviewer")
+    envelopes.rebuild()
+    with pytest.raises(AcquisitionError, match="duplicate protection"):
+        FinanceManualInterpreter(vault, envelopes, streams, resolver).interpret(envelope.id, "reviewer")
+
+
+def test_core_acquisition_contract_contains_no_finance_event_vocabulary():
+    source = Path(__file__).parents[1] / "src" / "foundry" / "core" / "acquisition.py"
+    assert "finance." not in source.read_text()

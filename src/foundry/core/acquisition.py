@@ -14,7 +14,7 @@ import json
 import os
 from pathlib import Path
 import re
-from typing import Any, Callable, Iterable
+from typing import Any, Callable, Iterable, Protocol
 
 from foundry.eventlog import EventLog
 
@@ -40,6 +40,23 @@ class AcquisitionError(ValueError):
 
 class EvidenceUnavailable(AcquisitionError):
     """Evidence is missing, corrupt, redacted, or the caller is unauthorized."""
+
+
+class DomainDraftContract(Protocol):
+    """Domain-owned validation for inert drafts crossing the Core seam.
+
+    Core owns the proposal and confirmation lifecycle.  The vocabulary and
+    payload shape of a canonical event remain the receiving domain's concern.
+    """
+
+    interpreter_id: str
+    interpreter_version: str
+    interpreter_class: str
+
+    def validate_interpretation(self, draft: dict[str, Any]) -> None: ...
+
+    def validate_confirmation(self, draft: dict[str, Any],
+                              observation: dict[str, Any]) -> None: ...
 
 
 def _stable(value: Any) -> str:
@@ -507,7 +524,9 @@ class ResolutionService:
 
     def semantic_duplicate(self, stream_id: str, subject_id: str | None, observation_kind: str,
                            valid_at: float, external_document_ref: str | None) -> str | None:
-        if self.inbox is None or subject_id is None:
+        if self.inbox is None:
+            raise AcquisitionError("semantic duplicate protection is unavailable")
+        if subject_id is None:
             return None
         for proposal in self.inbox.proposals.values():
             if proposal.state != "confirmed":
@@ -590,23 +609,16 @@ class ProposalInbox:
 
 class ManualInterpreter:
     """A deterministic, versioned JSON interpreter for manually captured facts."""
-    interpreter_id = "manual-json"
-    interpreter_version = "1"
-    interpreter_class = "deterministic"
-
-    _EVENTS = frozenset({"finance.account.declared", "finance.position.declared",
-                         "finance.position.updated", "finance.transaction.declared",
-                         "finance.account.reconciliation_observed",
-                         "finance.accessibility_profile.declared",
-                         "finance.accessibility_condition.declared",
-                         "finance.accessibility_condition.updated"})
-
     def __init__(self, vault: EvidenceVault, envelopes: EnvelopeProjection,
-                 streams: TelemetryStreamRegistry, resolver: ResolutionService):
+                 streams: TelemetryStreamRegistry, resolver: ResolutionService,
+                 draft_contract: DomainDraftContract):
         self.vault, self.envelopes, self.streams, self.resolver = vault, envelopes, streams, resolver
+        self.draft_contract = draft_contract
+        self.interpreter_id = draft_contract.interpreter_id
+        self.interpreter_version = draft_contract.interpreter_version
+        self.interpreter_class = draft_contract.interpreter_class
 
-    @staticmethod
-    def _observation(fact: dict[str, Any], stream: TelemetryStream,
+    def _observation(self, fact: dict[str, Any], stream: TelemetryStream,
                      external_document_ref: str | None) -> tuple[dict[str, Any], dict[str, Any]]:
         required = {"kind", "subject_id", "valid_at", "canonical_event"}
         if not isinstance(fact, dict) or not required <= set(fact):
@@ -617,7 +629,7 @@ class ManualInterpreter:
         valid_at = _timestamp(fact["valid_at"], "valid_at")
         observed_at = _timestamp(fact.get("observed_at", valid_at), "observed_at")
         event = fact["canonical_event"]
-        if not isinstance(event, dict) or set(event) != {"kind", "payload"} or event["kind"] not in ManualInterpreter._EVENTS:
+        if not isinstance(event, dict) or set(event) != {"kind", "payload"}:
             raise AcquisitionError("unsupported canonical draft event")
         if not isinstance(event["payload"], dict) or "recorded_at" in event["payload"]:
             raise AcquisitionError("draft event payload is invalid")
@@ -630,7 +642,9 @@ class ManualInterpreter:
             observation["value"] = float(fact["value"])
         if "unit" in fact:
             observation["unit"] = _identifier(fact["unit"], "observation unit")
-        return observation, {"kind": event["kind"], "payload": dict(event["payload"])}
+        draft = {"kind": event["kind"], "payload": dict(event["payload"])}
+        self.draft_contract.validate_interpretation(draft)
+        return observation, draft
 
     def interpret(self, envelope_id: str, actor: str) -> Proposal:
         envelope = self.envelopes.envelopes.get(envelope_id)
@@ -648,8 +662,10 @@ class ManualInterpreter:
         if not isinstance(payload, dict) or not isinstance(payload.get("observations"), list):
             raise AcquisitionError("unsupported manual evidence")
         inbox = self.resolver.inbox
+        if inbox is None:
+            raise AcquisitionError("semantic duplicate protection is unavailable")
         proposal_id = "proposal-" + _digest([envelope.id, self.interpreter_id, self.interpreter_version])[:24]
-        if inbox is not None and proposal_id in inbox.proposals:
+        if proposal_id in inbox.proposals:
             return inbox.proposals[proposal_id]
         observations, drafts, resolutions = [], [], []
         for fact in payload["observations"]:
@@ -677,61 +693,32 @@ class ManualInterpreter:
             "notes": "deterministic manual interpretation",
         }
         self.envelopes.log.append("core.observation_proposal.declared", proposal_payload, actor=actor)
-        if inbox is None:
-            inbox = ProposalInbox(self.envelopes.log)
-        else:
-            inbox.rebuild()
+        inbox.rebuild()
         return inbox.proposals[proposal_id]
 
 
 class ConfirmationGate:
     """The sole acquisition path allowed to append canonical domain events."""
     def __init__(self, log: EventLog, inbox: ProposalInbox, streams: TelemetryStreamRegistry,
-                 identities: IdentityIndex, registry: AssetRegistry | None = None):
+                 identities: IdentityIndex, registry: AssetRegistry | None = None,
+                 draft_contract: DomainDraftContract | None = None):
         self.log, self.inbox, self.streams, self.identities = log, inbox, streams, identities
         self.registry = registry
+        self.draft_contract = draft_contract
 
-    @staticmethod
-    def _validate_draft(draft: dict[str, Any], observation: dict[str, Any]) -> None:
+    def _validate_draft(self, draft: dict[str, Any], observation: dict[str, Any]) -> None:
         if not isinstance(draft, dict) or set(draft) != {"kind", "payload"}:
             raise AcquisitionError("proposal draft was tampered with")
-        if not draft["kind"].startswith("finance.") or not isinstance(draft["payload"], dict):
+        if (not isinstance(draft["kind"], str) or not draft["kind"] or
+                not isinstance(draft["payload"], dict)):
             raise AcquisitionError("only a validated domain draft may be confirmed")
         if "recorded_at" in draft["payload"] or "recorded_at" in observation:
             raise AcquisitionError("recorded_at is substrate-owned")
         _timestamp(observation.get("valid_at"), "valid_at")
         _timestamp(observation.get("observed_at"), "observed_at")
-        payload = draft["payload"]
-        kind = draft["kind"]
-        entity_id = payload.get("entity_id")
-        if kind not in ManualInterpreter._EVENTS or not isinstance(entity_id, str):
-            raise AcquisitionError("draft event is not in the approved manual contract")
-        if kind == "finance.account.declared":
-            if not {"account_type", "currency"} <= set(payload):
-                raise AcquisitionError("account draft is incomplete")
-        elif kind == "finance.position.declared":
-            required = {"account_id", "instrument", "quantity", "unit_price", "currency",
-                        "cost_basis", "valuation_date", "market_value", "asset_category"}
-            if not required <= set(payload):
-                raise AcquisitionError("position draft is incomplete")
-        elif kind == "finance.position.updated":
-            if not ({"quantity", "unit_price", "valuation_date"} & set(payload)):
-                raise AcquisitionError("position update has no observed field")
-        elif kind == "finance.transaction.declared":
-            if not {"account_id", "amount", "currency", "transaction_category", "ts"} <= set(payload):
-                raise AcquisitionError("transaction draft is incomplete")
-        elif kind == "finance.account.reconciliation_observed":
-            if "supplied_total" not in payload:
-                raise AcquisitionError("reconciliation draft is incomplete")
-        elif kind == "finance.accessibility_profile.declared":
-            if "components" not in payload:
-                raise AcquisitionError("accessibility profile draft is incomplete")
-        elif kind == "finance.accessibility_condition.declared":
-            if payload.get("state", "pending") not in _CONDITION_STATES:
-                raise AcquisitionError("invalid accessibility condition state")
-        elif kind == "finance.accessibility_condition.updated":
-            if payload.get("state") not in {"satisfied", "lapsed", "revoked"}:
-                raise AcquisitionError("accessibility conditions only move from pending to a terminal state")
+        if self.draft_contract is None:
+            raise AcquisitionError("domain draft validation is unavailable")
+        self.draft_contract.validate_confirmation(draft, observation)
 
     def confirm(self, proposal_id: str, *, actor: str, reason: str = "confirmed after review") -> tuple[dict, ...]:
         proposal = self.inbox.proposals.get(proposal_id)
@@ -742,6 +729,11 @@ class ConfirmationGate:
             raise AcquisitionError("proposal stream is unknown or cross-household")
         if proposal.interpreter_class != "deterministic":
             raise AcquisitionError("model-class proposals require a dedicated review workflow")
+        if (self.draft_contract is None or
+                (proposal.interpreter_id, proposal.interpreter_version, proposal.interpreter_class) !=
+                (self.draft_contract.interpreter_id, self.draft_contract.interpreter_version,
+                 self.draft_contract.interpreter_class)):
+            raise AcquisitionError("proposal interpreter contract is unavailable or unsupported")
         for resolution in proposal.resolutions:
             if resolution.get("outcome") == "ambiguous":
                 raise AcquisitionError("ambiguous identity blocks confirmation")
@@ -816,7 +808,7 @@ class CanonicalObservationProjection:
     def observations(self, subject_id: str, *, valid_at: float, known_at: float) -> tuple[CanonicalObservation, ...]:
         result = []
         for event in self.log.events():
-            if not event["kind"].startswith("finance.") or event["ts"] > known_at:
+            if event["ts"] > known_at:
                 continue
             payload, raw = event["payload"], event["payload"].get("observation")
             if not isinstance(raw, dict) or raw.get("subject_id") != subject_id:
@@ -847,66 +839,9 @@ class CanonicalObservationProjection:
 
 
 @dataclass(frozen=True)
-class AccessibilityCondition:
-    id: str
-    condition: str
-    state: str
-    subject_id: str
-    provenance: tuple[str, ...]
-
-
-class AccessibilityProjection:
-    """Read Core's lifecycle shape from Finance-owned, confirmed profile data.
-
-    Core does not decide whether an age, vesting, trust, or notice condition
-    has been met. It records the common state machine a domain event asserted.
-    """
-    def __init__(self, log: EventLog):
-        self.log = log
-        self.profiles: dict[str, dict[str, Any]] = {}
-        self.conditions: dict[str, AccessibilityCondition] = {}
-        self.rebuild()
-
-    def rebuild(self) -> None:
-        self.profiles, self.conditions = {}, {}
-        for event in self.log.events():
-            if not event["kind"].startswith("finance."):
-                continue
-            payload = event["payload"]
-            if not isinstance(payload.get("provenance"), dict):
-                continue
-            if event["kind"] == "finance.accessibility_profile.declared":
-                subject_id, components = payload.get("entity_id"), payload.get("components")
-                if isinstance(subject_id, str) and isinstance(components, list):
-                    self.profiles[subject_id] = {
-                        "components": tuple(dict(item) for item in components if isinstance(item, dict))}
-            elif event["kind"] == "finance.accessibility_condition.declared":
-                condition_id, condition, subject_id = (payload.get("entity_id"), payload.get("condition"),
-                                                        payload.get("subject_id"))
-                state = payload.get("state", "pending")
-                if (isinstance(condition_id, str) and isinstance(subject_id, str) and
-                        condition in vocab.ACCESSIBILITY_CONDITION and state in _CONDITION_STATES):
-                    self.conditions[condition_id] = AccessibilityCondition(
-                        condition_id, condition, state, subject_id, (event["id"],))
-            elif event["kind"] == "finance.accessibility_condition.updated":
-                current = self.conditions.get(payload.get("entity_id"))
-                state = payload.get("state")
-                if current is not None and state in _CONDITION_STATES and current.state == "pending" and state != "pending":
-                    self.conditions[current.id] = AccessibilityCondition(
-                        current.id, current.condition, state, current.subject_id,
-                        current.provenance + (event["id"],))
-
-    def profile_for(self, subject_id: str) -> dict[str, Any]:
-        return self.profiles.get(subject_id, {"components": ()})
-
-    def condition_states(self) -> dict[str, dict[str, str]]:
-        return {condition_id: {"state": condition.state} for condition_id, condition in self.conditions.items()}
-
-
-@dataclass(frozen=True)
 class Reconciliation:
     subject_id: str
-    derived_total: float
+    derived_total: float | None
     supplied_total: float | None
     difference: float | None
     provenance: tuple[str, ...]
@@ -919,11 +854,11 @@ class ValuationLenses:
                  observations: CanonicalObservationProjection):
         self.registry, self.streams, self.observations = registry, streams, observations
 
-    def _holding_market(self, subject_id: str, valid_at: float, known_at: float) -> tuple[float, tuple[CanonicalObservation, ...]]:
+    def _holding_market(self, subject_id: str, valid_at: float, known_at: float) -> tuple[float | None, tuple[CanonicalObservation, ...]]:
         units = self.observations.latest(subject_id, "units", valid_at=valid_at, known_at=known_at)
         price = self.observations.latest(subject_id, "price", valid_at=valid_at, known_at=known_at)
         if units is None or price is None or units.value is None or price.value is None:
-            return 0.0, ()
+            return None, tuple(item for item in (units, price) if item is not None)
         return units.value * price.value, (units, price)
 
     def market_value(self, subject_id: str, *, valid_at: float, known_at: float) -> dict[str, Any]:
@@ -936,19 +871,22 @@ class ValuationLenses:
             value, observations = self._holding_market(subject_id, valid_at, known_at)
             values = [value]
         grades = [item.evidence_grade for item in observations]
-        return {"value": sum(values), "inputs": observations,
-                "confidence": confidence_cap(grades) if grades else "Insufficient",
+        value = None if any(item is None for item in values) else sum(values)
+        return {"value": value, "inputs": observations,
+                "confidence": confidence_cap(grades) if value is not None and grades else "Insufficient",
                 "basis": "market"}
 
     def reconciliation(self, container_id: str, *, valid_at: float, known_at: float) -> Reconciliation:
         market = self.market_value(container_id, valid_at=valid_at, known_at=known_at)
         supplied = self.observations.latest(container_id, "statement_total", valid_at=valid_at, known_at=known_at)
         supplied_total = supplied.value if supplied else None
-        difference = market["value"] - supplied_total if supplied_total is not None else None
+        difference = (market["value"] - supplied_total
+                      if market["value"] is not None and supplied_total is not None else None)
         inputs = market["inputs"] + ((supplied,) if supplied else ())
         return Reconciliation(container_id, market["value"], supplied_total, difference,
                               tuple(item.event_id for item in inputs),
-                              confidence_cap([item.evidence_grade for item in inputs]) if inputs else "Insufficient")
+                              confidence_cap([item.evidence_grade for item in inputs])
+                              if market["value"] is not None and supplied is not None else "Insufficient")
 
     def stream_freshness(self, stream_id: str, *, as_of: float, known_at: float) -> str:
         stream = self.streams.streams.get(stream_id)
@@ -980,7 +918,9 @@ class ValuationLenses:
             eligible = state == "satisfied" or (horizon is not None and earliest is not None and earliest <= horizon)
             if eligible:
                 fraction += float(component.get("portion", 0))
-        return {"value": market["value"] * min(1.0, fraction), "basis": "accessibility",
+        value = (market["value"] * min(1.0, fraction)
+                 if market["value"] is not None else None)
+        return {"value": value, "basis": "accessibility",
                 "confidence": market["confidence"], "inputs": market["inputs"]}
 
     def mission_value(self, subject_id: str, *, valid_at: float, known_at: float,
@@ -988,5 +928,7 @@ class ValuationLenses:
                       horizon: float | None, policy: Callable[[float, str], float]) -> dict[str, Any]:
         accessible = self.accessibility_value(subject_id, valid_at=valid_at, known_at=known_at,
                                               profile=profile, conditions=conditions, horizon=horizon)
-        return {**accessible, "value": policy(accessible["value"], accessible["confidence"]),
+        value = (policy(accessible["value"], accessible["confidence"])
+                 if accessible["value"] is not None else None)
+        return {**accessible, "value": value,
                 "basis": "mission"}

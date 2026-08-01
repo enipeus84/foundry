@@ -22,7 +22,9 @@ metadata-only registrations, external references, containment and lifecycle
 metadata; it holds neither money nor ownership. `TelemetryStreamRegistry`
 owns per-stream acquisition strategy, refresh policy, validation contract,
 source identity, unit/currency and confirmation policy. The Finance domain
-continues to own accounts, positions, ownership and canonical value events.
+owns accounts, positions, ownership, canonical event vocabulary and the
+manual draft contract. Core has no `finance.*` event catalogue or prefix
+check: it accepts only a supplied domain contract at composition time.
 
 The manual provider accepts bounded structured facts and writes a
 content-addressed envelope only. Its evidence is stored outside JSONL in a
@@ -73,6 +75,71 @@ confirmation would create. Its forms carry a signed, short-lived CSRF token;
 they submit only a proposal identifier, never editable draft data. Displayed
 values are escaped. Mission Console semantics and assessment contracts are
 unchanged.
+
+## SAFE remediation evidence — 2026-08-01
+
+### B3 — Information Honesty — remediated
+
+`ValuationLenses` now represents a missing material unit or price observation
+as `None`, never `0.0`. That unknown propagates through market,
+accessibility, mission and reconciliation lenses; the affected result is
+`Insufficient`. A genuine observed zero remains a number. The regression
+`test_missing_material_market_evidence_remains_unknown_not_zero` asserts both
+the unknown propagation and stable replay of the result.
+
+### B4 — Identity Resolution — remediated
+
+`ResolutionService.semantic_duplicate()` now raises when its inbox dependency
+is unavailable. `ManualInterpreter.interpret()` refuses before creating a
+proposal when duplicate protection is absent. No optional dependency can now
+silently turn semantic duplicate detection off. The regression
+`test_identity_and_duplicate_protection_refuse_operation_when_inbox_is_unavailable`
+asserts both paths.
+
+### S2 — CSRF credentials in URLs — remediated
+
+The authenticated inbox renders a hidden CSRF form field and receives it only
+from an `application/x-www-form-urlencoded` POST body. Query parameters are
+not read. `test_inbox_requires_session_csrf_escapes_content_and_confirms`
+asserts that rendered form actions contain no token, a query-token request is
+rejected, and a body-token request succeeds.
+
+### B1 — Core neutrality — SAFE position supported and remediated
+
+Before remediation, `core.acquisition` named a Finance event catalogue and
+required the `finance.` prefix in the Confirmation Gate. That is a direct
+violation of RFC-011 AC-8, not merely the Finance reference implementation.
+The catalogue and payload validation now live in
+`foundry.finance.acquisition.FinanceManualDraftContract`; Core owns only the
+generic proposal lifecycle and a `DomainDraftContract` protocol. The
+regression `test_core_acquisition_contract_contains_no_finance_event_vocabulary`
+asserts the Core source contains no `finance.` event vocabulary. Finance
+continues to be today's registered domain implementation, but it is no longer
+hard-wired into the platform seam.
+
+### B2 — Phase sequencing — SAFE position supported
+
+The frozen RFC explicitly declares Phases 1–4 separate Burn candidates.
+Commit `775812c` includes Core grammar and identity (Phase 1), Evidence Vault
+and confirmation (Phase 2), valuation/accessibility (Phase 3), and the child
+reference implementation (Phase 4). The branch title and earlier report call
+this a Phase 1 slice, but the evidence is a combined Phase 1–4 implementation.
+No code change can make that historical sequencing claim true. The Governor
+should reclassify this branch as the combined Phase 1–4 reference burn and
+decide whether its existing review evidence satisfies the separate-gate
+intent. No Phase 5 work has begun.
+
+### Significant SAFE identifiers without published finding text
+
+The CAPCOM brief names S1 and S3–S7 but provides no assertion, file, or
+acceptance criterion. The authoritative draft PR has no review, inline, or
+issue comments (`gh api` returned `[]` for all three resources on 2026-08-01),
+and no local SAFE review artefact exists. Each identifier is therefore
+classified **SAFE interpretation not supported**: an identifier alone is not
+an actionable technical claim and cannot authorize speculative changes to a
+frozen architecture. This is evidence of absence of a finding text, not a
+claim that the system is defect-free. A supplied review artefact can reopen
+the named item without redesign.
 
 ## Validation evidence
 
