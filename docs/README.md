@@ -34,9 +34,17 @@ location for each rather than restating their content.
 
 ## Engineering process
 
+- [`rfcs/RFC-100-flight-operations-manual.md`](rfcs/RFC-100-flight-operations-manual.md)
+  — the Flight Operations Manual: Mission Control roles, burn
+  classification, mission lifecycle, Flight Rules, pre-flight,
+  checkpoints, SAFE, Governor authority, post-flight and standard
+  reports. Governs *engineering process*, as distinct from the
+  *engineering invariants* in `architecture.md`. **Proposed; awaiting
+  Governor ratification.**
 - [`engineering/review-gates.md`](engineering/review-gates.md) — the
   current architecture/security review-gate process every change goes
-  through before merge.
+  through before merge. Canonical for gate mechanics; RFC-100 cites it
+  rather than restating it.
 - [`../CONTRIBUTING.md`](../CONTRIBUTING.md) — the practical contribution
   rules (stays at the repo root, per convention).
 
