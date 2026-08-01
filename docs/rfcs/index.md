@@ -50,12 +50,13 @@ Architecture is written and under Governor review; no implementation exists.
 
 ## Engineering governance
 
-RFC-100 is not a product RFC. It governs how Foundry is engineered, not what
-Foundry does, and is listed separately for that reason.
+RFC-100 is not a product RFC. It governs the engineering governance of all
+future product RFCs — how Foundry is engineered, not what Foundry does — and is
+listed separately for that reason.
 
 | RFC | Title | Status | Document | Self-review | PR |
 |---|---|---|---|---|---|
-| RFC-100 | Flight Operations Manual | **Revision 2 — Governor amendments applied; awaiting final architecture review and freeze** | [`RFC-100-flight-operations-manual.md`](RFC-100-flight-operations-manual.md) | [`RFC-100-architecture-self-review.md`](../reviews/RFC-100-architecture-self-review.md) | pending |
+| RFC-100 | Flight Operations Manual | **Revision 2 — Governor-approved and frozen; documentation implementation in progress** | [`RFC-100-flight-operations-manual.md`](RFC-100-flight-operations-manual.md) | [`RFC-100-architecture-self-review.md`](../reviews/RFC-100-architecture-self-review.md) | draft PR |
 
 RFC-007 Revision 2 documents `initial_deposit`, optional
 `acquisition_costs`, optional explicit `valuation_basis`, visible

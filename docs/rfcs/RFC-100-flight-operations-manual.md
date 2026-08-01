@@ -1,7 +1,7 @@
 # RFC-100 — Flight Operations Manual
 
-**Status:** Revision 2 — Governor amendments applied; awaiting Governor final
-architecture review and freeze.
+**Status:** Revision 2 — Governor-approved and frozen; documentation
+implementation in progress.
 **Type:** Governance architecture. Documentation-only.
 **Author:** EECOM (architecture Flight Controller role, Claude), commissioned by
 CAPCOM on behalf of the Governor.
@@ -22,9 +22,9 @@ or architectural decision is altered.
 
 | # | Amendment | Applied |
 |---|---|---|
-| **1** | Three-layer structure — Constitution / Operations Manual / Engineering Templates, made explicit | New §1.5, with each major section tagged and per-layer change control; GD-5 restated in layer terms |
+| **1** | Three-layer structure — Constitution / Operations Manual / Engineering Standards & Templates, made explicit | New §1.5, with each major section tagged and per-layer change control; GD-5 applied in layer terms |
 | **2** | Precedence — a normative section resolving RFC-100 against product RFCs | New §1.6 (P1–P7), normative; §1.3 now points to it rather than restating it |
-| **3** | Flight Rule format — Identifier, Rule, Rationale, Provenance, Verification | §5 preamble defines the standard; all fifteen rules and both proposed rules reformatted; **Verification is new to every rule** |
+| **3** | Flight Rule format — Identifier, Rule, Rationale, Provenance, Verification | §5 preamble defines the standard; all seventeen rules reformatted; **Verification is new to every rule** |
 | **4** | Model guidance — the model table is recommended practice, not normative | New §12.0; §12.1 relabelled; §12.2 independence rule marked normative; GD-4 restated |
 | **5** | Validation appendix — how Mission Control was validated | New [Appendix A](#appendix-a--how-mission-control-was-validated), evidencing RFC-009, RFC-010 and RFC-011 element by element, including what it does *not* cover |
 
@@ -40,7 +40,7 @@ governs **how Foundry is engineered**, never **what Foundry does**. No product
 architecture, domain model, mission, console, canon or acquisition contract is
 created, amended or interpreted by this document.
 
-Once ratified, an engineering brief may be reduced to:
+An engineering brief may be reduced to:
 
 ```text
 Operate under RFC-100.
@@ -85,8 +85,8 @@ An RFC is a governed unit of change to Foundry. RFC-100 is the governed unit of
 change to *how RFCs are run*. Concretely:
 
 - Product and platform RFCs (RFC-001…RFC-0nn) describe **what** Foundry is.
-- RFC-100 describes **how** any of them is designed, built, reviewed and
-  merged.
+- RFC-100 governs the engineering governance of every future product RFC and
+  describes **how** any of them is designed, built, reviewed and merged.
 - Where a product RFC states process (RFC-010's migration gate table, RFC-011's
   ten-phase sequence), that process is **burn-local sequencing** inside the
   RFC's own scope.
@@ -115,7 +115,7 @@ section, and every section belongs to exactly one.
 |---|---|---|---|---|
 | **1** | **Constitution** | §1 Purpose and precedence · §2 Mission Control Organisation · §3 Burn Classification · §4 Mission Lifecycle · §5 Flight Rules | Rarely. Each change is a constitutional act | **Architecture Burn** revising RFC-100, with Governor approval and re-freeze |
 | **2** | **Operations Manual** | §6 Pre-flight · §7 Checkpoints · §8 SAFE · §9 Governor · §10 Post-Flight | When a procedure is proven insufficient by a burn | **Documentation Burn** under Governor Review. May refine *how* a Layer 1 obligation is met; may never remove one |
-| **3** | **Engineering Templates** | §11 Standard Reports · §12 AI Operating Model | Expected to evolve continuously | **Documentation Burn**, Governor notified. Records practice rather than constraining it |
+| **3** | **Engineering Standards & Templates** | §11 Standard Reports · §12 AI Operating Model | Expected to evolve continuously | **Documentation Burn**, Governor notified. Records practice rather than constraining it |
 
 **Supporting record** — §13 Operational Precedents, §14 Governor Decisions,
 §15 Scope Exclusions, §16 Technical Debt, §17 Success Criteria and
@@ -160,11 +160,11 @@ roles are filled by whichever human or model is assigned (§12), and the
 standards do not change with the occupant
 (`review-gates.md`, "Models are Replaceable").
 
-**Evidence status.** Five roles — Governor, CAPCOM, EECOM, BOOSTER, SAFE — have
-operating evidence in the repository and are documented here as proven
-behaviour. Two roles — **Guido** and **TELMU** — name work that demonstrably
-happens but has never had a named owner. They are marked *(newly named)* and
-require Governor ratification (§14, GD-1).
+**Evidence status.** Seven roles — Governor, CAPCOM, EECOM, BOOSTER, SAFE,
+**Guido** and **TELMU** — are documented here as permanent Flight Directors.
+The Governor ratified Guido and TELMU under GD-1; their operating evidence is
+recorded in the role descriptions and remains subject to ordinary post-flight
+verification.
 
 ### 2.1 Governor
 
@@ -201,7 +201,7 @@ named findings S1 and S3–S7 without assertion, file or acceptance criterion,
 and the burn correctly classified them "SAFE interpretation not supported"
 rather than acting on an identifier alone.
 
-### 2.3 Guido *(newly named — requires ratification, GD-1)*
+### 2.3 Guido
 
 **Authority.** Mission planning and RFC canon.
 
@@ -272,7 +272,7 @@ Proven: SAFE review and remediation cycles on RFC-009 (PR #22), RFC-010 (PR
 per-finding disposition recorded in the technical-debt register; the
 `review-gates.md` severity model and its Critical/High block policy.
 
-### 2.7 TELMU *(newly named — requires ratification, GD-1)*
+### 2.7 TELMU
 
 **Authority.** Project telemetry and post-flight state.
 
@@ -771,13 +771,13 @@ reclassification to the Governor, with no Phase 5 work authorised meanwhile.
 
 **Verification.** The classification declared in the brief matches the scope stated in the report. Any divergence appears as a Governor reclassification decision, never as a restated scope.
 
-### 5.1 Proposed additions *(require ratification — GD-2)*
+### 5.1 Additional permanent Flight Rules *(GD-2 applied)*
 
 These two rules describe behaviour the project has already been forced into but
-which no existing rule states. They are presented separately because RFC-100
-captures proven behaviour and these have not previously been written down.
+which no existing rule stated before RFC-100. The Governor ratified both as
+permanent Flight Rules under GD-2.
 
-#### FR-016 — Post-Merge Verification *(proposed)*
+#### FR-016 — Post-Merge Verification
 
 **Rule.** A burn is not complete until the **first post-merge `main` workflow
 passes**. A failing post-merge run reopens the burn.
@@ -790,7 +790,7 @@ and RFC-011 Phase 10 already impose this on themselves; FR-016 generalises it.
 
 **Verification.** The Post-Flight Report cites the post-merge `main` run identifier and its conclusion.
 
-#### FR-017 — Documentation Coherence *(proposed)*
+#### FR-017 — Documentation Coherence
 
 **Rule.** `PROJECT_STATUS.md`, [`index.md`](index.md), `CHANGELOG.md` and
 `architecture.md` may not contradict one another after a burn. A burn that
@@ -989,8 +989,10 @@ and must not be carried as if it did.
 Where a burn's true scope differs from its declared classification, only the
 Governor may reclassify it, and only with the true scope stated. The
 implementation states the discrepancy honestly and stops
-([FR-015](#fr-015--burn-classification)); RFC-011 B2 is the precedent, including
-its explicit hold: "no Phase 5 work is authorized meanwhile."
+([FR-015](#fr-015--burn-classification)); RFC-011 B2 is the operational
+precedent. Governor reclassification of PR #27 as the combined Reference
+Implementation Burn closed B2; it is no longer unresolved and no Phase 5 hold
+remains under that ruling.
 
 ### 9.7 No implementation authority
 
@@ -1009,10 +1011,10 @@ Owned by TELMU. Every item is verified, not assumed.
 | Step | Verification |
 |---|---|
 | **Merge** | The PR is merged by the Governor; the merge commit is identified |
-| **CI verification** | The **first post-merge `main` workflow passes**. A failure reopens the burn (FR-016 proposed) |
+| **CI verification** | The **first post-merge `main` workflow passes**. A failure reopens the burn (FR-016) |
 | **Cleanup** | Burn branch disposition recorded; no stale worktree; no scratch artefact left in the repository |
 | **Repository verification** | Working tree clean; `main` matches `origin/main`; `git diff --check` clean |
-| **Documentation** | Index row updated; `PROJECT_STATUS.md` current; CHANGELOG entry and version bump present or their absence recorded as a gap (FR-017 proposed) |
+| **Documentation** | Index row updated; `PROJECT_STATUS.md` current; CHANGELOG entry and version bump present or their absence recorded as a gap (FR-017) |
 | **Next burn recommendation** | Handed to Guido. **No next burn is implicit** — `PROJECT_STATUS.md` states plainly that Children, connectors and optimisation "still require a maintainer decision and none is authorised as an implicit next Burn" |
 | **Mission archive** | Report, review artefacts, debt register and rulings are all in the repository at durable paths |
 
@@ -1020,7 +1022,7 @@ Owned by TELMU. Every item is verified, not assumed.
 
 ## 11. Standard Reports
 
-**Layer 3 — Engineering Templates** (§1.5). Expected to evolve; a template may add headings but may never drop a verdict a Layer 1 or Layer 2 clause requires.
+**Layer 3 — Engineering Standards & Templates** (§1.5). Expected to evolve; a template may add headings but may never drop a verdict a Layer 1 or Layer 2 clause requires.
 
 Every burn ends in exactly one report. Headings are required; a heading with
 nothing to say says "None" rather than being omitted.
@@ -1038,9 +1040,9 @@ be reviewed against the first real SAFE artefact produced under RFC-100.
 
 ### 11.1 Architecture Report *(EECOM)*
 
-`Pre-flight` · `Architecture Summary` · `Key Decisions` · `Contracts Frozen or
-Proposed` · `Scope Exclusions` · `Technical Debt` · `Risks` · `Self-Review
-Outcome` · `Governor Decisions Required` · `Files Changed` · `Validation` ·
+`Pre-flight` · `Architecture Summary` · `Key Decisions` · `Contracts Frozen`
+· `Scope Exclusions` · `Technical Debt` · `Risks` · `Self-Review Outcome` ·
+`Governor Rulings Applied` · `Files Changed` · `Validation` ·
 `Repository State` · `Recommendation`
 
 **Verdict:** `GO` · `CONCERN` · `NO-GO`.
@@ -1093,15 +1095,15 @@ Coherence` · `Next Burn Recommendation` · `Mission Archive` · `Verdict`
 
 ## 12. AI Operating Model
 
-**Layer 3 — Engineering Templates** (§1.5). **Non-normative** — see §12.0.
+**Layer 3 — Engineering Standards & Templates** (§1.5). **Non-normative** — see §12.0.
 
 ### 12.0 Status of this section *(normative statement about a non-normative section)*
 
 *(Governor Amendment 4.)*
 
-**The model table in §12.1 records the current recommended operating practice.
-It is not normative.** It states which model has been found to suit which role
-today, and nothing more.
+**The model table in §12.1 records current recommended operating practice. It
+is non-normative and replaceable.** It states which model has been found to
+suit which role today, and nothing more.
 
 Consequently:
 
@@ -1126,8 +1128,9 @@ governs.
 
 ### 12.1 Current recommended practice *(non-normative)*
 
-Models are assigned to roles. The assignment below records current practice; it
-is a default, not a constraint on the Governor (§12.0).
+Models are assigned to roles. The assignment below records current recommended
+practice; it is non-normative, replaceable guidance and never a mandatory model
+selection or a constraint on the Governor (§12.0).
 
 | Activity | Role | Primary model | Why |
 |---|---|---|---|
@@ -1184,7 +1187,7 @@ ruling supersedes it.
 seeded fixtures from `time.time()`; calendar projections moved and `main` broke
 the next morning, after the burn had been declared complete. Produced
 [FR-007](#fr-007--deterministic-validation), RFC-010's DET-1…DET-6 and its AST
-guard, and the post-merge verification discipline now proposed as FR-016.
+guard, and the post-merge verification discipline now codified as FR-016.
 
 **P2 — Governor visual gate (RFC-010, amendment 7).** Structural tests proved
 region order and cardinality but could not establish readability. A mandatory
@@ -1200,10 +1203,11 @@ identifiers and classified them *interpretation not supported*. When finding
 text later arrived, S1 and S3–S6 were remediated properly; S7 remains open and
 reopenable. Produced [FR-014](#fr-014--review-artefact-continuity) and §8.4.
 
-**P4 — Combined implementation burn (RFC-011, B2).** A branch declared as a
-Phase 1 slice in fact contained Phases 1–4. The implementation stated plainly
-that no code change could make the sequencing claim true, referred
-reclassification to the Governor, and held Phase 5. Produced
+**P4 — Combined Reference Implementation Burn (RFC-011, B2; PR #27).** A
+branch declared as a Phase 1 slice in fact contained Phases 1–4. Governor
+reclassification of PR #27 closed B2 by recognising the branch as the combined
+Reference Implementation Burn. The implementation stated plainly that no code
+change could make the sequencing claim true. Produced
 [FR-015](#fr-015--burn-classification) and §9.6.
 
 **P5 — Governance versus implementation decisions (RFC-011, S6).** Evidence
@@ -1238,16 +1242,16 @@ recorded residual has not been performed.
 
 ---
 
-## 14. Governor Decisions Required
+## 14. Governor Rulings Applied
 
 | # | Decision | Recommendation |
 |---|---|---|
-| **GD-1** | **Ratify Guido and TELMU as Flight Directors.** Both name work with clear operating evidence but no named owner: RFC canon and next-burn recommendation (Guido); post-merge verification, project telemetry and status coherence (TELMU) | **Ratify.** The alternative is that this work continues to be absorbed opportunistically by whichever burn notices, which is how PR #23 and the RFC-005 CHANGELOG gap happened |
-| **GD-2** | **Ratify or reject FR-016 (Post-Merge Verification) and FR-017 (Documentation Coherence)** as permanent Flight Rules. Both generalise discipline that RFC-010 and RFC-011 already impose on themselves | **Ratify both.** They add no new obligation the last two RFCs did not already carry; they make it non-optional for the next one |
-| **GD-3** | **Confirm that RFC-100 binds product RFCs (§1.3)** — that a product RFC may not redefine a Flight Rule, role authority, burn classification or report verdict | **Confirm.** Without it, process drifts back into individual briefs, which is the condition RFC-100 exists to end |
-| **GD-4** | **Confirm §12.1's model assignment is non-normative** — a record of current recommended practice that the Governor may change for any role, on any burn, without amending RFC-100. Stated in §12.0 as directed by Governor Amendment 4 | **Confirm.** "Models are Replaceable" is an existing principle; §12.1 records practice, and freezing it would contradict the thesis this manual governs |
-| **GD-5** | **Rule on RFC-100's amendment procedure.** Recommended: the three-layer change control in §1.5 — Layer 1 (Constitution) by an Architecture Burn revising RFC-100 with Governor approval and re-freeze; Layer 2 (Operations Manual) by a Documentation Burn under Governor Review; Layer 3 (Templates) by a Documentation Burn with the Governor notified. Precedents (§13) are added by the burn that produces them | **Adopt as recommended.** Precedents and templates accumulate faster than constitutional clauses should, and §1.5 is the mechanism that lets them without loosening Layer 1 |
-| **GD-6** | **Rule on the open RFC-011 B2 reclassification**, which RFC-100 §9.6 documents as precedent but does not resolve. It remains open and blocks Phase 5 | **Rule separately from RFC-100.** This RFC records the precedent; it does not and should not decide the live case |
+| **GD-1** | **Guido and TELMU are permanent Flight Directors.** | **Applied.** |
+| **GD-2** | **FR-016 and FR-017 are permanent Flight Rules.** | **Applied.** |
+| **GD-3** | **RFC-100 governs engineering governance for all future product RFCs.** | **Applied in §1.3 and §1.6.** |
+| **GD-4** | **AI model guidance is recommended operating practice, non-normative and replaceable.** No model selection is mandatory. | **Applied in §12.0 and §12.1.** |
+| **GD-5** | **The three governance layers are Constitution, Operations Manual, and Engineering Standards & Templates.** | **Applied in §1.5 and section layer tags.** |
+| **GD-6** | **RFC-011 B2 is closed through Governor reclassification of PR #27 as the combined Reference Implementation Burn.** | **Applied in §9.6 and precedent P4.** |
 
 ---
 
@@ -1273,7 +1277,7 @@ Where RFC-100 quotes another document, the quoted document remains canonical.
 | # | Debt | Disposition |
 |---|---|---|
 | **TD1** | **`review-gates.md` and RFC-100 overlap.** Severity definitions, reviewer prohibitions and the merge policy exist in both | Deliberate for this burn: RFC-100 cites rather than restates, and `review-gates.md` remains canonical for gate mechanics. A future Documentation Burn should fold it into RFC-100 §8 or reduce it to a pointer. Not done here — it would edit a document outside this burn's declared scope (FR-004) |
-| **TD2** | **Two Flight Directors have no operating history.** Guido and TELMU are named from unattributed work | Resolved by GD-1, then proven by use. Marked *(newly named)* until a burn has run under each |
+| **TD2** | **Two Flight Directors have no post-ratification operating history.** Guido and TELMU are named from documented work | Resolved by GD-1; later burns will provide operating evidence |
 | **TD3** | **Gate coverage is unchanged.** Four of six planned review gates (Data Integrity, Performance, Product Design, Release) remain unbuilt. RFC-100 formalises the roles around the two that exist | Out of scope. RFC-100 does not create gates; a successor RFC should |
 | **TD4** | **SAFE artefacts have no fixed home.** §8.4 requires durable artefacts but no SAFE Report currently exists in `docs/reviews/` — only self-reviews do | Recommended path `docs/reviews/RFC-0nn-safe-review.md`, established by the first SAFE Review run under RFC-100 |
 
@@ -1319,7 +1323,7 @@ hotfix [PR #23](https://github.com/enipeus84/foundry/pull/23).*
 |---|---|---|
 | A full architecture → implementation → SAFE review → remediation → merge cycle, with the SAFE remediation recorded in the PR description and the technical-debt register | The lifecycle (§4) as a sequence people actually follow | §4; the Remediation Burn classification (§3) |
 | Remediation closed named findings without changing Pension policy — the implementation report states this explicitly | Remediation is **bounded by the findings** and does not carry opportunistic change | §3.1 rule 4 |
-| Route goldens seeded fixtures from `time.time()`; calendar projections moved and `main` failed the morning after the burn was declared complete | That declared-complete is not the same as verified-complete, and that non-deterministic validation is not validation | [FR-007](#fr-007--deterministic-validation); FR-016 *(proposed)*; precedent P1 |
+| Route goldens seeded fixtures from `time.time()`; calendar projections moved and `main` failed the morning after the burn was declared complete | That declared-complete is not the same as verified-complete, and that non-deterministic validation is not validation | [FR-007](#fr-007--deterministic-validation); FR-016; precedent P1 |
 | The repair ran on `hotfix/deterministic-mission-control-fixture` — no RFC, no architecture, no freeze — and was correct | That a minimal repair path to a red `main` is legitimate and needs bounding, not prohibiting | Hotfix Burn (§3, §3.1 rule 6) — added by self-review A4 |
 
 ### A.2 RFC-010 — Mission Console UX Framework
@@ -1335,7 +1339,7 @@ hotfix [PR #23](https://github.com/enipeus84/foundry/pull/23).*
 | Amendment 7 inserted a **mandatory Governor visual review** between the reference mission and all remaining migrations | That structural tests establish correctness but not readability, and that a gate can live inside an RFC's own sequence | [FR-010](#fr-010--live-preview-first); §4.2; precedent P2 |
 | The Phase 2 live preview at desktop and 334 CSS pixels found and removed a disclosure auto-open heuristic and repaired a narrow-viewport grid overflow the suite had not caught | That the visual gate pays for itself | [FR-010](#fr-010--live-preview-first) verification field |
 | The self-review produced **six amendments before commit** and recorded three accepted residuals | The adversarial self-review as a productive obligation rather than a formality | §11.1; precedent P9 |
-| The burn corrected a materially stale `PROJECT_STATUS.md` (RFC-008 shown unimplemented, version shown `1.5.1`), changing project-state facts only | That status documents decay silently and misroute the next burn | FR-017 *(proposed)* |
+| The burn corrected a materially stale `PROJECT_STATUS.md` (RFC-008 shown unimplemented, version shown `1.5.1`), changing project-state facts only | That status documents decay silently and misroute the next burn | FR-017 |
 | Phase 1 and Phase 2 ran as separately reported burns against one frozen architecture | Multi-phase re-entry into the lifecycle (§4.1) | §4.1 |
 
 ### A.3 RFC-011 — Asset & Telemetry Acquisition Framework
@@ -1362,17 +1366,17 @@ frozen 2026-07-31; implementation
 
 Stated so the appendix is not read as more than it is:
 
-- **Guido and TELMU have never run.** Appendix A validates the *work* attributed
-  to them (RFC canon and next-burn recommendation; post-merge verification and
-  status coherence) but not the roles, which are unproven pending GD-1.
+- **Guido and TELMU have not yet run as ratified roles.** Appendix A validates
+  the work attributed to them; GD-1 is applied and later burns will provide
+  operating evidence.
 - **No SAFE Report or SAFE Confirmation artefact exists** in the repository —
   only remediation evidence written in response to findings. §11.3 and §11.4 are
   labelled *specified, not observed* for that reason (§11 provenance note, TD4).
 - **Four of six planned review gates remain unbuilt** (TD3). RFC-100 formalises
   the roles around the two that exist and validates nothing about the others.
-- **FR-016 and FR-017 are validated as lessons, not as rules.** Both are
-  observed in RFC-009, RFC-010 and RFC-011; neither has yet operated as a
-  standing rule. They remain proposed pending GD-2.
+- **FR-016 and FR-017 are ratified rules without post-ratification operating
+  history yet.** Both are observed in RFC-009, RFC-010 and RFC-011; later burns
+  will provide standing-rule evidence.
 - **One environment.** Every burn in this appendix ran on a single machine with
   a single maintainer. Pre-flight checks 6 and 7 are environment-specific
   (self-review W2).

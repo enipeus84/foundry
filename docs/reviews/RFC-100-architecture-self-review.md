@@ -12,6 +12,14 @@ accepted residual and two watch items.
 Governor amendments. Four Revision 2 challenges produced no amendment. See
 [Revision 2](#revision-2--review-of-the-governor-amendments) below.
 
+**Governor rulings applied:** GD-1 ratified Guido and TELMU as permanent Flight
+Directors; GD-2 ratified FR-016 and FR-017; GD-3 made RFC-100 binding for the
+engineering governance of all future product RFCs; GD-4 confirmed AI model
+guidance as recommended operating practice that is non-normative and
+replaceable; GD-5 adopted the Constitution / Operations Manual / Engineering
+Standards & Templates model; and GD-6 closed RFC-011 B2 through Governor
+reclassification of PR #27 as the combined Reference Implementation Burn.
+
 ---
 
 # Revision 1
@@ -51,12 +59,11 @@ RFC-011 remediation actually needed in order to act, and flagged for review
 against the first real SAFE artefact. TD4 already records the missing artefact
 path; A1 stops the RFC from overstating its own basis.
 
-**Disclosed, not removed.** Two further items are near the invention line and
-are labelled in place rather than deleted: Guido and TELMU carry *(newly named)*
-and GD-1; FR-016 and FR-017 sit in a separate §5.1 marked *proposed* with GD-2.
-Both name work with clear evidence but no named owner. Deleting them would make
-the manual tidier and the project no safer — the RFC-005 CHANGELOG gap and the
-PR #23 post-merge failure are exactly what unowned work looks like.
+**Disclosed, not removed.** Two further items were near the invention line in
+the pre-ruling draft and were labelled rather than deleted: Guido and TELMU,
+and FR-016 and FR-017. The Governor has since applied GD-1 and GD-2, so the
+roles and rules are now ratified. Both name work with clear evidence; deleting
+them would make the manual tidier and the project no safer.
 
 ---
 
@@ -204,11 +211,10 @@ Governor to confirm that the assignment is a **default the Governor may
 reassign without amending RFC-100**. GD-5 additionally routes §12 changes
 through a Documentation Burn rather than a full revision.
 
-**W1.** If GD-4 is confirmed, §12's table is operational guidance embedded in a
-constitutional document. A later revision should consider moving it to a
-separate, faster-moving operations note that RFC-100 references. Not done here:
-splitting it now would create a second process document, which is the condition
-RFC-100 exists to end.
+**W1.** §12's table is operational guidance embedded in a constitutional
+document. GD-4 is applied: it is explicitly non-normative and replaceable. A
+later revision may consider moving it to a separate, faster-moving operations
+note, but splitting it now would create a second process document.
 
 ---
 
@@ -267,19 +273,18 @@ instruction", not "without further content").
   burn's declared scope (FR-004), so it is left for a Documentation Burn.
 - **TD3 — four planned review gates remain unbuilt.** RFC-100 formalises the
   roles around the two gates that exist and does not create the other four.
-- **GD-6 — RFC-011's B2 reclassification is still open** and still blocks
-  Phase 5. RFC-100 records it as precedent (§9.6, P4) and deliberately does not
-  resolve the live case.
-- **No role has ever run as Guido or TELMU.** Ratification (GD-1) is a decision;
-  proving them is a later burn's job.
+- **RFC-011 B2 is closed.** GD-6 reclassified PR #27 as the combined Reference
+  Implementation Burn and recorded it as an operational precedent; it is no
+  longer an unresolved blocker.
+- **Guido and TELMU have no post-ratification operating history yet.** GD-1 is
+  applied; proving the roles is a later burn's job.
 
 ## Watch items
 
 **W1.** §12's model table is operational guidance inside a constitutional
-document; consider extraction on a later revision if GD-4 is confirmed.
-*Substantially addressed in Revision 2 by Governor Amendment 4 and §1.5: the
-table is now explicitly Layer 3 and non-normative. It remains physically inside
-the document, so the watch item is narrowed rather than closed.*
+document; consider extraction on a later revision. *Addressed by GD-4 and
+§1.5: the table is explicitly Layer 3, non-normative and replaceable. It remains
+physically inside the document, so extraction remains optional.*
 
 **W2.** Pre-flight checks 6 and 7 are environment-specific; move to an appendix
 if a second engineering environment appears. *Open; now also recorded in
@@ -463,14 +468,16 @@ text:
    amendment procedure by section number, which Amendment 1 supersedes with the
    three layers. **Both decisions are the same decisions** — the same question,
    the same recommendation — expressed in the vocabulary the amendments created.
-   GD-1, GD-2, GD-3 and GD-6 are untouched.
+   GD-1, GD-2, GD-3 and GD-6 are applied as recorded in the implementation
+   update.
 
 ---
 
 ## What Revision 2 did not fix
 
-- **TD1, TD3, GD-6 and the unproven Guido/TELMU roles** are unchanged from
-  Revision 1 and remain open.
+- **TD1 and TD3** remain unchanged from Revision 1 and remain open.
+- **GD-6 is applied and B2 is closed.** Guido and TELMU are ratified under GD-1;
+  later burns will provide operating history.
 - **FR-012 remains artefact-verified.** A test asserting that no model
   invocation exists on a canon or Identity Index write path is buildable and
   would be a genuine strengthening. It is implementation and therefore outside

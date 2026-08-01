@@ -1,7 +1,7 @@
-# RFC-100 — Flight Operations Manual (architecture only, Revision 2)
+# RFC-100 — Flight Operations Manual Documentation Implementation
 
-**Revision 2 — Governor amendments applied. Awaiting Governor final architecture
-review and freeze.** Architecture-only burn: this branch contains documentation
+**Revision 2 — Governor-approved and frozen.** Documentation implementation
+burn: this branch contains documentation
 exclusively — no production source, tests, templates, CSS or runtime
 configuration are changed.
 
@@ -16,17 +16,16 @@ decision is altered.
 
 | # | Amendment | What changed |
 |---|---|---|
-| **1** | **Three-layer structure** | New §1.5 makes the layers explicit — **Layer 1 Constitution** (§1–§5: purpose, precedence, roles, classification, lifecycle, Flight Rules), **Layer 2 Operations Manual** (§6–§10: pre-flight, checkpoints, SAFE, Governor procedure, post-flight), **Layer 3 Engineering Templates** (§11–§12: reports, model guidance) — each with its own change control, plus a supporting record (§13–§17, Appendix A). Every major section is tagged, and a layer-discipline clause forbids a lower layer weakening a higher one |
+| **1** | **Three-layer structure** | New §1.5 makes the layers explicit — **Layer 1 Constitution** (§1–§5: purpose, precedence, roles, classification, lifecycle, Flight Rules), **Layer 2 Operations Manual** (§6–§10: pre-flight, checkpoints, SAFE, Governor procedure, post-flight), **Layer 3 Engineering Standards & Templates** (§11–§12: reports, model guidance) — each with its own change control, plus a supporting record (§13–§17, Appendix A). Every major section is tagged, and a layer-discipline clause forbids a lower layer weakening a higher one |
 | **2** | **Precedence** | New normative §1.6, rules **P1–P8**: RFC-100 governs engineering governance; product RFCs govern product architecture; neither redefines the other's domain; the constitutional invariants in `architecture.md` are prior to both; **genuine conflict stops work and requires a Governor ruling** (P6); silence is not conflict (P7); and four Flight Rules are shared-boundary floors (P8, from self-review A5) |
 | **3** | **Flight Rule format** | Every rule now carries **Identifier · Rule · Rationale · Provenance · Verification** in that order. **Verification is new to all seventeen rules** — the test, guard, artefact or pre-flight item a reviewer inspects. A §5 preamble defines the standard and a verification-mode table (self-review A6) separates the four test-verified rules from the thirteen artefact-verified ones |
 | **4** | **Model guidance** | New §12.0 states that the model table **records current recommended operating practice and is not normative**: model selection may evolve without constitutional amendment, no burn is out of compliance for using a different model, and review standards do not change with the model. §12.1 is relabelled *(non-normative)*; the independence rule becomes §12.2 *(normative)* |
-| **5** | **Validation appendix** | New **Appendix A — How Mission Control was validated**: RFC-009, RFC-010 and RFC-011 element by element, each row separating *observed* from *validated* from *produced*, every fact checkable against the repository. **A.4 states what the appendix does not cover** — Guido and TELMU unproven, no SAFE artefact exists, four gates unbuilt, FR-016/FR-017 lessons rather than operating rules, one environment |
+| **5** | **Validation appendix** | New **Appendix A — How Mission Control was validated**: RFC-009, RFC-010 and RFC-011 element by element, each row separating *observed* from *validated* from *produced*, every fact checkable against the repository. **A.4 states what the appendix does not cover** — Guido and TELMU have no post-ratification operating history yet, no SAFE artefact exists, four gates are unbuilt, FR-016/FR-017 have no post-ratification operating history yet, one environment |
 
-**Governor decisions:** all six retained. **GD-4** and **GD-5** are restated in
-the vocabulary the amendments created — same questions, same recommendations —
-because Amendment 4 supersedes "a default" with the sharper non-normative
-framing and Amendment 1 supersedes section-number amendment procedure with the
-three layers. GD-1, GD-2, GD-3 and GD-6 are untouched.
+**Governor rulings:** all six are applied. **GD-4** and **GD-5** are expressed in
+the vocabulary the amendments created — non-normative, replaceable model
+guidance and the three layers — while GD-1, GD-2, GD-3 and GD-6 are recorded
+with their implementation outcomes below.
 
 **Revision 2 self-review** produced two further amendments before commit: **A5**
 precedence rule P8, because P2 as first drafted implied RFC-100 never constrains
@@ -38,9 +37,21 @@ the appearance of an audit rather than an audit.
 **Preservation audit.** Every removed line was checked: only §1.3's duplicated
 bullet (now normative P3), §5's old preamble, §12's preamble and subsection
 numbering, and the GD-4/GD-5 restatements. **All fifteen Flight Rule statements
-are verbatim**; §2, §3 and §4 change only by their layer tag.
+are verbatim**; FR-016 and FR-017 are ratified additions; §2, §3 and §4 change
+only by their layer tag.
 
 ---
+
+## Governor rulings applied
+
+GD-1 ratifies Guido and TELMU as permanent Flight Directors. GD-2 ratifies
+FR-016 and FR-017. GD-3 makes RFC-100 binding for the engineering governance
+of all future product RFCs. GD-4 defines AI model guidance as recommended
+operating practice that is non-normative and replaceable; no model selection is
+mandatory. GD-5 adopts Constitution, Operations Manual, and Engineering
+Standards & Templates as the three governance layers. GD-6 closes RFC-011 B2
+through Governor reclassification of PR #27 as the combined Reference
+Implementation Burn.
 
 ## Revision 1
 
@@ -75,13 +86,13 @@ The governing constraint on this burn was *capture proven behaviour; do not
 invent process.* Every Flight Rule cites the burn that produced it, and where
 the manual goes beyond evidence it says so in place rather than blending in:
 
-- **Guido** and **TELMU** are marked *(newly named)*. Both describe work with
-  clear operating evidence — RFC canon and next-burn recommendation; post-merge
-  verification and status coherence — that has never had a named owner.
-  Ratification is **GD-1**.
+- **Guido** and **TELMU** are permanent Flight Directors under **GD-1**. Both
+  describe work with clear operating evidence — RFC canon and next-burn
+  recommendation; post-merge verification and status coherence — and later
+  burns will provide post-ratification operating history.
 - **FR-016** (Post-Merge Verification) and **FR-017** (Documentation Coherence)
-  sit in a separate §5.1 marked *proposed*. Both generalise discipline RFC-010
-  and RFC-011 already impose on themselves. Ratification is **GD-2**.
+  sit in a separate §5.1. Both generalise discipline RFC-010 and RFC-011
+  already impose on themselves. Ratification is **GD-2**, now applied.
 - **§11.3 and §11.4** (SAFE Report, SAFE Confirmation) are labelled *specified,
   not observed* — no SAFE artefact exists in the repository, only the
   remediation evidence written in response to findings (TD4).
@@ -94,7 +105,7 @@ the manual goes beyond evidence it says so in place rather than blending in:
 | 2 | Seven Flight Directors — authority, responsibilities, decision boundaries, required outputs, escalation — plus an authority matrix and a role-occupancy rule |
 | 3 | Ten burn classifications with owners, outputs and exit gates; effort levels |
 | 4 | The mission lifecycle, its rules, and mandatory internal gates |
-| 5 | Flight Rules FR-001…FR-015, each with identifier, rule, rationale, provenance and verification; FR-016/FR-017 proposed |
+| 5 | Flight Rules FR-001…FR-017, each with identifier, rule, rationale, provenance and verification |
 | 6 | Pre-flight — nine mandatory checks, GO / CONCERN / NO-GO |
 | 7 | Checkpoints — testing, documentation, security, architecture, evidence |
 | 8 | SAFE Review vs SAFE Confirmation; finding fields; disposition vocabulary |
@@ -103,7 +114,7 @@ the manual goes beyond evidence it says so in place rather than blending in:
 | 11 | Six standard reports with required headings and verdicts |
 | 12 | AI operating model — §12.0 non-normative status, current practice, independence rule (normative), effort guidance, handoffs |
 | 13 | Nine operational precedents (P1–P9) |
-| 14 | Governor decisions required (GD-1…GD-6) |
+| 14 | Governor rulings applied (GD-1…GD-6) |
 | 15–17 | Scope exclusions, technical debt, success criteria |
 | Appendix A | How Mission Control was validated — RFC-009, RFC-010, RFC-011, and the limits of that validation |
 
@@ -141,16 +152,19 @@ precision, not to discipline:
 Two watch items recorded: §12's model table is operational guidance inside a
 constitutional document (W1); pre-flight checks 6 and 7 are environment-specific
 (W2). Four items are explicitly **not** fixed, including the overlap with
-`review-gates.md` (TD1) and the still-open RFC-011 B2 reclassification (GD-6).
+`review-gates.md` (TD1). RFC-011 B2 is closed by GD-6 through the PR #27
+combined Reference Implementation Burn reclassification.
 
-## Governor decisions required
+## Governor rulings applied
 
-**GD-1** ratify Guido and TELMU · **GD-2** ratify FR-016 and FR-017 ·
-**GD-3** confirm RFC-100 binds product RFCs · **GD-4** confirm §12's model
-assignment is a default, not a constraint · **GD-5** rule on RFC-100's amendment
-procedure · **GD-6** rule separately on RFC-011's open B2 reclassification.
+**GD-1** applied: Guido and TELMU ratified · **GD-2** applied: FR-016 and
+FR-017 ratified · **GD-3** applied: RFC-100 binds future product RFC
+engineering governance · **GD-4** applied: model guidance is recommended,
+non-normative and replaceable · **GD-5** applied: three governance layers ·
+**GD-6** applied: RFC-011 B2 closed through PR #27's combined Reference
+Implementation Burn reclassification.
 
-Each carries a recommendation in §14.
+The RFC records each applied ruling in §14.
 
 ## Files
 
@@ -206,7 +220,6 @@ Documentation Burn → SAFE Review → Governor Merge → Guido Post-Flight.**
 This is the first burn whose own lifecycle is defined by the document under
 review; RFC-100 §4 does not bind RFC-100 until it is frozen.
 
-**Do not merge yet.** No PR is open. Ready for Governor final architecture
-review.
+**Do not merge yet.** This draft PR is ready for SAFE review. Do not merge.
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)

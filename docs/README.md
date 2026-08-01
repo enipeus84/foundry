@@ -38,11 +38,12 @@ location for each rather than restating their content.
   — the Flight Operations Manual: Mission Control roles, burn
   classification, mission lifecycle, Flight Rules, pre-flight,
   checkpoints, SAFE, Governor authority, post-flight and standard
-  reports. Governs *engineering process*, as distinct from the
+  reports. Governs the engineering governance of future product RFCs and
+  *engineering process*, as distinct from the
   *engineering invariants* in `architecture.md`. Organised in three
-  governance layers — Constitution, Operations Manual, Engineering
-  Templates. **Revision 2; awaiting Governor final architecture review
-  and freeze.**
+  governance layers — Constitution, Operations Manual, Engineering Standards &
+  Templates. **Revision 2; Governor-approved and frozen; documentation
+  implementation in progress.**
 - [`engineering/review-gates.md`](engineering/review-gates.md) — the
   current architecture/security review-gate process every change goes
   through before merge. Canonical for gate mechanics; RFC-100 cites it
