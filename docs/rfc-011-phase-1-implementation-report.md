@@ -143,11 +143,15 @@ the named item without redesign.
 
 ## Validation evidence
 
-Focused RFC-011 acquisition and UI suites pass. Existing Core grammar,
-Finance vocabulary, event-log, Finance entity, Finance metric, web,
-authentication and Mission Control suites pass. The final Governor package
-will include the full-suite, security-document, deterministic-fixture,
-`git diff --check`, and clean-worktree results from this branch.
+At remediation commit `7723774`, focused acquisition: 11 passed; focused web
+security: 13 passed; Core deterministic replay: 10 passed; focused Finance:
+70 passed; full suite: 618 passed (one pre-existing Starlette/httpx
+deprecation warning). Security documentation reports COMPLETE and
+`git diff --check` is clean. GitHub Actions `tests` run `30692011922` passed
+on Python 3.10, 3.11, 3.12 and 3.13. `validate.sh` completed its security,
+test and mock deterministic-replay checks, then correctly reported that no
+real-model API keys are configured; that is not represented as V1.0 model
+validation.
 
 ## Scope boundary
 
