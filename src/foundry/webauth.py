@@ -37,6 +37,7 @@ SESSION_COOKIE = "foundry_session"
 VERIFIER_COOKIE = "foundry_pkce"
 SESSION_TTL = 12 * 3600          # seconds
 VERIFIER_TTL = 10 * 60
+CSRF_TTL = 10 * 60
 
 
 @dataclass(frozen=True)
@@ -111,6 +112,17 @@ def session_email(token: str | None, cfg: AuthConfig) -> str | None:
         return None
     payload = verify(token, cfg.session_secret)
     return payload.get("email") if payload else None
+
+
+def csrf_token(email: str, cfg: AuthConfig, purpose: str) -> str:
+    """A short-lived, signed, same-user CSRF token for a state-changing form."""
+    return sign({"email": email, "purpose": purpose,
+                 "exp": int(time.time()) + CSRF_TTL}, cfg.session_secret)
+
+
+def verify_csrf(token: str | None, email: str, cfg: AuthConfig, purpose: str) -> bool:
+    payload = verify(token or "", cfg.session_secret)
+    return bool(payload and payload.get("email") == email and payload.get("purpose") == purpose)
 
 
 # --- Supabase PKCE flow -----------------------------------------------------

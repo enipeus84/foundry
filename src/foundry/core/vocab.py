@@ -70,7 +70,37 @@ PARTY_RELATIONSHIP = ExtensibleVocabulary(
 STRUCTURAL_RELATIONSHIP = ExtensibleVocabulary(
     "structural_relationship",
     {"concerns", "informed_by", "modelled_by", "outcome_of",
-     "reviews", "executes", "revises"},
+     "reviews", "executes", "revises", "contains", "measures"},
+)
+
+# RFC-011 acquisition grammar.  These are Core concepts because every
+# channel and every domain needs the same gates; domains still own the
+# things being measured and the meaning of a value.
+REFRESH_POLICY = ClosedVocabulary(
+    "refresh_policy",
+    {"continuous", "daily", "weekly", "monthly", "quarterly", "annual",
+     "on_event", "static"},
+)
+
+UPDATE_STRATEGY = ClosedVocabulary(
+    "update_strategy",
+    {"manual", "api", "csv_import", "statement", "email", "open_banking", "ocr"},
+)
+
+EVIDENCE_GRADE = ClosedVocabulary(
+    "evidence_grade",
+    {"authoritative", "declared", "confirmed", "extracted", "assumed"},
+)
+
+CONFIRMATION_POLICY = ClosedVocabulary(
+    "confirmation_policy", {"auto_commit", "review_batch", "review_each"},
+)
+
+ACCESSIBILITY_CONDITION = ClosedVocabulary(
+    "accessibility_condition",
+    {"none", "age_gate", "vesting", "exit_event", "sale_required",
+     "notice_period", "term_lock", "secured_against", "action_required",
+     "third_party_gate"},
 )
 
 TAG_TYPE = ExtensibleVocabulary("tag_type", {"insight_type", "review_verdict"})

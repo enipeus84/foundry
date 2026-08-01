@@ -22,7 +22,7 @@ from foundry.core.vocab import ExtensibleVocabulary
 ACCOUNT_TYPE = ExtensibleVocabulary(
     "account_type",
     {"checking", "savings", "credit_card", "loan", "mortgage",
-     "brokerage", "pension", "other"},
+     "brokerage", "pension", "jisa", "junior_sipp", "other"},
 )
 
 TAX_WRAPPER = ExtensibleVocabulary(
@@ -33,7 +33,7 @@ TAX_WRAPPER = ExtensibleVocabulary(
 ASSET_CATEGORY = ExtensibleVocabulary(
     "asset_category",
     {"property", "vehicle", "collectible", "private_equity",
-     "cash_equivalent", "other"},
+     "cash_equivalent", "tracker_fund", "other"},
 )
 
 LIABILITY_CATEGORY = ExtensibleVocabulary(
