@@ -235,3 +235,39 @@ touched. No Phase 1B work began.
 
 SAFE-012-01 remains **mandatory and undischarged** for the later web surface;
 SAFE-012-02 is unchanged and not widened.
+
+## Governor Product Decision — Dormant Capabilities
+
+Phase 1A intentionally implements only attention kinds that can be derived
+solely from authoritative platform facts. `reconciliation_divergence` and
+`valuation_expiring` remain architecturally defined but intentionally dormant.
+
+They remain inactive because the platform does not yet expose authoritative
+monetary comparison, reconciliation temporal identity, or estimate-basis
+telemetry. These are platform responsibilities, not console responsibilities.
+
+### Terminal state clarification
+
+The Governor rules that an empty Phase 1A queue means **no active Phase 1A
+attention items**. It does not imply all telemetry is nominal, reconciliation
+is healthy, or valuations are fresh. Future implementation phases may broaden
+these operational semantics once authoritative platform contracts exist.
+
+### Architecture gap register
+
+| Gap | Accepted programme item |
+|---|---|
+| G-A | Monetary comparison contract |
+| G-B | Reconciliation `valid_at` |
+| G-C | Estimate-basis telemetry signal |
+| G-D | Container/Holding duplicate unknowns |
+
+These are accepted architectural limitations. They are not implementation
+defects.
+
+### SAFE carry forward
+
+**SAFE-012-01** remains **undischarged** and applies beginning Phase 1B.
+Every future state-changing Operations Console route must require
+authenticated access, household scoping, signed purpose-bound body-only CSRF,
+and regression coverage.
