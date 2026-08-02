@@ -12,6 +12,10 @@ owned by RFC-011 and the domain lenses.
 Nothing in this module persists anything: no event, no store, no cache
 (AC-3, AC-5).  There is no defer, dismiss, acknowledgement or suppression --
 an item clears only when its underlying fact resolves.
+
+Phase 1A note: two architecturally-defined attention kinds are deliberately
+not emitted because the current platform contract cannot support them
+honestly.  See ``UNIMPLEMENTABLE_IN_PHASE_1A``.
 """
 from __future__ import annotations
 
@@ -25,6 +29,7 @@ from .core.acquisition import (
     TelemetryStreamRegistry,
     ValuationLenses,
     _CADENCE_SECONDS,
+    _digest,
 )
 
 MODEL_VERSION = "operations-console@1"
@@ -40,6 +45,26 @@ ATTENTION_KIND = (
     "valuation_expiring",
 )
 
+#: Kinds the frozen architecture defines but the current platform contract
+#: cannot yet support without inventing a fact.  Emitting them would be worse
+#: than omitting them, because V1 has no dismissal: a false item can never be
+#: cleared by the operator.  Both are return-to-architecture items.
+#:
+#: ``reconciliation_divergence`` -- classifying divergence requires deciding
+#: monetary equality.  ``Reconciliation.difference`` is an IEEE-754 float, so
+#: an exact test reports 3.0 x 0.1 against 0.3 as divergent forever.  The
+#: platform defines no Decimal type, no quantisation contract and no currency
+#: precision rules, and an ad hoc epsilon here would be this model inventing
+#: financial materiality -- exactly what RFC-012 §3.2 and §4.5 forbid.
+#:
+#: ``valuation_expiring`` -- separating it from ``telemetry_stale`` requires an
+#: authoritative estimate-basis signal.  ``TelemetryStream.property`` is an
+#: unconstrained string, so any split on its text would be a naming heuristic.
+UNIMPLEMENTABLE_IN_PHASE_1A = frozenset({
+    "reconciliation_divergence",
+    "valuation_expiring",
+})
+
 #: Primary action offered per kind.  Every item has an exit (RFC-012 §4.2).
 _ACTION = {
     "identity_ambiguous": "resolve",
@@ -52,6 +77,12 @@ _ACTION = {
 
 #: Ordering classes of RFC-012 §4.5.  ``(class_rank, sub_rank)``; the
 #: within-class key and the stable identifier complete the total order.
+#:
+#: Class 3 (reconciliation) is declared for completeness.  §4.5 requires
+#: "longest-standing divergence first, by the finding's ``valid_at``", but
+#: ``Reconciliation`` carries no temporal field, so that rule is not
+#: implementable; the Governor's Phase 1A ruling is stable identifier
+#: ascending, which is what the ``within_class`` default of 0.0 produces.
 _ORDER_CLASS = {
     "identity_ambiguous": (1, 0),
     "proposal_pending": (1, 1),
@@ -60,6 +91,15 @@ _ORDER_CLASS = {
     "telemetry_stale": (4, 0),
     "valuation_expiring": (4, 0),
 }
+
+#: Kinds whose identity is the proposal, not the subject.  Two pending
+#: proposals on one stream are two evidence bundles and two confirmation-gate
+#: decisions, so they must never collapse into one item (SAFE-33-01).
+_PROPOSAL_IDENTIFIED = frozenset({"proposal_pending", "identity_ambiguous"})
+
+#: Kinds whose identity is the stream: distinct streams on one subject are
+#: distinct work (a stale price and a stale unit count are two captures).
+_STREAM_IDENTIFIED = frozenset({"telemetry_stale", "valuation_expiring"})
 
 #: A material unknown is an active item, but it is not work the operator can
 #: discharge -- the value is unavailable, not merely uncaptured.  It therefore
@@ -70,6 +110,23 @@ _NON_ACTIONABLE = frozenset({"unknown_material"})
 TERMINAL_ALL_NOMINAL = "all_nominal"
 TERMINAL_ACTIONABLE_COMPLETE = "actionable_complete"
 TERMINAL_WORK_PENDING = "work_pending"
+
+
+def attention_identity(kind: str, *, subject_id: str, stream_id: str | None,
+                       proposal_id: str | None) -> tuple[str, ...]:
+    """The deduplication and tie-break identity for one item.
+
+    Identity is chosen per item source rather than forced through one
+    universal key: aggregation *scope* must never multiply work, but two
+    genuinely distinct proposals, or two distinct streams, are genuinely
+    distinct work.  Components stay structural (a tuple) so no delimiter can
+    be confused with data.
+    """
+    if kind in _PROPOSAL_IDENTIFIED:
+        return (kind, proposal_id or "")
+    if kind in _STREAM_IDENTIFIED:
+        return (kind, subject_id, stream_id or "")
+    return (kind, subject_id)
 
 
 @dataclass(frozen=True)
@@ -89,10 +146,22 @@ class AttentionItem:
     within_class: float = 0.0
 
     @property
+    def identity(self) -> tuple[str, ...]:
+        return attention_identity(self.kind, subject_id=self.subject_id,
+                                  stream_id=self.stream_id,
+                                  proposal_id=self.proposal_id)
+
+    @property
     def stable_id(self) -> str:
-        """Final tie-break; deterministic and independent of iteration order."""
-        return "|".join((self.kind, self.subject_id, self.stream_id or "",
-                         self.proposal_id or ""))
+        """Deterministic digest over canonical JSON of the structural identity.
+
+        A digest rather than a delimiter join: joining unescaped components
+        lets ``("a|b", "c")`` and ``("a", "b|c")`` collide, after which ties
+        fall to dict insertion order (SAFE-33-06).  ``_digest`` is the
+        platform's own canonical encoding (sorted-key JSON + SHA-256), so this
+        is stable across processes -- unlike Python's randomised ``hash()``.
+        """
+        return _digest(list(self.identity))
 
     @property
     def actionable(self) -> bool:
@@ -106,6 +175,10 @@ class AttentionItem:
                 "summary": self.summary, "stream_id": self.stream_id,
                 "proposal_id": self.proposal_id, "evidence_id": self.evidence_id,
                 "stable_id": self.stable_id, "actionable": self.actionable}
+
+
+def _count(count: int, noun: str) -> str:
+    return f"{count} {noun}{'' if count == 1 else 's'}"
 
 
 @dataclass(frozen=True)
@@ -125,16 +198,19 @@ class OperationsConsoleView:
 
     def summary_line(self) -> str:
         """The one sentence the operator reads.  Never claims false quiet."""
+        unknowns = (f"{_count(self.unknown_count, 'material value')} "
+                    f"{'remains' if self.unknown_count == 1 else 'remain'} unavailable.")
         if self.terminal_state == TERMINAL_ALL_NOMINAL:
             return (f"All telemetry nominal - {self.fresh_stream_count} "
                     f"streams fresh as of {self.as_of:.0f}.")
         if self.terminal_state == TERMINAL_ACTIONABLE_COMPLETE:
-            plural = "s" if self.unknown_count != 1 else ""
-            return (f"All actionable work completed. {self.unknown_count} "
-                    f"material value{plural} remain{'' if self.unknown_count != 1 else 's'} "
-                    "unavailable.")
+            return f"All actionable work completed. {unknowns}"
         actionable = sum(1 for item in self.items if item.actionable)
-        return f"{actionable} item{'s' if actionable != 1 else ''} need attention."
+        line = f"{_count(actionable, 'item')} {'needs' if actionable == 1 else 'need'} attention."
+        if self.unknown_count:
+            # Never let the count the operator reads hide a material unknown.
+            line = f"{line} {unknowns}"
+        return line
 
     def as_dict(self) -> dict[str, Any]:
         return {"model_version": self.model_version, "as_of": self.as_of,
@@ -168,10 +244,14 @@ class OperationsConsoleModel:
         for proposal in self.inbox.proposals.values():
             if proposal.state != "pending" or proposal.household_id != household_id:
                 continue
+            stream = self.streams.streams.get(proposal.stream_id)
+            if stream is None:
+                # A proposal whose stream declaration is absent has no
+                # authoritative subject.  Presenting the stream id in the
+                # subject field would misreport identity (SAFE-33-08).
+                continue
             envelope = self.envelopes.envelopes.get(proposal.envelope_id)
             received_at = envelope.received_at if envelope else 0.0
-            stream = self.streams.streams.get(proposal.stream_id)
-            subject_id = stream.subject_id if stream else proposal.stream_id
             blocked = any(resolution.get("outcome") in {"ambiguous", "unresolved"}
                           for resolution in proposal.resolutions)
             kind = "identity_ambiguous" if blocked else "proposal_pending"
@@ -179,8 +259,8 @@ class OperationsConsoleModel:
                        if blocked else "Proposal awaiting review.")
             class_rank, sub_rank = _ORDER_CLASS[kind]
             items.append(AttentionItem(
-                kind=kind, subject_id=subject_id, action=_ACTION[kind], summary=summary,
-                stream_id=proposal.stream_id, proposal_id=proposal.id,
+                kind=kind, subject_id=stream.subject_id, action=_ACTION[kind],
+                summary=summary, stream_id=proposal.stream_id, proposal_id=proposal.id,
                 evidence_id=proposal.evidence_id,
                 class_rank=class_rank, sub_rank=sub_rank, within_class=received_at))
         return items
@@ -196,8 +276,10 @@ class OperationsConsoleModel:
                 continue
             breach = self._breach_seconds(stream.id, as_of=as_of, known_at=known_at,
                                           policy=stream.refresh_policy)
-            kind = ("valuation_expiring" if stream.property in {"valuation", "estimate"}
-                    else "telemetry_stale")
+            # Every breach is telemetry_stale in Phase 1A.  Splitting out
+            # valuation_expiring would require an authoritative estimate-basis
+            # signal the stream contract does not carry.
+            kind = "telemetry_stale"
             class_rank, sub_rank = _ORDER_CLASS[kind]
             items.append(AttentionItem(
                 kind=kind, subject_id=stream.subject_id, action=_ACTION[kind],
@@ -224,34 +306,22 @@ class OperationsConsoleModel:
         latest = max(observations, key=lambda item: item.received_at)
         return max(0.0, as_of - latest.received_at - cadence)
 
-    def _value_items(self, household_id: str, *, as_of: float,
-                     known_at: float) -> list[AttentionItem]:
-        """Material unknowns and reconciliation divergences, from the lenses."""
+    def _unknown_items(self, household_id: str, *, as_of: float,
+                       known_at: float) -> list[AttentionItem]:
+        """Material unknowns, as determined by the lenses -- never by this model."""
         items: list[AttentionItem] = []
         for subject_id, registration in sorted(self.registry.registrations.items()):
             if registration.household_id != household_id:
                 continue
             market = self.lenses.market_value(subject_id, valid_at=as_of, known_at=known_at)
-            if market["value"] is None:
-                class_rank, sub_rank = _ORDER_CLASS["unknown_material"]
-                items.append(AttentionItem(
-                    kind="unknown_material", subject_id=subject_id,
-                    action=_ACTION["unknown_material"],
-                    summary="A material input is unknown; value is unavailable.",
-                    class_rank=class_rank, sub_rank=sub_rank))
+            if market["value"] is not None:
                 continue
-            if not self.registry.children_of(subject_id):
-                continue
-            finding = self.lenses.reconciliation(subject_id, valid_at=as_of, known_at=known_at)
-            if finding.difference in (None, 0) or not finding.difference:
-                continue
-            class_rank, sub_rank = _ORDER_CLASS["reconciliation_divergence"]
+            class_rank, sub_rank = _ORDER_CLASS["unknown_material"]
             items.append(AttentionItem(
-                kind="reconciliation_divergence", subject_id=subject_id,
-                action=_ACTION["reconciliation_divergence"],
-                summary=(f"Holdings fold {finding.derived_total} differs from "
-                         f"asserted total {finding.supplied_total}."),
-                class_rank=class_rank, sub_rank=sub_rank, within_class=as_of))
+                kind="unknown_material", subject_id=subject_id,
+                action=_ACTION["unknown_material"],
+                summary="A material input is unknown; value is unavailable.",
+                class_rank=class_rank, sub_rank=sub_rank))
         return items
 
     # -- the fold ----------------------------------------------------------
@@ -261,7 +331,7 @@ class OperationsConsoleModel:
         """Build the queue.  ``as_of`` is explicit: no wall clock (AC-13)."""
         known_at = as_of if known_at is None else known_at
         collected = (self._proposal_items(household_id)
-                     + self._value_items(household_id, as_of=as_of, known_at=known_at)
+                     + self._unknown_items(household_id, as_of=as_of, known_at=known_at)
                      + self._freshness_items(household_id, as_of=as_of, known_at=known_at))
         items = tuple(sorted(self._deduplicate(collected), key=lambda item: item.sort_key()))
         unknown_count = sum(1 for item in items if item.kind == "unknown_material")
@@ -280,18 +350,17 @@ class OperationsConsoleModel:
 
     @staticmethod
     def _deduplicate(items: Iterable[AttentionItem]) -> list[AttentionItem]:
-        """One canonical subject, one item per kind (RFC-012 §3.1, AC-11).
+        """Collapse only what aggregation scope duplicates (RFC-012 §3.1, AC-11).
 
-        Aggregation scope never multiplies operational work: a subject that
-        contributes to an individual lens and a household lens yields one
-        item, not two.  The stream is part of the key because distinct
-        streams on one subject are distinct work -- a stale price and a
-        stale unit count are two captures, not one -- and collapsing them
-        would hide telemetry rather than deduplicate it.
+        A subject contributing to both an individual and a household lens
+        yields one item, not two.  Identity is per source
+        (``attention_identity``), so distinct proposals and distinct streams
+        survive: making the queue quieter than the telemetry is the one thing
+        the architecture forbids outright.
         """
-        seen: dict[tuple[str, str, str], AttentionItem] = {}
+        seen: dict[tuple[str, ...], AttentionItem] = {}
         for item in items:
-            seen.setdefault((item.kind, item.subject_id, item.stream_id or ""), item)
+            seen.setdefault(item.identity, item)
         return list(seen.values())
 
     def _fresh_streams(self, household_id: str, *, as_of: float, known_at: float) -> int:

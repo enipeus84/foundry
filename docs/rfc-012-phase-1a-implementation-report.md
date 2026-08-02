@@ -124,3 +124,114 @@ any RFC-011 contract change; RFC-013 and RFC-014.
   warning
 - New tests: 13, each named for the acceptance criterion it defends
 - `git diff --check` clean; two new files, no modified files
+
+---
+
+# Remediation Burn — SAFE-33 findings
+
+```text
+Mission Declaration (RFC-100 §6.0 / Amendment 1) — as run
+Spacecraft:    Claude Code
+Fuel:          Claude Opus
+Effort Level:  MEDIUM
+Mission Type:  Remediation Burn
+Authority:     Governor
+```
+
+Bounded by the published SAFE report at
+[PR #33 comment](https://github.com/enipeus84/foundry/pull/33#issuecomment-5160047506).
+Reviewed failing head `a1c0b9e57c245d20e526f6a044c34d9da1ef38a1`. No
+opportunistic improvement is carried (RFC-100 §3.1 rule 4).
+
+## Finding resolution
+
+| Finding | Severity | Root cause | Code change | Regression test | Residual |
+|---|---|---|---|---|---|
+| SAFE-33-01 | HIGH | One universal dedup key `(kind, subject_id, stream_id)` omitted proposal identity, so two proposals on one stream collapsed and the survivor depended on dict insertion order | New `attention_identity()` selects identity **per item source**: proposal-backed kinds key on `(kind, proposal_id)`, stream-backed on `(kind, subject_id, stream_id)`, subject-backed on `(kind, subject_id)`. `_deduplicate` keys on `item.identity` | `..._two_pending_proposals_on_one_stream_produce_two_items`, `..._two_ambiguous_proposals...`, `..._insertion_order_does_not_change_the_queue`, `..._repeated_folding_is_byte_identical`, `..._aggregation_scope_still_does_not_multiply_items` | None |
+| SAFE-33-02 | MEDIUM-HIGH | Exact IEEE-754 inequality on `Reconciliation.difference` made 3.0×0.1 vs 0.3 a permanent, unclearable divergence | **`reconciliation_divergence` is no longer emitted in Phase 1A.** See the escalation below — no compliant in-scope fix exists | `..._unimplementable_kinds_are_never_emitted` (asserts the 3×0.1 case yields no item and the queue reaches nominal) | **Yes — architecture escalation** |
+| SAFE-33-03 | MEDIUM | `within_class=as_of` is constant across a view, so §4.5's "longest-standing divergence" rule contributed nothing; `Reconciliation` carries no `valid_at` | Governor's Phase 1A ruling applied: stable identifier ascending, `within_class` left at its `0.0` default, with the limitation documented at `_ORDER_CLASS` | `..._reconciliation_class_orders_by_stable_identifier` (also asserts no timestamp is invented) | **Yes — return-to-architecture** |
+| SAFE-33-04 | MEDIUM | `stream.property in {"valuation","estimate"}` split two attention kinds on an unconstrained free-text field | **`valuation_expiring` is no longer emitted.** Every cadence breach is `telemetry_stale`; no parser, naming convention or heuristic remains | `..._free_text_property_cannot_trigger_valuation_expiry` (four adversarial property names) | **Yes — return-to-architecture** |
+| SAFE-33-05 | MEDIUM | `assert ... or True` was a tautology presented as the AC-7 proof; two kinds untested | Tautology and its near-vacuous companion deleted; a genuine total-order test added over hand-built items with deliberate ties; both unimplementable kinds now tested for **deliberate absence** | `..._ordering_is_a_genuine_total_order_under_adversarial_ties`, plus mutation checks below | None |
+| SAFE-33-06 (report 07) | LOW | `"|".join(...)` over unescaped components let `("a\|b","c")` and `("a","b\|c")` collide | `stable_id` is now `_digest(list(identity))` — the platform's own canonical sorted-key JSON + SHA-256 over the structural tuple. No process-randomised `hash()` | `..._stable_identifier_resists_delimiter_collision`, `..._identity_is_per_source_not_universal` | None |
+| Report 06 | LOW | The `work_pending` sentence counted only actionable items, hiding unknowns | `summary_line()` appends the unknown count whenever one exists | `..._summary_line_never_hides_a_material_unknown` | None |
+| Report 08 | LOW | A stream id was rendered in the `subject_id` field when a stream declaration was absent | Such proposals are skipped: without a declared stream there is no authoritative subject | `..._proposal_without_a_declared_stream_is_not_rendered` | None |
+| Report 09 | INFORMATIONAL | "1 item need attention" | Verb agreement corrected via `_count()` | Covered by the summary-line test | None |
+
+## SAFE-33-02 — escalation to the Governor
+
+The brief's preferred remediation order was: an existing Decimal value type or
+quantisation contract; existing currency precision rules; an existing
+reconciliation helper. **None of the three exists.** Searches across
+`src/foundry/` find no `Decimal`, no `quantize`, no minor-unit or precision
+contract, and no `isclose`/tolerance helper; `core/vocab.py` carries
+`currency` only as a display-unit token.
+
+The brief forbids an ad hoc epsilon in the console, and scope discipline
+permits changes only to the console model, its tests and its report — so the
+lens that produces the noisy float (`core/acquisition.py`) may not be touched,
+and its frozen semantics may not change. There is therefore **no compliant fix
+available inside this burn.**
+
+Rather than ship a defect the operator can never clear, Phase 1A applies the
+same disposition the Governor ordered for SAFE-33-04: the kind is
+architecturally defined but **not emitted** until the platform can support it
+honestly. This is a deliberate trade recorded for ruling, not a silent
+decision: false permanent items are unclearable under the no-dismiss design,
+whereas a temporarily absent kind is visible, bounded and reversible.
+
+**It also departs from the presumption behind the SAFE-33-03 ruling**, which
+assumed reconciliation items continue to be emitted. The ordering rule is
+implemented and tested regardless, so enabling the kind later requires no
+ordering work.
+
+**Governor decision requested — one of:**
+
+1. confirm the Phase 1A suppression and schedule a monetary-comparison
+   contract (integer minor units, or a declared tolerance on a frozen
+   contract) as a return-to-architecture item; or
+2. authorise a bounded RFC-011 change so the lens returns an authoritative
+   divergence determination and a finding `valid_at`, which would resolve
+   SAFE-33-02 and SAFE-33-03 together at the correct layer.
+
+## Mutation sanity checks
+
+Each mutation was applied temporarily, the suite run, and the implementation
+restored. **No mutation is committed** (`git diff` confirms the module matches
+the remediated version).
+
+| Mutation | Result |
+|---|---|
+| Restore the universal dedup key | 3 failed — both SAFE-33-01 collapse tests and the insertion-order test |
+| Invert the ordering tuple | 3 failed — both AC-7 ordering tests and the new total-order test |
+| Restore the unescaped `\|` join for `stable_id` | 1 failed — the collision test |
+| Restored implementation | 26 passed |
+
+## Files changed
+
+- `src/foundry/operations_console.py`
+- `tests/test_rfc_012_operations_console.py`
+- `docs/rfc-012-phase-1a-implementation-report.md`
+
+No routes, templates, CSS, JavaScript, authentication, CSRF, providers, event
+kinds, persistence, RFC-010/RFC-011 contracts or RFC-012 architecture were
+touched. No Phase 1B work began.
+
+## Validation
+
+- Focused Phase 1A tests: **26 passed** (13 before remediation)
+- Full local suite: **647 passed**, 1 pre-existing deprecation warning
+- `git diff --check`: clean; module byte-compiles
+- No linter or formatter is configured in `pyproject.toml` or the CI workflow;
+  CI runs the suite across Python 3.10–3.13
+
+## Residual architecture gaps
+
+| # | Gap | Owner |
+|---|---|---|
+| G-A | No authoritative monetary comparison, so `reconciliation_divergence` cannot be classified honestly | Governor decision requested above |
+| G-B | `Reconciliation` carries no `valid_at`, so §4.5's longest-standing ordering is unimplementable | Return-to-architecture; RFC-011 projection enhancement |
+| G-C | No authoritative estimate-basis signal on a stream, so `valuation_expiring` cannot be separated from `telemetry_stale` | Return-to-architecture; supersedes the earlier L1 |
+| G-D | A container and its holding both report `unknown_material` for one underlying gap | Unchanged; flagged for the G5 visual gate |
+
+SAFE-012-01 remains **mandatory and undischarged** for the later web surface;
+SAFE-012-02 is unchanged and not widened.

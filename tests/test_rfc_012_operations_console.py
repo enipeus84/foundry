@@ -25,7 +25,8 @@ from foundry.finance.acquisition import (
 )
 from foundry.operations_console import (
     ATTENTION_KIND, TERMINAL_ACTIONABLE_COMPLETE, TERMINAL_ALL_NOMINAL,
-    TERMINAL_WORK_PENDING, OperationsConsoleModel,
+    TERMINAL_WORK_PENDING, UNIMPLEMENTABLE_IN_PHASE_1A, AttentionItem,
+    OperationsConsoleModel, attention_identity,
 )
 
 HOUSEHOLD = "household-1"
@@ -96,7 +97,7 @@ def world(deterministic_log, tmp_path):
     observations = CanonicalObservationProjection(log, envelopes)
     lenses = ValuationLenses(registry, streams, observations)
     model = OperationsConsoleModel(registry, streams, inbox, lenses, envelopes)
-    return {"log": log, "streams": streams, "envelopes": envelopes, "inbox": inbox,
+    return {"log": log, "vault": vault, "streams": streams, "envelopes": envelopes, "inbox": inbox,
             "registry": registry, "provider": provider, "interpreter": interpreter,
             "gate": gate, "lenses": lenses, "model": model, "observations": observations}
 
@@ -221,11 +222,8 @@ def test_ac7_ordering_is_total_and_uses_authoritative_facts_only(world):
     ordered = _kinds(view)
     assert ordered[0] == "identity_ambiguous"
     assert ordered.index("identity_ambiguous") < ordered.index("telemetry_stale")
-    # Total order: sorting twice is a fixed point.
-    assert [item.stable_id for item in view.items] == sorted(
-        item.stable_id for item in view.items) or True
     keys = [item.sort_key() for item in view.items]
-    assert keys == sorted(keys)
+    assert keys == sorted(keys), "view must be returned already ordered"
 
     source = Path("src/foundry/operations_console.py").read_text()
     for banned in ("account_type", "asset_category", "mission", "engagement"):
@@ -324,3 +322,202 @@ def test_static_and_on_event_streams_never_raise_freshness_items(world):
                      if item.kind in {"telemetry_stale", "valuation_expiring"}}
     assert "holding-cost" not in stale_streams
     assert "holding-vest" not in stale_streams
+
+
+# --- SAFE-33 remediation regressions -----------------------------------------
+
+
+def _pending(world, stream_id, value, valid_at, received_at, external_ref=None):
+    """Capture a proposal and leave it unresolved in the inbox."""
+    extra = {"external_ref": external_ref} if external_ref else {}
+    fact = _fact("units", HOLDING, valid_at, _draft("units", value, valid_at, HOLDING),
+                 value=value, **extra)
+    envelope = world["provider"].capture(
+        stream_id, {"observations": [fact]}, received_at=received_at,
+        actor="reviewer", source_identity="user:reviewer")
+    world["envelopes"].rebuild()
+    world["interpreter"].envelopes.rebuild()
+    proposal = world["interpreter"].interpret(envelope.id, "reviewer")
+    _refresh(world)
+    return proposal
+
+
+def test_safe_33_01_two_pending_proposals_on_one_stream_produce_two_items(world):
+    _register_holding(world)
+    first = _pending(world, "holding-units", 10.0, 20.0, 110.0)
+    second = _pending(world, "holding-units", 11.0, 21.0, 120.0)
+    assert first.id != second.id
+
+    view = _view(world, 130.0)
+    pending = [item for item in view.items if item.kind == "proposal_pending"]
+    assert len(pending) == 2, "distinct proposals must never collapse"
+    assert {item.proposal_id for item in pending} == {first.id, second.id}
+
+
+def test_safe_33_01_two_ambiguous_proposals_on_one_stream_produce_two_items(world):
+    _register_holding(world)
+    first = _pending(world, "holding-units", 10.0, 20.0, 110.0,
+                     external_ref={"namespace": "isin", "value": "GB00UNKNOWN1"})
+    second = _pending(world, "holding-units", 11.0, 21.0, 120.0,
+                      external_ref={"namespace": "isin", "value": "GB00UNKNOWN2"})
+    view = _view(world, 130.0)
+    ambiguous = [item for item in view.items if item.kind == "identity_ambiguous"]
+    assert len(ambiguous) == 2
+    assert {item.proposal_id for item in ambiguous} == {first.id, second.id}
+
+
+def test_safe_33_01_insertion_order_does_not_change_the_queue(world):
+    """Dedup and ordering must not depend on projection iteration order."""
+    _register_holding(world)
+    _pending(world, "holding-units", 10.0, 20.0, 110.0)
+    _pending(world, "holding-units", 11.0, 21.0, 120.0)
+    baseline = _view(world, 130.0).as_dict()
+
+    inbox = world["inbox"]
+    inbox.proposals = dict(reversed(list(inbox.proposals.items())))
+    assert _view(world, 130.0).as_dict() == baseline
+
+    registry = world["registry"]
+    registry.registrations = dict(reversed(list(registry.registrations.items())))
+    streams = world["streams"]
+    streams.streams = dict(reversed(list(streams.streams.items())))
+    assert _view(world, 130.0).as_dict() == baseline
+
+
+def test_safe_33_01_repeated_folding_is_byte_identical(world):
+    _register_holding(world)
+    _pending(world, "holding-units", 10.0, 20.0, 110.0)
+    _pending(world, "holding-units", 11.0, 21.0, 120.0)
+    views = [_view(world, 130.0).as_dict() for _ in range(5)]
+    assert all(view == views[0] for view in views)
+
+
+def test_safe_33_01_aggregation_scope_still_does_not_multiply_items(world):
+    """One canonical subject and stream yields one item however many scopes."""
+    _register_holding(world)
+    view = _view(world, 400 * DAY)
+    identities = [item.identity for item in view.items]
+    assert len(identities) == len(set(identities))
+
+
+def test_safe_33_02_and_04_unimplementable_kinds_are_never_emitted(world):
+    """Phantom float divergence and text-inferred expiry cannot reach the queue."""
+    assert UNIMPLEMENTABLE_IN_PHASE_1A == {"reconciliation_divergence",
+                                           "valuation_expiring"}
+    _register_holding(world)
+    # 3 x 0.1 != 0.3 in IEEE-754; an exact test would raise a permanent item.
+    _observe(world, "holding-units", "units", 3.0, 10.0, 100.0)
+    _observe(world, "holding-price", "price", 0.1, 10.0, 100.0)
+    _observe(world, "account-total", "statement_total", 0.3, 10.0, 100.0, subject=ACCOUNT)
+    view = _view(world, 110.0)
+    assert 3.0 * 0.1 != 0.3, "the float hazard this test exists for"
+    assert "reconciliation_divergence" not in _kinds(view)
+    assert view.terminal_state == TERMINAL_ALL_NOMINAL
+
+
+def test_safe_33_04_free_text_property_cannot_trigger_valuation_expiry(world):
+    """No naming convention, no parser: text never selects an attention kind."""
+    _register_holding(world)
+    names = ("valuation", "estimate", "valuation_gbp", "market_estimate")
+    ids = {f"s-{name}" for name in names}
+    for name in names:
+        world["streams"].declare(_stream(f"s-{name}", HOLDING, name))
+    provider = ManualAcquisitionProvider(world["log"], world["streams"],
+                                         world["vault"], ids)
+    original = world["provider"]
+    world["provider"] = provider
+    try:
+        for name in names:
+            _observe(world, f"s-{name}", "units", 1.0, 10.0, 100.0)
+    finally:
+        world["provider"] = original
+    view = _view(world, 400 * DAY)
+    assert "valuation_expiring" not in _kinds(view)
+    assert any(item.kind == "telemetry_stale" for item in view.items)
+
+
+def test_safe_33_03_reconciliation_class_orders_by_stable_identifier(world):
+    """Governor Phase 1A ruling: no invented timestamp; stable id ascending."""
+    items = [AttentionItem(kind="reconciliation_divergence", subject_id=subject,
+                           action="investigate", summary="", class_rank=3, sub_rank=0)
+             for subject in ("subject-b", "subject-a", "subject-c")]
+    ordered = sorted(items, key=lambda item: item.sort_key())
+    assert [item.stable_id for item in ordered] == sorted(item.stable_id for item in items)
+    assert {item.within_class for item in items} == {0.0}, "no temporal field is invented"
+
+
+def test_safe_33_05_ordering_is_a_genuine_total_order_under_adversarial_ties():
+    """Hand-built items with deliberate ties; the order must be strict."""
+    tied = [
+        AttentionItem(kind="telemetry_stale", subject_id="s1", action="capture",
+                      summary="", stream_id="b", class_rank=4, within_class=-10.0),
+        AttentionItem(kind="telemetry_stale", subject_id="s1", action="capture",
+                      summary="", stream_id="a", class_rank=4, within_class=-10.0),
+        AttentionItem(kind="unknown_material", subject_id="s1", action="capture",
+                      summary="", class_rank=2),
+        AttentionItem(kind="proposal_pending", subject_id="s1", action="review",
+                      summary="", stream_id="a", proposal_id="p2",
+                      class_rank=1, sub_rank=1, within_class=5.0),
+        AttentionItem(kind="identity_ambiguous", subject_id="s1", action="resolve",
+                      summary="", stream_id="a", proposal_id="p1",
+                      class_rank=1, sub_rank=0, within_class=5.0),
+    ]
+    ordered = sorted(tied, key=lambda item: item.sort_key())
+    assert [item.kind for item in ordered][:3] == [
+        "identity_ambiguous", "proposal_pending", "unknown_material"]
+    keys = [item.sort_key() for item in ordered]
+    assert keys == sorted(keys)
+    assert len(set(keys)) == len(keys), "ties must be broken, never left equal"
+    # Order is independent of the input permutation.
+    assert [item.stable_id for item in sorted(reversed(tied),
+                                              key=lambda item: item.sort_key())] == \
+           [item.stable_id for item in ordered]
+
+
+def test_safe_33_06_stable_identifier_resists_delimiter_collision():
+    """("a|b", "c") and ("a", "b|c") must not become the same identifier."""
+    left = AttentionItem(kind="telemetry_stale", subject_id="a|b", action="capture",
+                         summary="", stream_id="c")
+    right = AttentionItem(kind="telemetry_stale", subject_id="a", action="capture",
+                          summary="", stream_id="b|c")
+    assert left.identity != right.identity
+    assert left.stable_id != right.stable_id
+    assert left.sort_key() != right.sort_key()
+    # Deterministic across calls and independent of process hash seeding.
+    assert left.stable_id == AttentionItem(
+        kind="telemetry_stale", subject_id="a|b", action="capture",
+        summary="different text", stream_id="c").stable_id
+
+
+def test_safe_33_06_identity_is_per_source_not_universal():
+    proposal = attention_identity("proposal_pending", subject_id="subj",
+                                  stream_id="stream", proposal_id="p1")
+    other = attention_identity("proposal_pending", subject_id="subj",
+                               stream_id="stream", proposal_id="p2")
+    assert proposal != other, "proposal identity distinguishes proposals"
+    stream = attention_identity("telemetry_stale", subject_id="subj",
+                                stream_id="s1", proposal_id=None)
+    assert stream != attention_identity("telemetry_stale", subject_id="subj",
+                                        stream_id="s2", proposal_id=None)
+    unknown = attention_identity("unknown_material", subject_id="subj",
+                                 stream_id=None, proposal_id=None)
+    assert unknown == ("unknown_material", "subj")
+
+
+def test_safe_33_06_summary_line_never_hides_a_material_unknown(world):
+    _register_holding(world)
+    _pending(world, "holding-units", 10.0, 20.0, 110.0)
+    view = _view(world, 130.0)
+    assert view.terminal_state == TERMINAL_WORK_PENDING
+    assert view.unknown_count
+    assert "unavailable" in view.summary_line()
+    assert "needs attention" in view.summary_line() or "need attention" in view.summary_line()
+
+
+def test_safe_33_08_proposal_without_a_declared_stream_is_not_rendered(world):
+    _register_holding(world)
+    proposal = _pending(world, "holding-units", 10.0, 20.0, 110.0)
+    world["streams"].streams.pop("holding-units")
+    view = _view(world, 130.0)
+    assert all(item.proposal_id != proposal.id for item in view.items)
+    assert all(item.subject_id != "holding-units" for item in view.items)
