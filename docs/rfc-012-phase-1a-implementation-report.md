@@ -1,4 +1,4 @@
-# RFC-012 Phase 1 — Operations Console Model — Implementation Report
+# RFC-012 Phase 1A — Operations Console Model Foundation — Implementation Report
 
 ```text
 Mission Declaration (RFC-100 §6.0 / Amendment 1) — as run
@@ -11,12 +11,13 @@ Authority:     Governor (see Governance deviations)
 
 *Model statement (RFC-100 §12.0.2): executed under `claude-opus-5`.*
 
-Date: 2026-08-02. Base: `main` at `cea35f0` (RFC-012 architecture post-flight
-merged via PR #31).
+Date: 2026-08-02. Base: `main` at `595cba1` (Release Closeout merged via
+PR #32; RFC-012 architecture post-flight merged via PR #31). The branch was
+updated from post-closeout `main`, which supersedes any earlier review SHA.
 
 ## Decision
 
-**READY FOR SAFE REVIEW.** This burn implements the first bounded slice of
+**READY FOR SAFE REVIEW.** Classified **Phase 1A — Operations Console Model Foundation** by Governor direction (FR-015: reclassification is a Governor decision, not a self-adjustment). This burn implements the first bounded slice of
 the frozen RFC-012 architecture: the **Operations Console Model** — the
 deterministic fold of RFC-011 projections into a classified, ordered
 attention queue. It ships **no web surface**, no route, no template and no
@@ -32,11 +33,11 @@ rather than discover them:
    Flight Director. The frozen architecture supplied the scope (§2.6's
    proving slice), but the brief that normally bounds an Implementation Burn
    was not written.
-2. **Release Closeout is open, not complete.** G6 requires closeout to
-   complete **before the RFC-012 implementation merge**. It is
-   [PR #32](https://github.com/enipeus84/foundry/pull/32), open at the time
-   of writing. Beginning implementation is compliant — G6 gates the merge —
-   but **this PR must not merge before #32 does.**
+2. **Release Closeout was open when this burn began; it is now complete.**
+   G6 requires closeout to complete **before the RFC-012 implementation
+   merge**. [PR #32](https://github.com/enipeus84/foundry/pull/32) merged at
+   `595cba1` on 2026-08-02, and this branch has been updated onto it. G6 is
+   satisfied.
 
 Neither deviation is repaired by code, and neither is claimed to be
 authorised by this report.
