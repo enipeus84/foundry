@@ -43,7 +43,8 @@ location for each rather than restating their content.
   *engineering invariants* in `architecture.md`. Organised in three
   governance layers — Constitution, Operations Manual, Engineering Standards &
   Templates. **Revision 2; Governor-approved and frozen; documentation
-  implementation in progress.**
+  implementation draft PR [#28](https://github.com/enipeus84/foundry/pull/28)
+  is open.**
 - [`rfc-100-implementation-report.md`](rfc-100-implementation-report.md) —
   the bounded Documentation Implementation Burn record for the frozen manual.
 - [`engineering/review-gates.md`](engineering/review-gates.md) — the

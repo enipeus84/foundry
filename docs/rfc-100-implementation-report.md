@@ -17,16 +17,25 @@ and AI operating guidance are unchanged.
 
 ## Validation
 
-Documentation validation, internal-link validation, governance-scope review,
-and `git diff --check` are recorded on the draft PR before SAFE review.
+Documentation: `scripts/validate_security_docs.py` reports complete repository
+structure and complete security documentation.
+
+Internal links: all 77 Markdown files were checked; no relative-link target is
+missing.
+
+Governance: only documentation and navigation changed. The frozen RFC-100
+architecture, Flight Rules, role responsibilities, classifications, lifecycle,
+and Governor decisions were not edited.
+
+`git diff --check`: clean.
 
 ## Repository State
 
 Branch: `rfc-100-flight-operations-manual`
 
-Commit: recorded in the draft PR
+Commit: `c78717c` (`Document RFC-100 implementation burn`)
 
-Draft PR: recorded in the RFC index once opened
+Draft PR: [#28](https://github.com/enipeus84/foundry/pull/28)
 
 ## Recommendation
 
