@@ -27,6 +27,8 @@ undocumented elsewhere.
 | RFC-007 | Mortgage Freedom Mission; Property Equity Amendment (Revision 2) | Merged mission; amendment merged via [#19](https://github.com/enipeus84/foundry/pull/19) | — | [`rfc-007-mortgage-freedom-architecture.md`](../rfc-007-mortgage-freedom-architecture.md) | [`rfc-007-mortgage-freedom-implementation-report.md`](../rfc-007-mortgage-freedom-implementation-report.md) | [`rfc-007-technical-debt.md`](../rfc-007-technical-debt.md) | [#17](https://github.com/enipeus84/foundry/pull/17) | Amendment unreleased |
 | RFC-008 | Financial Resilience Mission | Merged | — | [`rfc-008-financial-resilience-architecture.md`](../rfc-008-financial-resilience-architecture.md) | [`rfc-008-financial-resilience-implementation-report.md`](../rfc-008-financial-resilience-implementation-report.md) | [`rfc-008-technical-debt.md`](../rfc-008-technical-debt.md) | [#18](https://github.com/enipeus84/foundry/pull/18) | `1.6.0`; no tag |
 | RFC-009 | Pension Independence Mission | Merged | — | [`rfc-009-pension-independence-architecture.md`](../rfc-009-pension-independence-architecture.md) | [`rfc-009-pension-independence-implementation-report.md`](../rfc-009-pension-independence-implementation-report.md) | [`rfc-009-technical-debt.md`](../rfc-009-technical-debt.md) | [#22](https://github.com/enipeus84/foundry/pull/22) | `1.7.0`; no tag |
+| RFC-010 | Mission Console UX Framework | Merged | — | [`RFC-010-mission-console-ux-framework.md`](RFC-010-mission-console-ux-framework.md) (architecture frozen 2026-07-31; architecture PR [#24](https://github.com/enipeus84/foundry/pull/24)); self-review [`RFC-010-architecture-self-review.md`](../reviews/RFC-010-architecture-self-review.md) | [`rfc-010-phase-1-implementation-report.md`](../rfc-010-phase-1-implementation-report.md); [`rfc-010-phase-2-implementation-report.md`](../rfc-010-phase-2-implementation-report.md) | *No dedicated register* — debt recorded in the phase reports' Known Limitations | [#25](https://github.com/enipeus84/foundry/pull/25) (merged 2026-07-31) | **Gap: no CHANGELOG entry or version bump** — `pyproject.toml` still reads `1.7.0` |
+| RFC-011 | Asset & Telemetry Acquisition Framework | Merged (Phases 1–4 reference implementation; Phases 5–10 outstanding) | — | [`RFC-011-asset-telemetry-acquisition-framework.md`](RFC-011-asset-telemetry-acquisition-framework.md) (Revision 2, architecture frozen 2026-07-31; architecture PR [#26](https://github.com/enipeus84/foundry/pull/26)); self-review [`RFC-011-architecture-self-review.md`](../reviews/RFC-011-architecture-self-review.md) | [`rfc-011-phase-1-implementation-report.md`](../rfc-011-phase-1-implementation-report.md); forward plan [`rfc-011-phase-2-plan.md`](../rfc-011-phase-2-plan.md) | [`rfc-011-technical-debt.md`](../rfc-011-technical-debt.md) | [#27](https://github.com/enipeus84/foundry/pull/27) (merged 2026-08-01) | **Gap: no CHANGELOG entry or version bump** — `pyproject.toml` still reads `1.7.0` |
 
 RFC-009 shipped with the shared Mission Detail component extraction that
 preceded it ([#21](https://github.com/enipeus84/foundry/pull/21),
@@ -39,14 +41,15 @@ production behaviour was never affected.
 
 *None.* Every RFC with a governed implementation has shipped.
 
+RFC-010 shipped in two phases against one frozen architecture: the Pension
+Independence reference console, then the remaining three Finance missions after
+the mandatory Governor visual review. RFC-011's merged branch was reclassified
+by the Governor as the combined Reference Implementation Burn covering frozen
+Phases 1–4; Phases 5–10 remain outstanding and are separate burn candidates.
+
 ## Proposed architecture, not yet implemented
 
-Architecture is written and under Governor review; no implementation exists.
-
-| RFC | Title | Status | Architecture / decision doc | Self-review | PR |
-|---|---|---|---|---|---|
-| RFC-010 | Mission Console UX Framework | **Approved — architecture frozen 2026-07-31; not implemented** | [`RFC-010-mission-console-ux-framework.md`](RFC-010-mission-console-ux-framework.md) | [`RFC-010-architecture-self-review.md`](../reviews/RFC-010-architecture-self-review.md) | [#24](https://github.com/enipeus84/foundry/pull/24) |
-| RFC-011 | Asset & Telemetry Acquisition Framework | **Approved — architecture frozen 2026-07-31 (Revision 2); not implemented** | [`RFC-011-asset-telemetry-acquisition-framework.md`](RFC-011-asset-telemetry-acquisition-framework.md) | [`RFC-011-architecture-self-review.md`](../reviews/RFC-011-architecture-self-review.md) | [#26](https://github.com/enipeus84/foundry/pull/26) |
+*None.* Every RFC with approved architecture has an implementation merged.
 
 ## Engineering governance
 
@@ -89,6 +92,9 @@ Engineering-process work that doesn't carry an RFC number.
   spec → architecture → implementation-report → technical-debt pattern.
   If these are written retroactively, add them here rather than
   reconstructing behaviour from memory.
-- **RFC-005** shipped without a CHANGELOG entry or version bump. The next
-  change to `CHANGELOG.md` should add the missing `v1.6.0` (or similar)
-  entry before this gap compounds further.
+- **RFC-005, RFC-010 and RFC-011** shipped without a CHANGELOG entry or
+  version bump; `pyproject.toml` has read `1.7.0` since RFC-009. RFC-005 is
+  tracked as [issue #13](https://github.com/enipeus84/foundry/issues/13); the
+  gap has since compounded twice, which is the condition
+  [RFC-100](RFC-100-flight-operations-manual.md) FR-017 exists to stop.
+  Release Closeout for all three is outstanding.

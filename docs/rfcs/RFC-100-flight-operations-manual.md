@@ -23,7 +23,7 @@ or architectural decision is altered.
 | # | Amendment | Applied |
 |---|---|---|
 | **1** | Three-layer structure — Constitution / Operations Manual / Engineering Standards & Templates, made explicit | New §1.5, with each major section tagged and per-layer change control; GD-5 applied in layer terms |
-| **2** | Precedence — a normative section resolving RFC-100 against product RFCs | New §1.6 (P1–P7), normative; §1.3 now points to it rather than restating it |
+| **2** | Precedence — a normative section resolving RFC-100 against product RFCs | New §1.6 (P1–P8), normative; §1.3 now points to it rather than restating it |
 | **3** | Flight Rule format — Identifier, Rule, Rationale, Provenance, Verification | §5 preamble defines the standard; all seventeen rules reformatted; **Verification is new to every rule** |
 | **4** | Model guidance — the model table is recommended practice, not normative | New §12.0; §12.1 relabelled; §12.2 independence rule marked normative; GD-4 restated |
 | **5** | Validation appendix — how Mission Control was validated | New [Appendix A](#appendix-a--how-mission-control-was-validated), evidencing RFC-009, RFC-010 and RFC-011 element by element, including what it does *not* cover |
@@ -117,8 +117,8 @@ section, and every section belongs to exactly one.
 | **2** | **Operations Manual** | §6 Pre-flight · §7 Checkpoints · §8 SAFE · §9 Governor · §10 Post-Flight | When a procedure is proven insufficient by a burn | **Documentation Burn** under Governor Review. May refine *how* a Layer 1 obligation is met; may never remove one |
 | **3** | **Engineering Standards & Templates** | §11 Standard Reports · §12 AI Operating Model | Expected to evolve continuously | **Documentation Burn**, Governor notified. Records practice rather than constraining it |
 
-**Supporting record** — §13 Operational Precedents, §14 Governor Decisions,
-§15 Scope Exclusions, §16 Technical Debt, §17 Success Criteria and
+**Supporting record** — §13 Operational Precedents, §14 Governor Rulings
+Applied, §15 Scope Exclusions, §16 Technical Debt, §17 Success Criteria and
 [Appendix A](#appendix-a--how-mission-control-was-validated). These are the
 RFC's own record. Precedents (§13) are binding and are added by any burn that
 produces one; the remainder are amended with the ratification they record.
@@ -1040,9 +1040,9 @@ be reviewed against the first real SAFE artefact produced under RFC-100.
 
 ### 11.1 Architecture Report *(EECOM)*
 
-`Pre-flight` · `Architecture Summary` · `Key Decisions` · `Contracts Frozen`
-· `Scope Exclusions` · `Technical Debt` · `Risks` · `Self-Review Outcome` ·
-`Governor Rulings Applied` · `Files Changed` · `Validation` ·
+`Pre-flight` · `Architecture Summary` · `Key Decisions` · `Contracts Frozen or
+Proposed` · `Scope Exclusions` · `Technical Debt` · `Risks` · `Self-Review
+Outcome` · `Governor Decisions Required` · `Files Changed` · `Validation` ·
 `Repository State` · `Recommendation`
 
 **Verdict:** `GO` · `CONCERN` · `NO-GO`.
@@ -1244,7 +1244,7 @@ recorded residual has not been performed.
 
 ## 14. Governor Rulings Applied
 
-| # | Decision | Recommendation |
+| # | Ruling | Application |
 |---|---|---|
 | **GD-1** | **Guido and TELMU are permanent Flight Directors.** | **Applied.** |
 | **GD-2** | **FR-016 and FR-017 are permanent Flight Rules.** | **Applied.** |
