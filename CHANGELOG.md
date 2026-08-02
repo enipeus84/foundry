@@ -1,5 +1,74 @@
 # Changelog
 
+## [v1.8.0-telemetry-operations] — 2026-08-02
+
+Release Closeout for RFC-010, RFC-011, RFC-100 and RFC-012, executed under
+RFC-012 ruling G6 and Flight Rule FR-017. Each shipped without a CHANGELOG
+entry or version bump; this section is the retroactive record, and the
+version moves `1.7.0` → `1.8.0`.
+
+### Added — RFC-011 Asset & Telemetry Acquisition Framework ([#27](https://github.com/enipeus84/foundry/pull/27), merged 2026-08-01)
+
+- A domain-neutral acquisition seam above the frozen pipeline: Acquisition
+  Provider, Telemetry Envelope, content-addressed Evidence Vault, versioned
+  Interpreter, Observation Proposal lifecycle and Confirmation Gate.
+- An event-sourced Asset Registry holding routing and expectation metadata
+  only, with a `contains` containment relation, plus a Telemetry Stream
+  registry owning per-stream refresh policy and update strategy.
+- Identity Resolution as a permanent platform layer: typed external
+  references, an event-sourced Identity Index, and a read-only Resolution
+  Service consulted at proposal formation.
+- Four first-class timestamps (`valid_at`, `observed_at`, `received_at`,
+  `recorded_at`) and the bitemporal read rule.
+- Valuation lenses with a Capital Accessibility lifecycle, categorical
+  evidence grades and dominance-based confidence caps.
+- A combined Phase 1–4 reference implementation over child investment
+  accounts, and an authenticated `/acquisition/inbox` confirmation surface.
+
+### Added — RFC-010 Mission Console UX Framework ([#25](https://github.com/enipeus84/foundry/pull/25), merged 2026-07-31)
+
+- A frozen five-region Mission Console contract with a deterministic Mission
+  Console Model and a renderer that owns presentation only.
+- All four Finance missions migrated onto one shared model and renderer, in
+  two phases either side of a mandatory Governor visual review.
+
+### Added — RFC-100 Flight Operations Manual ([#28](https://github.com/enipeus84/foundry/pull/28), [#29](https://github.com/enipeus84/foundry/pull/29), merged 2026-08-02)
+
+- Engineering governance for every subsequent RFC: burn classification, the
+  mission lifecycle, seventeen Flight Rules, role authorities, pre-flight
+  checks, review gates and standard report templates.
+- Amendment 1 adds the Mission Declaration as pre-flight Check 0, and
+  merge-head verification (PR head = SAFE-reviewed head = Governor-approved
+  head).
+
+### Added — RFC-012 Telemetry Operations Console, architecture only ([#30](https://github.com/enipeus84/foundry/pull/30), merged 2026-08-02)
+
+- Frozen architecture for the weekly exception-driven operating loop above
+  RFC-011: an attention queue with capture, review and resolve actions.
+  Documentation only — **no implementation shipped in this release.**
+
+### Documentation — RFC-005 Financial Independence
+
+- Retroactive acknowledgement that RFC-005 ([#9](https://github.com/enipeus84/foundry/pull/9))
+  shipped without a CHANGELOG entry or version bump, first tracked as
+  [issue #13](https://github.com/enipeus84/foundry/issues/13). Its behaviour is
+  documented in its implementation report; no release note is reconstructed
+  from memory here.
+
+### Release decisions
+
+- **Version:** `1.7.0` → `1.8.0`. A minor bump: the RFC-010 console and the
+  RFC-011 acquisition platform are additive capability, and the substrate
+  (`eventlog.py`, `canon.py`, `kernel.py`) is unchanged throughout.
+- **Tag:** no git tag is cut by this closeout. None has been cut since
+  `v1.5-flight-deck`, and resuming the tagging practice is a separate
+  Governor decision rather than one a closeout should take unilaterally.
+- **Known residual:** the two `[Unreleased]` sections below (RFC-009 and the
+  RFC-007 Property Equity Amendment) predate this closeout and belong to the
+  `1.7.0` line. They are left untouched rather than retitled, because their
+  merge dates could not be verified from the repository and a closeout must
+  not invent release history.
+
 ## [Unreleased] — RFC-009 Pension Independence
 
 ### Added
