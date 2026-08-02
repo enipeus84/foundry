@@ -1,7 +1,8 @@
 # RFC-100 — Flight Operations Manual
 
-**Status:** Revision 2 — Governor-approved and frozen; documentation
-implementation in progress.
+**Status:** Revision 2 — Governor-approved and frozen; merged 2026-08-02
+(`3bb8965`, [PR #28](https://github.com/enipeus84/foundry/pull/28)).
+**Amendment 1** — Layer 2, proposed; awaiting Governor Review.
 **Type:** Governance architecture. Documentation-only.
 **Author:** EECOM (architecture Flight Controller role, Claude), commissioned by
 CAPCOM on behalf of the Governor.
@@ -34,6 +35,20 @@ constrains product behaviour while four of its own rules do (A5); and the
 **verification-mode table** in §5, because labelling every rule "verifiable"
 without distinguishing test-verified from artefact-verified would have
 overstated the audit the amendment was meant to create (A6).
+
+**Amendment 1 — Mission Declaration (Layer 2).** A Documentation Burn under
+Governor Review, per the §1.5 change control for the Operations Manual layer.
+Two additions, both operational procedure, neither constitutional:
+
+| # | Change | Where |
+|---|---|---|
+| **1** | **Mission Declaration becomes pre-flight Check 0.** Spacecraft, Fuel, Effort Level, Mission Type and Authority are declared in the brief, verified at pre-flight, restated in the completion report, and NO-GO if incomplete. Explicitly a statement of fact: it grants no authority and does not classify the burn under FR-015 | §6 table, new §6.0; §11 preamble |
+| **2** | **Merge-head verification.** Before an authorised merge, PR head = SAFE-reviewed head = Governor-approved head; NO-GO until the reviewed commit is pushed and CI reruns | §9.3; §10 Merge row; precedent P10 |
+
+**Layer 1 is untouched.** No Flight Rule is created, altered or renumbered —
+FR-018 deliberately does not exist. No role authority, burn classification,
+lifecycle stage or Governor power changes. Amendment 1 adds a procedure by
+which existing obligations are checked, which is precisely what Layer 2 is for.
 
 RFC-100 is the permanent operating manual for Project Foundry engineering. It
 governs **how Foundry is engineered**, never **what Foundry does**. No product
@@ -818,6 +833,7 @@ opens with an overall verdict.
 
 | # | Check | Pass condition | Fails to |
 |---|---|---|---|
+| **0** | **Mission Declaration** | The brief carries all five declaration fields (§6.0) | NO-GO |
 | 1 | **Repository** | Working copy is the canonical repo with the expected `origin` (FR-001) | NO-GO |
 | 2 | **Branch** | On a burn branch, not `main`; branch name matches the burn (FR-002) | NO-GO |
 | 3 | **Ownership** | Working tree clean; branch tracks `origin`; no unowned in-flight work | NO-GO if dirty |
@@ -827,6 +843,50 @@ opens with an overall verdict.
 | 7 | **Caffeinate** | A sleep inhibitor is active for long-running burns | CONCERN |
 | 8 | **Worktrees** | `git worktree list` shows no stale or conflicting worktree | CONCERN |
 | 9 | **RFC ownership** | The RFC exists, its status is known, and this burn's classification is authorised against it | NO-GO |
+
+### 6.0 Check 0 — Mission Declaration *(Amendment 1)*
+
+Every burn opens with a **Mission Declaration**. It is the first thing in the
+brief and the first thing checked at pre-flight, because every later check
+depends on knowing what kind of burn this is and who is running it.
+
+| Field | States |
+|---|---|
+| **Spacecraft** | The platform executing the burn |
+| **Fuel** | The model executing it |
+| **Effort Level** | The expected reasoning depth (§3.2) |
+| **Mission Type** | The burn classification (§3) |
+| **Authority** | The governing authority for the burn |
+
+**Obligations.**
+
+1. **Declared before work begins.** CAPCOM issues the declaration in the brief.
+   A burn does not open on an inferred declaration.
+2. **Verified at pre-flight.** Check 0 confirms all five fields are present.
+3. **Restated in the completion report** (§11), so the record of what ran is
+   attached to the record of what it produced.
+4. **Incomplete declaration is NO-GO.** A missing field stops the burn at
+   pre-flight and returns to CAPCOM. It is not filled in by the executing role.
+
+**Limits — what the declaration is not.**
+
+- **It is a statement of fact, not a grant of authority.** Naming an Authority
+  records which authority governs the burn; it does not confer that authority
+  on anyone, and it never substitutes for a recorded Governor act (§9.4).
+- **It does not classify the burn.** The declared Mission Type is what the
+  brief says the burn is. Classification and any change to it remain governed
+  by [FR-015](#fr-015--burn-classification): a burn still may not reclassify
+  itself, and a declaration that turns out to describe the work inaccurately is
+  reported honestly and referred to the Governor.
+- **A declared model is not a compliance requirement** (§12.0). Where the
+  executing platform or model differs from the declaration, the report records
+  the actual one; the discrepancy is disclosed, never silently adopted.
+
+**Provenance.** Consecutive CAPCOM briefs carried all five fields as a header
+block before any rule required it, and CAPCOM recorded the single omission that
+prompted this amendment. **Verification:** artefact-verified — the brief carries
+five fields, the pre-flight reports Check 0, and the completion report restates
+the declaration.
 
 ### 6.1 Verdicts
 
@@ -968,6 +1028,29 @@ Merge is a distinct Governor act following SAFE Confirmation. An implementation
 PR stays marked "Do not merge yet" until Governor Merge Review. No role, human
 or model, merges on the Governor's behalf.
 
+**Merge-head verification** *(Amendment 1).* Before executing an authorised
+merge, the executing role verifies that three heads are the same commit:
+
+```text
+PR head SHA  =  SAFE-reviewed head  =  Governor-approved head
+```
+
+**If they differ, the merge is NO-GO.** The reviewed commit is pushed, CI reruns
+on the new head, and the merge proceeds only once all three agree. The executing
+role does not merge a head that no one reviewed, and does not treat a green run
+on an older head as evidence for a newer one.
+
+Reviews record the head they examined so this check has something to compare
+against: a SAFE Report, SAFE Confirmation and Governor Merge Review each state
+the commit SHA under review.
+
+**Provenance.** At RFC-100's own merge, the SAFE-confirmed head existed only
+locally — the PR head was one commit behind and did not contain the S1–S5
+remediation. Post-flight caught it from the Confirmation's Repository State
+line and pushed before merging. Every gate had passed correctly; the exposure
+was in the handoff between them. **Verification:** artefact-verified — the
+Post-Flight Report records the three SHAs and their agreement.
+
 ### 9.4 Governance rulings
 
 Rulings resolve open questions, adopt or reject recommendations, and set
@@ -1010,7 +1093,7 @@ Owned by TELMU. Every item is verified, not assumed.
 
 | Step | Verification |
 |---|---|
-| **Merge** | The PR is merged by the Governor; the merge commit is identified |
+| **Merge** | Merge-head verification passes (§9.3): PR head = SAFE-reviewed head = Governor-approved head, all three SHAs recorded. The PR is merged by the Governor; the merge commit is identified |
 | **CI verification** | The **first post-merge `main` workflow passes**. A failure reopens the burn (FR-016) |
 | **Cleanup** | Burn branch disposition recorded; no stale worktree; no scratch artefact left in the repository |
 | **Repository verification** | Working tree clean; `main` matches `origin/main`; `git diff --check` clean |
@@ -1026,6 +1109,11 @@ Owned by TELMU. Every item is verified, not assumed.
 
 Every burn ends in exactly one report. Headings are required; a heading with
 nothing to say says "None" rather than being omitted.
+
+**Every report opens with the Mission Declaration** *(Amendment 1)* — the five
+fields of §6.0, restated as run rather than as briefed. Where the executing
+platform or model differed from the declaration, the report states the actual
+one. This heading precedes those listed for each report below.
 
 **Provenance of these shapes** *(Amendment A1 from the self-review).* §11.1 and
 §11.2 are **observed**: they generalise the headings actually used by the
@@ -1239,6 +1327,15 @@ architecture self-reviews amended the RFC before commit — six amendments and
 three respectively — and both recorded what they did *not* fix as accepted
 residuals and watch items. A self-review that produces no amendment and no
 recorded residual has not been performed.
+
+**P10 — Gates verify artefacts; handoffs verify heads (RFC-100, PR #28).** Every
+gate on RFC-100 passed correctly, and the branch still reached merge one commit
+behind the head SAFE had confirmed: the remediation existed locally and had not
+been pushed. Post-flight caught it, pushed, and re-ran CI before merging. The
+defect was not in any gate but in the space between two of them — a reviewed
+artefact and a mergeable head are different objects, and nothing had previously
+required them to be the same. Produced the merge-head verification in §9.3 and
+the Merge row in §10.
 
 ---
 
