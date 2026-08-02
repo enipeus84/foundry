@@ -38,7 +38,7 @@ incomplete in places.
 
 ## Current Release
 
-- **Current version:** `1.7.0` ([`pyproject.toml`](pyproject.toml)) — bumped by RFC-009; RFC-005, RFC-010 and RFC-011 all shipped without a version bump or CHANGELOG entry (see [Documentation Status](#documentation-status))
+- **Current version:** `1.8.0` ([`pyproject.toml`](pyproject.toml)) — bumped by the Release Closeout burn, which also added the missing CHANGELOG entries for RFC-010, RFC-011, RFC-100 and RFC-012. RFC-005's absent release note is acknowledged retroactively rather than reconstructed ([issue #13](https://github.com/enipeus84/foundry/issues/13)). No git tag was cut; tagging has been dormant since `v1.5-flight-deck` and resuming it is a separate Governor decision
 - **Latest merged RFC:** RFC-012 — Telemetry Operations Console, **architecture only, frozen 2026-08-02** ([PR #30](https://github.com/enipeus84/foundry/pull/30), merged 2026-08-02); see [`docs/rfc-012-architecture-post-flight-report.md`](docs/rfc-012-architecture-post-flight-report.md). Latest merged *implementation* remains RFC-011 ([PR #27](https://github.com/enipeus84/foundry/pull/27), merged 2026-08-01)
 - **Governance:** RFC-100 — Flight Operations Manual, Revision 2 merged ([PR #28](https://github.com/enipeus84/foundry/pull/28)) with Amendment 1, Mission Declaration ([PR #29](https://github.com/enipeus84/foundry/pull/29)), both 2026-08-02 ([`docs/rfcs/RFC-100-flight-operations-manual.md`](docs/rfcs/RFC-100-flight-operations-manual.md))
 - **Next burn:** Release Closeout for RFC-005 / RFC-010 / RFC-011 / RFC-100 — scheduled under RFC-012 ruling G6 and **required before any RFC-012 implementation merge**. Not yet issued; RFC-012 implementation is not authorised
