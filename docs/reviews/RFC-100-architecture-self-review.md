@@ -487,3 +487,95 @@ text:
 - **§11.3 and §11.4 remain specified, not observed.** The first SAFE Review run
   under RFC-100 should be compared against them, as the §11 provenance note
   already directs.
+
+---
+
+# Amendment 1 — self-review (Layer 2, Mission Declaration)
+
+Performed at 2026-08-02 against the Amendment 1 draft, before commit. Scope is
+the two additions and their interaction with the merged manual — not a
+re-review of Revision 2, which is frozen and merged.
+
+**Outcome: no amendments; four challenges recorded, one accepted residual.**
+The change is small and the review is proportionate to it (Effort LOW). The
+risk in a Layer 2 amendment is not ambition but **leakage**: a procedure that
+quietly acquires constitutional force, or a "clarification" that changes what a
+Layer 1 clause means.
+
+## Challenge B1 — Is this Layer 2, or a Flight Rule wearing a procedure's coat?
+
+**No amendment; boundary holds.**
+
+The test I applied: does the addition create a new obligation, or a new check on
+an existing one? Check 0 verifies facts that Layer 1 already governs — Effort
+Level is declared by CAPCOM under §3.2, Mission Type is the §3 classification,
+Authority is the §2 authority model, and the model statement is §12.0 item 2.
+Nothing becomes true that was not already required; it becomes *checked*.
+
+That is the difference between the FR-018 proposal and this amendment, and it
+is why FR-018 deliberately does not exist. A Flight Rule would have made
+declaration a constitutional obligation amendable only by an Architecture Burn
+with re-freeze. Pre-flight Check 0 has identical enforcement strength — both
+produce NO-GO — at an order of magnitude less amendment cost.
+
+Merge-head verification passes the same test: §9.3 already vested merge in the
+Governor after SAFE Confirmation. Verifying that the merged head is the
+confirmed head adds no authority; it checks an existing one.
+
+## Challenge B2 — Could the declaration be read as conferring authority?
+
+**Live risk; closed by construction, not by wording alone.**
+
+"Authority: Governor" in a brief is exactly the shape of text that later gets
+cited as though it were a ruling. §6.0's limits section states three
+constraints: the declaration is fact not grant; it never substitutes for a
+recorded Governor act (§9.4); and it does not classify the burn under FR-015.
+
+The structural protection matters more than the sentence. §2.9 already holds
+that "a brief is never an approval and a relayed instruction is never a ruling",
+and §9.4 already requires rulings to be recorded, dated and attributable. Check
+0 sits downstream of both. A declaration cannot manufacture authority because
+the definition of a Governor act does not reference declarations at all.
+
+## Challenge B3 — Does Check 0 give a role a way to stall a burn?
+
+**No amendment; accepted residual.**
+
+Check 0 is NO-GO on an incomplete declaration, and the executing role performs
+the check on a brief written by CAPCOM. In principle an executing role could
+refuse work over a missing field.
+
+This is the FR-014 asymmetry again, and it resolves the same way: the remedy is
+cheap and immediate — CAPCOM supplies the field — and the failure it prevents is
+not. A burn that opens without knowing its own classification is the condition
+that produced RFC-011's B2. I did not add a duty-to-seek clause equivalent to
+FR-014's, because a missing declaration field is visible on the face of the
+brief and requires no search to establish. **Recorded as an accepted residual:**
+if Check 0 is ever used to stall rather than to correct, that is a finding
+against the role, not a defect in the check.
+
+## Challenge B4 — Is P10 a real precedent or a burn congratulating itself?
+
+**No amendment; the precedent is load-bearing.**
+
+P10 records that RFC-100's own merge nearly shipped an unreviewed head. The
+honest framing was the difficulty: every gate passed, so the temptation is to
+record it as a near-miss anecdote. It is not. It is the first observed defect in
+this manual's *handoffs* rather than its gates, and it generalises — any
+review-then-merge process where review artefacts name findings but not commits
+has the same exposure.
+
+The wording deliberately avoids implying a gate failed, and §9.3 fixes the
+cause rather than the symptom: reviews now record the head they examined, so the
+comparison has something to compare against. A merge-time check with no
+reviewed-head record would be unverifiable.
+
+## What Amendment 1 did not fix
+
+- **Release Closeout for RFC-005, RFC-010, RFC-011 and RFC-100** remains
+  outstanding and is explicitly out of scope. It is a Release Closeout burn.
+- **TD1, TD3, TD4 and W2** are unchanged from Revision 2.
+- **Both additions are artefact-verified**, not test-verified. Check 0 and
+  merge-head verification could each be enforced by tooling — a brief linter, a
+  pre-merge SHA comparison in CI. RFC-100 does not build tooling (§15); the §5
+  verification-mode table's standing observation applies to these two as well.
