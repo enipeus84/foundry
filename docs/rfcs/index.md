@@ -49,7 +49,28 @@ Phases 1–4; Phases 5–10 remain outstanding and are separate burn candidates.
 
 ## Proposed architecture, not yet implemented
 
-*None.* Every RFC with approved architecture has an implementation merged.
+| RFC | Title | Status | Architecture doc | SAFE review | Post-flight | PR |
+|---|---|---|---|---|---|---|
+| RFC-012 | Telemetry Operations Console | **Architecture frozen 2026-08-02; merged. Implementation not authorised** | [`RFC-012-telemetry-operations-console.md`](RFC-012-telemetry-operations-console.md) (Revision 2, after Governor amendments A1–A6) | [PR #30 comment](https://github.com/enipeus84/foundry/pull/30#issuecomment-5159867761) — SAFE: GO, two advisory findings, no remediation required | [`rfc-012-architecture-post-flight-report.md`](../rfc-012-architecture-post-flight-report.md) | [#30](https://github.com/enipeus84/foundry/pull/30) (merged 2026-08-02) |
+
+RFC-012 is the weekly exception-driven operating loop above RFC-011: an
+attention queue with capture, review and resolve actions. It is a strict
+consumer of the acquisition platform and adds no Core or domain event, no
+vocabulary, no entity, no acquisition channel and no write path of its own.
+Two advisory SAFE findings (SAFE-012-01 console route authentication and CSRF;
+SAFE-012-02 inherited household confirmation authority) must be carried into
+the implementation brief.
+
+**Implementation is gated.** Ruling G6 requires the outstanding Release
+Closeout for RFC-005, RFC-010, RFC-011 and RFC-100 to complete before any
+RFC-012 implementation merge. Ruling G3 keeps the RFC-011 Phase 5 Governor
+gate independently open before any acquisition-channel burn; RFC-012's own
+visual gate (G5) does not satisfy it.
+
+**RFC-013 (Asset Registry & Provenance) and RFC-014 (Governed Corrections)**
+are recorded in RFC-012 §2.8 as **provisional programme direction only**.
+Neither has approved architecture, and each requires its own architecture burn
+and independent boundary challenge before any freeze.
 
 ## Engineering governance
 

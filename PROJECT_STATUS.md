@@ -18,6 +18,10 @@ Mortgage Freedom — now have live assessment providers.** RFC-010 delivered
 the Mission Console that presents them, migrating all four missions to one
 shared model and renderer, and RFC-011 added the Telemetry Acquisition
 platform layer with a merged Phase 1–4 reference implementation.
+**RFC-100 (Flight Operations Manual, Revision 2 with Amendment 1) now governs
+how every subsequent RFC is engineered**, and **RFC-012 (Telemetry Operations
+Console) has merged as frozen architecture only — no implementation exists
+and none is authorised**, gated behind the outstanding Release Closeout.
 Authentication, review-gate process,
 and CI are in place but scoped to a single named user and two of six
 planned gates. Documentation was substantially reorganized in the
@@ -35,8 +39,9 @@ incomplete in places.
 ## Current Release
 
 - **Current version:** `1.7.0` ([`pyproject.toml`](pyproject.toml)) — bumped by RFC-009; RFC-005, RFC-010 and RFC-011 all shipped without a version bump or CHANGELOG entry (see [Documentation Status](#documentation-status))
-- **Latest merged RFC:** RFC-011 — Asset & Telemetry Acquisition Framework, combined Phase 1–4 reference implementation ([PR #27](https://github.com/enipeus84/foundry/pull/27), merged 2026-08-01). RFC-010 merged immediately before it ([PR #25](https://github.com/enipeus84/foundry/pull/25), 2026-07-31)
-- **Current burn:** RFC-100 — Flight Operations Manual, **Revision 2 Governor-approved and frozen; documentation implementation open** as draft [PR #28](https://github.com/enipeus84/foundry/pull/28) ([`docs/rfcs/RFC-100-flight-operations-manual.md`](docs/rfcs/RFC-100-flight-operations-manual.md))
+- **Latest merged RFC:** RFC-012 — Telemetry Operations Console, **architecture only, frozen 2026-08-02** ([PR #30](https://github.com/enipeus84/foundry/pull/30), merged 2026-08-02); see [`docs/rfc-012-architecture-post-flight-report.md`](docs/rfc-012-architecture-post-flight-report.md). Latest merged *implementation* remains RFC-011 ([PR #27](https://github.com/enipeus84/foundry/pull/27), merged 2026-08-01)
+- **Governance:** RFC-100 — Flight Operations Manual, Revision 2 merged ([PR #28](https://github.com/enipeus84/foundry/pull/28)) with Amendment 1, Mission Declaration ([PR #29](https://github.com/enipeus84/foundry/pull/29)), both 2026-08-02 ([`docs/rfcs/RFC-100-flight-operations-manual.md`](docs/rfcs/RFC-100-flight-operations-manual.md))
+- **Next burn:** Release Closeout for RFC-005 / RFC-010 / RFC-011 / RFC-100 — scheduled under RFC-012 ruling G6 and **required before any RFC-012 implementation merge**. Not yet issued; RFC-012 implementation is not authorised
 - **Latest release/tag:** `v1.5-flight-deck` (git tag) — no tag exists for RFC-004.2 or later; see [`docs/rfcs/index.md`](docs/rfcs/index.md)
 
 ---
