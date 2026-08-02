@@ -44,6 +44,8 @@ location for each rather than restating their content.
   governance layers — Constitution, Operations Manual, Engineering Standards &
   Templates. **Revision 2; Governor-approved and frozen; documentation
   implementation in progress.**
+- [`rfc-100-implementation-report.md`](rfc-100-implementation-report.md) —
+  the bounded Documentation Implementation Burn record for the frozen manual.
 - [`engineering/review-gates.md`](engineering/review-gates.md) — the
   current architecture/security review-gate process every change goes
   through before merge. Canonical for gate mechanics; RFC-100 cites it
