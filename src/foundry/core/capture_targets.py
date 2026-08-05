@@ -130,18 +130,29 @@ class CaptureTargetRegistry:
         self.rebuild()
         return declared
 
-    def retire(self, stream_id: str, reason: str, retired_at: float,
-               *, superseded_by: str | None = None, actor: str = "user") -> TelemetryStreamRetirement:
-        if stream_id not in self.streams.streams:
+    def retire(self, *, household_id: str, stream_id: str, reason: str, retired_at: float,
+               superseded_by: str | None = None, actor: str = "user") -> TelemetryStreamRetirement:
+        if not isinstance(household_id, str) or not household_id:
+            raise AcquisitionError("telemetry stream retirement household is required")
+        stream = self.streams.streams.get(stream_id)
+        if stream is None:
             raise AcquisitionError("unknown telemetry stream")
+        if stream.household_id != household_id:
+            raise AcquisitionError("cross-household telemetry stream retirement is forbidden")
         if stream_id in self.streams.retired:
-            raise AcquisitionError("telemetry stream is already retired")
+            recorded = self.streams.retirements[stream_id]
+            return TelemetryStreamRetirement(stream_id, recorded["reason"], recorded["retired_at"],
+                                             recorded.get("superseded_by"))
         if not isinstance(reason, str) or not reason.strip():
             raise AcquisitionError("telemetry stream retirement reason is required")
         if not isinstance(retired_at, (int, float)):
             raise AcquisitionError("telemetry stream retirement time is required")
         if superseded_by is not None and (not isinstance(superseded_by, str) or not superseded_by):
             raise AcquisitionError("invalid superseding telemetry stream")
+        if superseded_by is not None:
+            replacement = self.streams.streams.get(superseded_by)
+            if replacement is None or replacement.household_id != household_id:
+                raise AcquisitionError("invalid superseding telemetry stream")
         retirement = TelemetryStreamRetirement(stream_id, reason.strip(), float(retired_at), superseded_by)
         payload = {"stream_id": retirement.stream_id, "reason": retirement.reason,
                    "retired_at": retirement.retired_at}

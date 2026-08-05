@@ -23,8 +23,7 @@ from foundry.core.acquisition import (
     redact_credentials,
 )
 from foundry.finance.acquisition import FINANCE_MANUAL_DRAFT_CONTRACT
-from foundry.finance.capture_targets import FinanceCaptureTargetResolver
-from foundry.finance.entities import FinanceEntityProjection
+from foundry.finance.capture_targets import finance_asset_registry
 from foundry.mission_control import _as_of, _footer, _render
 
 
@@ -68,8 +67,7 @@ def _vault(email: str) -> EvidenceVault:
 
 def _asset_registry(console) -> AssetRegistry:
     """Use the RFC-015 Finance resolver; never admit a made-up subject."""
-    resolver = FinanceCaptureTargetResolver(FinanceEntityProjection(console.log))
-    return AssetRegistry(console.log, entity_exists=lambda subject_id: resolver.resolve(subject_id) is not None)
+    return finance_asset_registry(console.log)
 
 
 def _scoped_proposal(request: Request, proposal_id: str):

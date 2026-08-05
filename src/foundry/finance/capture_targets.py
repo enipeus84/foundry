@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from foundry.core.acquisition import AssetRegistry
 from foundry.core.capture_targets import CaptureTargetEntity
+from foundry.eventlog import EventLog
 from foundry.finance.entities import FinanceEntityProjection
 
 
@@ -30,3 +32,9 @@ class FinanceCaptureTargetResolver:
 
     def supports(self, entity: CaptureTargetEntity, property_name: str) -> bool:
         return entity.entity_type in _SUPPORTED_PROPERTIES.get(property_name, set())
+
+
+def finance_asset_registry(log: EventLog) -> AssetRegistry:
+    """Build the only production Finance-aware asset registry."""
+    resolver = FinanceCaptureTargetResolver(FinanceEntityProjection(log))
+    return AssetRegistry(log, entity_exists=lambda subject_id: resolver.resolve(subject_id) is not None)

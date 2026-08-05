@@ -30,7 +30,7 @@ from foundry.core.acquisition import (
 )
 from foundry.core.capture_targets import CaptureTargetRegistry
 from foundry.finance.acquisition import FinanceManualInterpreter
-from foundry.finance.capture_targets import FinanceCaptureTargetResolver
+from foundry.finance.capture_targets import FinanceCaptureTargetResolver, finance_asset_registry
 from foundry.finance.entities import FinanceEntityProjection
 from foundry.mission_control import _as_of, _footer, _render
 from foundry.operations_console import OperationsConsoleModel
@@ -73,8 +73,7 @@ def _target_registry(console) -> CaptureTargetRegistry:
 
 
 def _asset_registry(console) -> AssetRegistry:
-    resolver = FinanceCaptureTargetResolver(FinanceEntityProjection(console.log))
-    return AssetRegistry(console.log, entity_exists=lambda subject_id: resolver.resolve(subject_id) is not None)
+    return finance_asset_registry(console.log)
 
 
 def _page(console, title: str, body: str) -> HTMLResponse:
@@ -140,11 +139,7 @@ def _workflow(stream: TelemetryStream) -> dict[str, str] | None:
 
 def _manual_streams(console, household_id: str) -> list[TelemetryStream]:
     streams = TelemetryStreamRegistry(console.log)
-    return sorted(
-        (stream for stream in streams.streams.values()
-         if stream.channel == "manual" and stream.household_id == household_id),
-        key=lambda stream: stream.id,
-    )
+    return list(streams.active_manual_streams(household_id))
 
 
 def _stream_label(stream: TelemetryStream) -> str:
@@ -461,8 +456,9 @@ async def capture(request: Request):
     try:
         console = _console(request)
         streams = TelemetryStreamRegistry(console.log)
-        stream = streams.streams.get(fields["stream_id"])
-        if stream is None or stream.household_id != _household(console) or stream.channel != "manual":
+        active = {stream.id: stream for stream in streams.active_manual_streams(_household(console) or "")}
+        stream = active.get(fields["stream_id"])
+        if stream is None:
             return HTMLResponse("Not found", status_code=404)
         if fields["mode"] == "guided":
             fact = _guided_fact(stream, fields)

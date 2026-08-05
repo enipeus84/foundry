@@ -229,6 +229,21 @@ class TelemetryStreamRegistry:
         self.streams[stream.id] = stream
         return stream
 
+    def active_manual_streams(self, household_id: str) -> tuple[TelemetryStream, ...]:
+        """The sole selection view for new manual captures.
+
+        Retired streams remain resolvable in ``streams`` for historical
+        evidence, but are never candidates for a new manual capture.
+        """
+        if not isinstance(household_id, str) or not household_id:
+            return ()
+        return tuple(sorted(
+            (stream for stream in self.streams.values()
+             if stream.id not in self.retired and stream.channel == "manual"
+             and stream.household_id == household_id),
+            key=lambda stream: stream.id,
+        ))
+
 
 @dataclass(frozen=True)
 class AssetRegistration:
@@ -443,7 +458,8 @@ class ManualAcquisitionProvider:
             raise AcquisitionError("manual provider needs at least one stream")
         for stream_id in self.stream_ids:
             stream = streams.streams.get(stream_id)
-            if stream is None or stream.channel != self.strategy:
+            if (stream is None or stream.id in streams.retired
+                    or stream.channel != self.strategy):
                 raise AcquisitionError("manual provider only serves declared manual streams")
 
     @staticmethod
@@ -462,7 +478,7 @@ class ManualAcquisitionProvider:
                 actor: str, source_identity: str, external_ref: str | None = None,
                 evidence_grade: str = "declared") -> TelemetryEnvelope:
         stream = self.streams.streams.get(stream_id)
-        if stream is None or stream_id not in self.stream_ids:
+        if stream is None or stream_id in self.streams.retired or stream_id not in self.stream_ids:
             raise AcquisitionError("stream is not served by this manual provider")
         if source_identity != stream.source_identity:
             raise AcquisitionError("source identity does not match stream declaration")

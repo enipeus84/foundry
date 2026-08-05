@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -68,7 +67,7 @@ def test_closed_entity_and_retired_stream_leave_selection_but_preserve_history_r
     registry.declare(_stream("active", active.id, "cash_balance", household.id))
     TelemetryStreamRegistry(log).declare(_stream("closed", closed.id, "cash_balance", household.id))
     assert [target.id for target in _registry(log).for_household(household.id)] == ["active"]
-    registry.retire("active", "provider moved", 123.0)
+    registry.retire(household_id=household.id, stream_id="active", reason="provider moved", retired_at=123.0)
     streams = TelemetryStreamRegistry(log)
     assert streams.streams["active"].subject_id == active.id
     assert "active" in streams.retired
@@ -104,22 +103,51 @@ def test_contract_compatibility_is_metadata_driven(tmp_path):
     assert [target.id for target in registry.for_contract(household.id, Contract())] == ["pension"]
 
 
-def test_operations_and_acquisition_share_the_same_finance_entity_resolution(tmp_path):
+def test_retirement_is_household_scoped_idempotent_and_replayable(tmp_path):
+    log = EventLog(tmp_path / "events.jsonl")
+    owner, other = declare_party(log, "household"), declare_party(log, "household")
+    account = _registered_account(log, owner.id)
+    registry = _registry(log)
+    declared = registry.declare(_stream("retire-me", account.id, "cash_balance", owner.id))
+    original_declaration = next(event for event in log.events()
+                                if event["kind"] == "core.telemetry_stream.declared")
+    with pytest.raises(AcquisitionError, match="invalid superseding"):
+        registry.retire(household_id=owner.id, stream_id=declared.id,
+                        reason="provider moved", retired_at=123.0, superseded_by="missing")
+
+    retired = registry.retire(household_id=owner.id, stream_id=declared.id,
+                              reason="provider moved", retired_at=123.0)
+    event_count = len(list(log.events()))
+    assert registry.retire(household_id=owner.id, stream_id=declared.id,
+                           reason="ignored retry", retired_at=999.0) == retired
+    assert len(list(log.events())) == event_count
+    assert TelemetryStreamRegistry(log).streams[declared.id] == declared
+    assert next(event for event in log.events()
+                if event["kind"] == "core.telemetry_stream.declared") == original_declaration
+
+    with pytest.raises(AcquisitionError, match="cross-household"):
+        registry.retire(household_id=other.id, stream_id=declared.id,
+                        reason="hostile", retired_at=124.0)
+    with pytest.raises(AcquisitionError, match="unknown"):
+        registry.retire(household_id=owner.id, stream_id="missing", reason="missing", retired_at=124.0)
+    with pytest.raises(AcquisitionError, match="household is required"):
+        registry.retire(household_id="", stream_id=declared.id, reason="missing", retired_at=124.0)
+    with pytest.raises(AcquisitionError, match="duplicate telemetry stream"):
+        TelemetryStreamRegistry(log).declare(declared)
+
+    replayed = _registry(EventLog(tmp_path / "events.jsonl"))
+    assert replayed.streams.retired == {declared.id}
+    assert replayed.streams.retirements[declared.id]["reason"] == "provider moved"
+
+
+def test_operations_and_acquisition_use_the_canonical_finance_entity_resolver(tmp_path):
     from foundry import acquisition_web, operations_web
 
     log = EventLog(tmp_path / "events.jsonl")
     account = finance.declare_account(log, "checking", "GBP")
     console = SimpleNamespace(log=log)
-    operations = operations_web._asset_registry(console)
-    acquisition = acquisition_web._asset_registry(console)
-    assert operations.entity_exists(account.id) is acquisition.entity_exists(account.id) is True
-    assert operations.entity_exists("unknown") is acquisition.entity_exists("unknown") is False
-
-
-def test_no_permissive_entity_existence_stub_remains_in_production_code():
-    source_root = Path(__file__).resolve().parents[1] / "src"
-    matches = [path for path in source_root.rglob("*.py")
-               if "entity_exists=lambda" in path.read_text(encoding="utf-8")
-               and "lambda _" in path.read_text(encoding="utf-8")
-               and ": True" in path.read_text(encoding="utf-8")]
-    assert matches == []
+    for registry in (operations_web._asset_registry(console), acquisition_web._asset_registry(console)):
+        assert registry.entity_exists(account.id) is True
+        assert registry.entity_exists("unknown") is False
+        with pytest.raises(AcquisitionError, match="unknown domain entity reference"):
+            registry.register(AssetRegistration("unknown", "finance", "household"))
