@@ -219,6 +219,34 @@ def test_operations_discovers_contracts_and_creates_an_inert_property_draft(envi
     assert sum(event["kind"] == "finance.valuation.declared" for event in log.events()) == 1
 
 
+def test_operations_reports_capture_as_unconfigured_only_without_contracts_or_guided_workflows(
+        environment, monkeypatch):
+    monkeypatch.setattr("foundry.operations_web.capture_contract_registry",
+                        lambda: CaptureContractRegistry())
+    declare_party(EventLog(environment / "events.jsonl"), "household")
+    response = _client().get("/operations/capture")
+    assert response.status_code == 200
+    assert "Capture is not configured" in response.text
+
+
+def test_operations_reports_contracts_without_compatible_targets_truthfully(environment):
+    declare_party(EventLog(environment / "events.jsonl"), "household")
+    response = _client().get("/operations/capture")
+    assert response.status_code == 200
+    assert "Capture Contracts are available" in response.text
+    assert "no compatible Capture Targets are currently registered" in response.text
+    assert "Capture is not configured" not in response.text
+
+
+def test_operations_with_compatible_targets_shows_no_empty_state(environment):
+    _capture_streams(environment)
+    response = _client().get("/operations/capture")
+    assert response.status_code == 200
+    assert "WHAT DO YOU WANT TO RECORD?" in response.text
+    assert "Capture is not configured" not in response.text
+    assert "no compatible Capture Targets are currently registered" not in response.text
+
+
 def test_confirmed_cash_capture_is_a_reconciliation_observation_not_a_finance_projection_update(environment):
     log = EventLog(environment / "events.jsonl")
     household = declare_party(log, "household")

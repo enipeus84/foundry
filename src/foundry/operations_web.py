@@ -317,13 +317,18 @@ def capture_form(request: Request):
 <button class="ops-submit" type="submit">CREATE REVIEW CAPTURE →</button></form></section>'''
         return _page(console, "Capture information", body)
 
+    contracts = registry.discover()
     cards = "".join(
         f'''<div class="ops-item"><div><h3>{html.escape(contract.display_name)}</h3>
 <p>{html.escape(contract.description)}</p><p>{html.escape(_evidence_reference_policy(contract))}</p></div>
 <a class="ops-button primary" href="/operations/capture?contract={html.escape(contract.identifier, quote=True)}">RECORD →</a></div>'''
-        for contract in registry.discover()
+        for contract in contracts
     )
     guided = [(stream, _workflow(stream)) for stream in streams if _workflow(stream)]
+    compatible_targets = [
+        stream for stream in streams
+        if any(contract.accepts_stream(stream.property) for contract in contracts)
+    ]
     token = html.escape(webauth.csrf_token(email, webauth.load_config(), _PURPOSE), quote=True)
     options = "".join(
         f'<option value="{html.escape(stream.id, quote=True)}">{html.escape(workflow["title"])} · {html.escape(_stream_label(stream))}</option>'
@@ -331,7 +336,7 @@ def capture_form(request: Request):
     )
     body = _operations_styles() + """<section class="ops-hero"><div class="ops-eyebrow">OPERATIONS · CAPTURE</div>
 <h1>What do you want to record?</h1><p>Tell Foundry what changed in ordinary terms. It will create a reviewable capture; nothing changes in your plan until you approve it.</p></section>"""
-    if cards:
+    if contracts and (compatible_targets or guided):
         body += f'''<section class="ops-panel"><h2>WHAT DO YOU WANT TO RECORD?</h2><div class="ops-list">{cards}</div></section>'''
     if guided:
         body += f"""<section class="ops-panel"><h2>Capture an update</h2><form class="ops-form" method="post" action="/operations/capture">
@@ -342,8 +347,10 @@ def capture_form(request: Request):
 <label>Reference (optional)<input name="external_ref" maxlength="200" placeholder="Statement or confirmation reference"></label>
 <p class="hint">Your selected update determines the right Foundry record automatically. You will review it before confirmation.</p>
 <button class="ops-submit" type="submit">CREATE REVIEW CAPTURE →</button></form></section>"""
-    else:
+    elif not contracts:
         body += """<section class="ops-panel"><h2>Capture is not configured</h2><p class="ops-empty">There are no registered manual updates that Foundry can safely turn into a guided capture yet. Technical capture remains available for the authorised operator.</p></section>"""
+    elif not compatible_targets:
+        body += """<section class="ops-panel"><h2>Capture Contracts are available</h2><p class="ops-empty">Operations is configured, but no compatible Capture Targets are currently registered.</p></section>"""
     technical_options = "".join(f'<option value="{html.escape(stream.id, quote=True)}">{html.escape(stream.id)}</option>' for stream in streams)
     body += f"""<details class="ops-disclosure"><summary>TECHNICAL DETAILS</summary>
 <form class="ops-form" method="post" action="/operations/capture"><input type="hidden" name="csrf" value="{token}"><input type="hidden" name="mode" value="technical">
