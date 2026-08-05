@@ -21,6 +21,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from foundry import webauth
+from foundry.capture_contracts import CaptureContract, CaptureContractRegistry, capture_contract_registry
 from foundry.core.acquisition import (
     AcquisitionError, AssetRegistry, CanonicalObservationProjection,
     EnvelopeProjection, EvidenceVault, IdentityIndex, ManualAcquisitionProvider,
@@ -33,6 +34,7 @@ from foundry.operations_console import OperationsConsoleModel
 
 router = APIRouter()
 _PURPOSE = "rfc012-capture"
+_CONTRACT_PURPOSE = "rfc013-capture"
 
 
 def _email(request: Request) -> str | None:
@@ -66,6 +68,24 @@ def _model(console) -> OperationsConsoleModel:
 def _page(console, title: str, body: str) -> HTMLResponse:
     """Use Mission Control's shell: Operations is a destination, not a tool."""
     return _render(title, body + _footer(console), _as_of(console), "/operations")
+
+
+def _contracts(request: Request) -> CaptureContractRegistry:
+    """The composition root may inject a registry; renderers name no types."""
+    registry = getattr(request.app.state, "capture_contract_registry", None)
+    return registry if isinstance(registry, CaptureContractRegistry) else capture_contract_registry()
+
+
+def _evidence_reference_policy(contract: CaptureContract) -> str:
+    """Describe a reference honestly; it is not a verified artefact upload."""
+    policy = contract.evidence_policy.value
+    if policy == "REQUIRED":
+        return "An evidence reference is required; Foundry records the reference, not the external artefact."
+    if policy == "RECOMMENDED":
+        return "An evidence reference is recommended; Foundry records the reference, not the external artefact."
+    if policy == "OPTIONAL":
+        return "An evidence reference is optional; Foundry records it if supplied, not the external artefact."
+    return "No evidence reference is requested."
 
 
 def _workflow(stream: TelemetryStream) -> dict[str, str] | None:
@@ -264,6 +284,45 @@ def capture_form(request: Request):
     if household is None:
         return _page(console, "Capture information", _operations_styles() + "<section class=\"ops-hero\"><h1>Nothing to capture yet.</h1><p>An active household is required before a capture can be recorded.</p></section>")
     streams = _manual_streams(console, household)
+    registry = _contracts(request)
+    contract_id = request.query_params.get("contract")
+    if contract_id:
+        contract = registry.get(contract_id)
+        if contract is None:
+            return HTMLResponse("Not found", status_code=404)
+        eligible = [stream for stream in streams if contract.accepts_stream(stream.property)]
+        if not eligible:
+            return _page(console, "Capture information", _operations_styles() +
+                         f"<section class=\"ops-hero\"><div class=\"ops-eyebrow\">OPERATIONS · CAPTURE</div><h1>{html.escape(contract.display_name)}</h1><p>No compatible manual telemetry stream is registered.</p><p><a href=\"/operations/capture\">Choose another capture type</a></p></section>")
+        token = html.escape(webauth.csrf_token(email, webauth.load_config(), _CONTRACT_PURPOSE), quote=True)
+        options = "".join(
+            f'<option value="{html.escape(stream.id, quote=True)}">{html.escape(stream.id)} · {html.escape(stream.subject_id)}</option>'
+            for stream in eligible
+        )
+        rendered_fields = []
+        for field in contract.schema:
+            required_attribute = " required" if field.required else ""
+            step_attribute = ' step="any"' if field.input_type == "number" else ""
+            rendered_fields.append(
+                f'<label>{html.escape(field.label)}<input name="{html.escape(field.name, quote=True)}" type="{html.escape(field.input_type, quote=True)}"{required_attribute}{step_attribute}></label>'
+                f'<p class="hint">{html.escape(field.help_text)}</p>'
+            )
+        body = _operations_styles() + f'''<section class="ops-hero"><div class="ops-eyebrow">OPERATIONS · CAPTURE</div>
+<h1>{html.escape(contract.display_name)}</h1><p>{html.escape(contract.description)}</p>
+<p class="ops-status">Version {html.escape(contract.version)} · Evidence policy: {html.escape(contract.evidence_policy.value)}</p></section>
+<section class="ops-panel"><h2>Capture an update</h2><p class="ops-empty">{html.escape(_evidence_reference_policy(contract))}</p>
+<form class="ops-form" method="post" action="/operations/capture"><input type="hidden" name="csrf" value="{token}">
+<input type="hidden" name="contract_id" value="{html.escape(contract.identifier, quote=True)}">
+<label>Target stream<select name="stream_id">{options}</select></label>{''.join(rendered_fields)}
+<button class="ops-submit" type="submit">CREATE REVIEW CAPTURE →</button></form></section>'''
+        return _page(console, "Capture information", body)
+
+    cards = "".join(
+        f'''<div class="ops-item"><div><h3>{html.escape(contract.display_name)}</h3>
+<p>{html.escape(contract.description)}</p><p>{html.escape(_evidence_reference_policy(contract))}</p></div>
+<a class="ops-button primary" href="/operations/capture?contract={html.escape(contract.identifier, quote=True)}">RECORD →</a></div>'''
+        for contract in registry.discover()
+    )
     guided = [(stream, _workflow(stream)) for stream in streams if _workflow(stream)]
     token = html.escape(webauth.csrf_token(email, webauth.load_config(), _PURPOSE), quote=True)
     options = "".join(
@@ -272,6 +331,8 @@ def capture_form(request: Request):
     )
     body = _operations_styles() + """<section class="ops-hero"><div class="ops-eyebrow">OPERATIONS · CAPTURE</div>
 <h1>What do you want to record?</h1><p>Tell Foundry what changed in ordinary terms. It will create a reviewable capture; nothing changes in your plan until you approve it.</p></section>"""
+    if cards:
+        body += f'''<section class="ops-panel"><h2>WHAT DO YOU WANT TO RECORD?</h2><div class="ops-list">{cards}</div></section>'''
     if guided:
         body += f"""<section class="ops-panel"><h2>Capture an update</h2><form class="ops-form" method="post" action="/operations/capture">
 <input type="hidden" name="csrf" value="{token}"><input type="hidden" name="mode" value="guided">
@@ -328,6 +389,51 @@ async def capture(request: Request):
         return RedirectResponse("/login", status_code=303)
     fields = await _body(request)
     cfg = webauth.load_config()
+    if fields and "contract_id" in fields:
+        registry = _contracts(request)
+        contract = registry.get(fields["contract_id"])
+        if contract is None or not webauth.verify_csrf(fields.get("csrf"), email, cfg, _CONTRACT_PURPOSE):
+            return HTMLResponse("Forbidden", status_code=403)
+        system_fields = {"csrf", "contract_id", "stream_id"}
+        contract_fields = {field.name for field in contract.schema}
+        required_fields = {field.name for field in contract.schema if field.required}
+        if (set(fields) - (system_fields | contract_fields) or
+                not system_fields <= set(fields) or not required_fields <= set(fields)):
+            return HTMLResponse("Forbidden", status_code=403)
+        try:
+            console = _console(request)
+            streams = TelemetryStreamRegistry(console.log)
+            stream = streams.streams.get(fields["stream_id"])
+            if (stream is None or stream.household_id != _household(console) or
+                    stream.channel != "manual" or not contract.accepts_stream(stream.property)):
+                return HTMLResponse("Not found", status_code=404)
+            capture_values = {name: fields.get(name, "") for name in contract_fields}
+            normalised = contract.normalise(capture_values)
+            capture_id = contract.capture_id(normalised, stream_id=stream.id, subject_id=stream.subject_id)
+            fact = contract.canonical_mapper.map(normalised, subject_id=stream.subject_id,
+                                                  capture_id=capture_id)
+            external_ref = normalised.get("evidence_reference") or None
+            vault_root = os.environ.get("FOUNDRY_EVIDENCE_VAULT_PATH")
+            if not vault_root:
+                vault_root = str(Path(os.environ.get("FOUNDRY_DATA_PATH", "foundry_data/events.jsonl")).with_suffix(".vault"))
+            vault = EvidenceVault(vault_root, authorized=lambda actor: actor == email)
+            provider = ManualAcquisitionProvider(console.log, streams, vault, [stream.id])
+            envelope = provider.capture(
+                stream.id, {"capture_contract": {"identifier": contract.identifier, "version": contract.version},
+                            "review_summary": contract.review_summary(normalised, subject_id=stream.subject_id),
+                            "observations": [fact]},
+                received_at=time.time(), actor=email, source_identity=stream.source_identity,
+                external_ref=external_ref,
+            )
+            inbox = ProposalInbox(console.log)
+            interpreter = FinanceManualInterpreter(
+                vault, EnvelopeProjection(console.log), streams,
+                ResolutionService(IdentityIndex(console.log), AssetRegistry(console.log, entity_exists=lambda _e: True), inbox),
+            )
+            interpreter.interpret(envelope.id, email)
+        except (KeyError, TypeError, ValueError, AcquisitionError, json.JSONDecodeError) as exc:
+            return HTMLResponse("Capture refused: " + html.escape(str(exc)), status_code=400)
+        return RedirectResponse("/acquisition/inbox", status_code=303)
     common = {"csrf", "mode", "stream_id", "value", "valid_at", "external_ref"}
     technical = common | {"subject_id", "kind", "event_kind", "event_payload"}
     if (not fields or set(fields) not in (common, technical) or

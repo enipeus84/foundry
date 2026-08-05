@@ -32,6 +32,7 @@ class FinanceManualDraftContract:
 
     _EVENTS = frozenset({
         "finance.account.declared",
+        "finance.valuation.declared",
         "finance.position.declared",
         "finance.position.updated",
         "finance.transaction.declared",
@@ -60,6 +61,10 @@ class FinanceManualDraftContract:
                         "cost_basis", "valuation_date", "market_value", "asset_category"}
             if not required <= set(payload):
                 raise AcquisitionError("position draft is incomplete")
+        elif kind == "finance.valuation.declared":
+            required = {"entity_id", "subject_id", "amount", "currency", "as_of"}
+            if not required <= set(payload):
+                raise AcquisitionError("valuation draft is incomplete")
         elif kind == "finance.position.updated":
             if not ({"quantity", "unit_price", "valuation_date"} & set(payload)):
                 raise AcquisitionError("position update has no observed field")
