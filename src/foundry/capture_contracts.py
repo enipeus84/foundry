@@ -243,11 +243,12 @@ register_capture_contract(CaptureContract(
 
 register_capture_contract(CaptureContract(
     identifier="cash-balance-update", version="1", display_name="Cash Balance Update",
-    description=("Record a stated cash-account total for reconciliation. It does not update "
-                 "Finance balances, net worth, liquidity, or other downstream projections."),
+    description=("Record a stated cash-account observation. It does not update Finance balances, "
+                 "net worth, liquidity, or other downstream projections, and is not currently "
+                 "consumed by the RFC-011 reconciliation lens."),
     capabilities=("manual_capture", "finance_reconciliation", "review_required"), schema=_CASH_SCHEMA,
     validation=CaptureValidation(),
-    review_template="Review cash reconciliation observation for {subject_id}: {currency} {amount:,.2f} at {valid_at:.0f}.",
+    review_template="Review cash observation for {subject_id}: {currency} {amount:,.2f} at {valid_at:.0f}.",
     evidence_policy=EvidencePolicy.OPTIONAL,
     canonical_mapper=CanonicalMapper("finance.account.reconciliation_observed", "cash_balance", {
         "entity_id": "$subject_id", "supplied_total": "$amount", "valid_at": "$valid_at",

@@ -26,12 +26,15 @@ No canonical event definition changed.
 ### Cash Balance Update product boundary
 
 Cash Balance Update is intentionally **record-only for Finance projections**.
-Its confirmed event is a stated account total used by RFC-011's reconciliation
-lens; it does not update the Finance transaction ledger, account balance, net
-worth, liquidity, or any other downstream Finance projection.  Finance values
-accounts from their transaction ledger and contained positions.  Changing that
-rule would alter the established Finance model, so this contract describes the
-boundary explicitly rather than implying a projection effect it does not have.
+Its confirmed event is a canonical stated account observation; it does not
+update the Finance transaction ledger, account balance, net worth, liquidity,
+or any other downstream Finance projection.  The current RFC-011
+reconciliation lens consumes `statement_total` observations, not this
+contract's `cash_balance` observation, so Cash Balance Update is not currently
+a reconciliation input either.  Finance values accounts from their transaction
+ledger and contained positions.  Changing that rule would alter the established
+Finance model, so this contract describes the boundary explicitly rather than
+implying a projection effect it does not have.
 
 ## Operations flow
 
@@ -81,16 +84,24 @@ declarative mapping, authenticated generic rendering, proposal creation and
 subsequent confirmation.  It also asserts no canonical Finance event exists
 before confirmation.
 
-The focused remediation suite passed:
+The focused RFC-013/acquisition/Operations suite passed:
 
 ```text
-19 passed
-tests/test_rfc_013_capture_contracts.py
-tests/test_rfc_012_operations_web.py
-tests/test_rfc_011_acquisition.py
+PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 python -m pytest \
+  tests/test_rfc_013_capture_contracts.py \
+  tests/test_rfc_012_operations_web.py \
+  tests/test_rfc_011_acquisition.py -q -p no:cacheprovider
+
+26 passed
 ```
 
-The remediated full suite passed: `660 passed`.
+The final full suite passed:
+
+```text
+PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 python -m pytest tests -q -p no:cacheprovider
+
+661 passed
+```
 
 ## Architectural non-changes
 

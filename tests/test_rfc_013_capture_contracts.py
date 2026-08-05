@@ -117,6 +117,7 @@ def test_required_evidence_and_canonical_mapping_are_contract_owned():
     cash = capture_contract_registry().get("cash-balance-update")
     assert cash is not None
     assert "does not update Finance balances" in cash.description
+    assert "not currently consumed by the RFC-011 reconciliation lens" in cash.description
     assert cash.draft({"amount": "1200", "currency": "GBP", "valid_at": "100"},
                       subject_id="cash-1", capture_id="capture-2")["canonical_event"]["kind"] == (
         "finance.account.reconciliation_observed")
