@@ -81,6 +81,7 @@ from foundry.finance.resilience_metrics import (
     FinanceResilienceMetricProvider,
 )
 from foundry.mission_control import Console, router as mission_control_router
+from foundry.operations_web import router as operations_router
 
 logger = logging.getLogger("foundry.web")
 
@@ -177,6 +178,7 @@ def _build_console() -> Console:
 app.state.console_factory = _build_console
 app.include_router(mission_control_router)
 app.include_router(acquisition_router)
+app.include_router(operations_router)
 
 
 @app.middleware("http")
