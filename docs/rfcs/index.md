@@ -51,7 +51,7 @@ Phases 1–4; Phases 5–10 remain outstanding and are separate burn candidates.
 
 | RFC | Title | Status | Architecture doc | SAFE review | Post-flight | PR |
 |---|---|---|---|---|---|---|
-| RFC-012 | Telemetry Operations Console | **Architecture frozen 2026-08-02; merged. Implementation not authorised** | [`RFC-012-telemetry-operations-console.md`](RFC-012-telemetry-operations-console.md) (Revision 2, after Governor amendments A1–A6) | [PR #30 comment](https://github.com/enipeus84/foundry/pull/30#issuecomment-5159867761) — SAFE: GO, two advisory findings, no remediation required | [`rfc-012-architecture-post-flight-report.md`](../rfc-012-architecture-post-flight-report.md) | [#30](https://github.com/enipeus84/foundry/pull/30) (merged 2026-08-02) |
+| RFC-012 | Telemetry Operations Console | **Complete — product remediation merged 2026-08-05** | [`RFC-012-telemetry-operations-console.md`](RFC-012-telemetry-operations-console.md) (Revision 2, after Governor amendments A1–A6) | [PR #30 comment](https://github.com/enipeus84/foundry/pull/30#issuecomment-5159867761) — SAFE: GO, two advisory findings, no remediation required | [`rfc-012-architecture-post-flight-report.md`](../rfc-012-architecture-post-flight-report.md) | [#30](https://github.com/enipeus84/foundry/pull/30) (architecture); [#35](https://github.com/enipeus84/foundry/pull/35) (product remediation) |
 | RFC-013 | Operations Capture Contracts | **Implementation ready for SAFE review** | — | — | [`rfc-013-implementation-report.md`](../rfc-013-implementation-report.md) | — |
 
 RFC-012 is the weekly exception-driven operating loop above RFC-011: an
@@ -59,14 +59,12 @@ attention queue with capture, review and resolve actions. It is a strict
 consumer of the acquisition platform and adds no Core or domain event, no
 vocabulary, no entity, no acquisition channel and no write path of its own.
 Two advisory SAFE findings (SAFE-012-01 console route authentication and CSRF;
-SAFE-012-02 inherited household confirmation authority) must be carried into
-the implementation brief.
+SAFE-012-02 inherited household confirmation authority) were carried into the
+implementation. RFC-012 is complete following Governor Product Review and
+the product-remediation merge in PR #35.
 
-**Implementation is gated.** Ruling G6 requires the outstanding Release
-Closeout for RFC-005, RFC-010, RFC-011 and RFC-100 to complete before any
-RFC-012 implementation merge. Ruling G3 keeps the RFC-011 Phase 5 Governor
-gate independently open before any acquisition-channel burn; RFC-012's own
-visual gate (G5) does not satisfy it.
+The RFC-011 Phase 5 Governor gate remains independently open for any future
+acquisition-channel work; it is not an RFC-012 closeout dependency.
 
 **RFC-013 (Asset Registry & Provenance) and RFC-014 (Governed Corrections)**
 are recorded in RFC-012 §2.8 as **provisional programme direction only**.
