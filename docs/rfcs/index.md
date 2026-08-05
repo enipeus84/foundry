@@ -52,6 +52,7 @@ Phases 1–4; Phases 5–10 remain outstanding and are separate burn candidates.
 | RFC | Title | Status | Architecture doc | SAFE review | Post-flight | PR |
 |---|---|---|---|---|---|---|
 | RFC-012 | Telemetry Operations Console | **Architecture frozen 2026-08-02; merged. Implementation not authorised** | [`RFC-012-telemetry-operations-console.md`](RFC-012-telemetry-operations-console.md) (Revision 2, after Governor amendments A1–A6) | [PR #30 comment](https://github.com/enipeus84/foundry/pull/30#issuecomment-5159867761) — SAFE: GO, two advisory findings, no remediation required | [`rfc-012-architecture-post-flight-report.md`](../rfc-012-architecture-post-flight-report.md) | [#30](https://github.com/enipeus84/foundry/pull/30) (merged 2026-08-02) |
+| RFC-013 | Operations Capture Contracts | **Implementation ready for SAFE review** | — | — | [`rfc-013-implementation-report.md`](../rfc-013-implementation-report.md) | — |
 
 RFC-012 is the weekly exception-driven operating loop above RFC-011: an
 attention queue with capture, review and resolve actions. It is a strict
