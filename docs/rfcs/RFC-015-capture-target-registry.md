@@ -1,7 +1,10 @@
 # RFC-015 — Capture Target Registry
 
-**Status:** Architecture **approved — GO WITH AMENDMENT** at Governor review.
-Not frozen; the freeze gate is separate.
+**Status:** **ARCHITECTURE FROZEN — 2026-08-05** at the Governor freeze gate
+(HEAD `0ad18b3`). Approved GO WITH AMENDMENT at architecture review; the
+amendment is applied. Freeze record:
+[`RFC-015-architecture-freeze-record.md`](../reviews/RFC-015-architecture-freeze-record.md).
+Phase 0 has shipped; Phase 1 is open for implementation.
 **Title:** Capture Target Registry *(amended by the Governor from "Capture
 Target Registration": the architecture concerns the derived registry,
 discovery, compatibility, lifecycle and retirement of capture targets;
@@ -712,6 +715,27 @@ anything real.
 > declared streams would otherwise be permanently selectable in the append-only
 > model.
 
+### 14.0 Phase 0 — shipped, and what it deliberately did *not* do
+
+Phase 0 shipped at commit `0ad18b3`, touching only
+`src/foundry/operations_web.py` and `tests/test_rfc_013_capture_contracts.py`.
+It corrected the §11 empty-state conditions and added one test per condition.
+
+**Phase 0 is not evidence that the registry exists.** Two clarifications
+recorded at the freeze gate so that Phase 1 does not inherit a false premise:
+
+- The `compatible_targets` list introduced in `capture_form` is a **rendering
+  predicate only** — manual streams for the household whose property some
+  contract accepts. It is **not** the registry projection of §2/§6: it performs
+  no asset-registration join, applies no lifecycle or retirement filter, and
+  detects no duplicate conflict. **Phase 1 replaces it with the real
+  projection**; it must not be extended in place.
+- The per-contract message at `src/foundry/operations_web.py:296` ("No
+  compatible manual telemetry stream is registered") is **still stream
+  language** and was intentionally left for Phase 1, because the target-language
+  replacement §11 specifies needs a registration route that does not yet exist.
+  This is UI state 2 of §12 and is carried as a Phase 1 deliverable.
+
 ### 14.1 Phase 1 acceptance criteria *(Governor ruling 7 — binding)*
 
 Phase 1 does not pass until **all** of the following hold. The first is an
@@ -724,6 +748,7 @@ explicit **implementation blocker**:
 | P1-C | `core.telemetry_stream.retired` is implemented and folded by `rebuild()`; retired streams leave selection and remain resolvable for history. |
 | P1-D | `(household_id, subject_id, property)` uniqueness is enforced at declaration; pre-existing duplicates surface as a conflict (§3.4) rather than an arbitrary pick. |
 | P1-E | Orphan streams, cross-household streams and closed entities are excluded — each with its own test. |
+| P1-F | `compatible_targets` in `capture_form` is replaced by the registry projection, and the per-contract message at `src/foundry/operations_web.py:296` is restated in target language (§14.0, §12 state 2). |
 
 ---
 

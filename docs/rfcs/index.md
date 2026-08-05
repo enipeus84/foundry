@@ -53,7 +53,7 @@ Phases 1–4; Phases 5–10 remain outstanding and are separate burn candidates.
 |---|---|---|---|---|---|---|
 | RFC-012 | Telemetry Operations Console | **Complete — product remediation merged 2026-08-05** | [`RFC-012-telemetry-operations-console.md`](RFC-012-telemetry-operations-console.md) (Revision 2, after Governor amendments A1–A6) | [PR #30 comment](https://github.com/enipeus84/foundry/pull/30#issuecomment-5159867761) — SAFE: GO, two advisory findings, no remediation required | [`rfc-012-architecture-post-flight-report.md`](../rfc-012-architecture-post-flight-report.md) | [#30](https://github.com/enipeus84/foundry/pull/30) (architecture); [#35](https://github.com/enipeus84/foundry/pull/35) (product remediation) |
 | RFC-013 | Operations Capture Contracts | **Implementation ready for SAFE review** | — | — | [`rfc-013-implementation-report.md`](../rfc-013-implementation-report.md) | — |
-| RFC-015 | Capture Target Registry | **Architecture approved 2026-08-05 — Governor: GO WITH AMENDMENT (title). Not frozen; not yet implemented** | [`RFC-015-capture-target-registry.md`](RFC-015-capture-target-registry.md) | — | self-review [`RFC-015-architecture-self-review.md`](../reviews/RFC-015-architecture-self-review.md) | — |
+| RFC-015 | Capture Target Registry | **Architecture frozen 2026-08-05** (Governor freeze gate at `0ad18b3`); Phase 0 shipped, Phases 1–4 outstanding | [`RFC-015-capture-target-registry.md`](RFC-015-capture-target-registry.md) | — | self-review [`RFC-015-architecture-self-review.md`](../reviews/RFC-015-architecture-self-review.md); freeze record [`RFC-015-architecture-freeze-record.md`](../reviews/RFC-015-architecture-freeze-record.md) | — |
 
 RFC-012 is the weekly exception-driven operating loop above RFC-011: an
 attention queue with capture, review and resolve actions. It is a strict
@@ -92,6 +92,14 @@ registration is a workflow within a boundary that also owns the derived
 registry, discovery, compatibility, lifecycle and retirement. RFC-015 approves
 one new canonical event, `core.telemetry_stream.retired`; entity closure and
 stream retirement remain separate canonical facts.
+
+**RFC-015's architecture was frozen at the Governor freeze gate on 2026-08-05**
+([freeze record](../reviews/RFC-015-architecture-freeze-record.md)). Phase 0 —
+correcting the false "Capture is not configured" empty state — has shipped;
+Phases 1–4 are outstanding. Phase 0 corrected rendering only and implemented no
+registry behaviour, so it is not evidence that the Capture Target Registry
+exists. Phase 1 is blocked until the production `entity_exists` stub is
+replaced (criterion P1-A).
 
 ## Engineering governance
 
