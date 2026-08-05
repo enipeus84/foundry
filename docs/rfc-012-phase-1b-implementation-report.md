@@ -17,6 +17,11 @@ does not introduce persistence, vocabulary, entities, or a new write path.
 The existing `/acquisition/inbox` remains available and unchanged, satisfying
 AC-10's parity-before-retirement rule.
 
+Local and deployed previews use the configured Supabase Google OAuth flow at
+`/login` → `/auth/google` → `/auth/callback`; there is no development auth
+bypass. The Operations Console therefore renders only for the configured
+authorised account, under the same SAFE-012-01 controls as production.
+
 ## SAFE-012-01
 
 All Phase 1B state-changing routes require an authenticated, configured

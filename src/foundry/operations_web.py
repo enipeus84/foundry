@@ -7,7 +7,7 @@ import json
 import os
 import time
 from pathlib import Path
-from urllib.parse import parse_qs, quote
+from urllib.parse import parse_qs
 
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -81,7 +81,6 @@ def operations(request: Request):
         cards.append(f"<article><h2>{html.escape(item.kind)}</h2>"
                      f"<p>{html.escape(item.summary)}</p><p class=\"muted\">"
                      f"Subject: <code>{html.escape(item.subject_id)}</code></p><p>{action}</p></article>")
-    token = html.escape(webauth.csrf_token(email, webauth.load_config(), _PURPOSE), quote=True)
     body = (f"<h1>OPERATIONS CONSOLE</h1><p>{html.escape(view.summary_line())}</p>"
             + ("".join(cards) or "<p>Nothing needs attention.</p>")
             + f'<p><a href="/operations/capture">Capture a manual fact</a></p>')
