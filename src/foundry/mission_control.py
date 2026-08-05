@@ -978,7 +978,7 @@ _SHELL = """<!doctype html>
 """
 
 _NAV = (("FLIGHT DECK", "/"), ("FINANCE", "/finance"), ("DECISIONS", "/decisions"),
-        ("MISSIONS", "/missions"), ("SETTINGS", "/settings"))
+        ("MISSIONS", "/missions"), ("OPERATIONS", "/operations"), ("SETTINGS", "/settings"))
 
 _EARTHRISE_PATH = "/static/earthrise.webp"
 

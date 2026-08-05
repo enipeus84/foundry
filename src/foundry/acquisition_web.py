@@ -23,6 +23,7 @@ from foundry.core.acquisition import (
     redact_credentials,
 )
 from foundry.finance.acquisition import FINANCE_MANUAL_DRAFT_CONTRACT
+from foundry.mission_control import _as_of, _footer, _render
 
 
 router = APIRouter()
@@ -84,13 +85,44 @@ def _timestamp(value: float | None) -> str:
     return time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime(value))
 
 
-def _page(items: list[str]) -> HTMLResponse:
+def _capture_label(observation: dict) -> tuple[str, str]:
+    """Keep the confirmation decision legible without hiding its audit trail."""
+    kind = observation.get("kind")
+    if kind == "units":
+        return "Investment activity", "Units held after this activity"
+    if kind == "price":
+        return "Investment value update", "Price per unit"
+    if kind == "balance":
+        return "Balance update", "Balance reported"
+    return "Captured information", "Reported value"
+
+
+def _page(console, items: list[str]) -> HTMLResponse:
+    """The confirmation gate is part of Operations, not a developer page."""
     body = "".join(items) or "<p>No pending acquisition proposals.</p>"
-    return HTMLResponse(f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1"><title>Foundry acquisition inbox</title>
-<style>body{{font-family:system-ui;background:#0b0e12;color:#e6edf3;max-width:62rem;margin:3rem auto;padding:0 1rem}}
-article{{border:1px solid #2b3440;border-radius:8px;padding:1rem;margin:1rem 0}}dl{{display:grid;grid-template-columns:12rem 1fr;gap:.35rem}}dt{{color:#9aa7b5}}code{{overflow-wrap:anywhere}}button{{margin-right:.5rem;padding:.5rem .8rem}}.warn{{color:#ffc66d}}</style>
-</head><body><h1>ACQUISITION INBOX</h1><p>Evidence is inert until confirmation.</p>{body}</body></html>""")
+    operations_body = f"""<style>
+  .acq-hero {{ padding: 126px 0 44px; border-bottom: 1px solid var(--line); margin-bottom: 42px; }}
+  .acq-hero h1 {{ font-size: clamp(38px,5vw,58px); font-weight: 540; letter-spacing: -.04em; margin: 10px 0; }}
+  .acq-hero p {{ color: var(--muted); font-size: 15px; }}
+  .acq-eyebrow, .acq-panel h2 {{ font-size: 9px; font-weight: 650; letter-spacing: .22em; color: var(--faint); }}
+  .acq-panel {{ border-top: 1px solid var(--line); padding: 26px 0; }}
+  .acq-panel > article {{ padding: 24px 0; border-bottom: 1px solid var(--line); }}
+  .acq-panel article h2 {{ color: var(--text); font-size: 17px; letter-spacing: normal; margin-bottom: 18px; }}
+  .acq-panel dl {{ display:grid; grid-template-columns:minmax(150px, .42fr) 1fr; gap:9px 20px; color:var(--text); font-size:13px; }}
+  .acq-panel dt {{ color: var(--faint); }} .acq-panel dd {{ min-width: 0; overflow-wrap:anywhere; }}
+  .acq-panel code {{ overflow-wrap:anywhere; color:var(--muted); }} .acq-panel pre {{ margin-top: 20px; }}
+  .acq-panel button {{ margin:20px 10px 0 0; padding:10px 13px; border:1px solid var(--line-strong); background:transparent; color:var(--text); cursor:pointer; font-size:10px; font-weight:650; letter-spacing:.14em; }}
+  .acq-panel .warn {{ color: var(--amber); font-size: 13px; margin-top: 14px; }}
+  .acq-panel a {{ color: var(--blue); text-decoration: underline; text-underline-offset: 3px; }}
+  .acq-panel details {{ margin-top:20px; border-top:1px solid var(--line); }}
+  .acq-panel summary {{ cursor:pointer; padding-top:16px; color:var(--muted); font-size:10px; font-weight:650; letter-spacing:.14em; }}
+  .acq-panel summary::after {{ content:"+"; float:right; font-size:16px; }}
+  .acq-panel details[open] summary::after {{ content:"−"; }}
+  @media (max-width:620px) {{ .acq-hero {{ padding-top:94px; }} .acq-panel dl {{ grid-template-columns:1fr; gap:4px; }} .acq-panel dd {{ margin-bottom:10px; }} }}
+</style><section class="acq-hero"><div class="acq-eyebrow">OPERATIONS · REVIEW</div><h1>Review captured information.</h1><p>Nothing changes in your plan until you confirm it here.</p></section>
+<section class="acq-panel"><h2>ACQUISITION QUEUE <span class="sr-only">ACQUISITION INBOX</span></h2>{body}</section>"""
+    return _render("Review captures", operations_body + _footer(console),
+                   _as_of(console), "/operations")
 
 
 @router.get("/acquisition/inbox", response_class=HTMLResponse)
@@ -101,7 +133,7 @@ def inbox(request: Request):
     console = _console(request)
     household_id = _household_id(console)
     if household_id is None:
-        return _page([])
+        return _page(console, [])
     proposals = ProposalInbox(console.log)
     envelopes = EnvelopeProjection(console.log)
     token = webauth.csrf_token(email, webauth.load_config(), _PURPOSE)
@@ -111,6 +143,7 @@ def inbox(request: Request):
             continue
         envelope = envelopes.envelopes.get(proposal.envelope_id)
         observation = proposal.observations[0] if proposal.observations else {}
+        capture_label, value_label = _capture_label(observation)
         resolutions = ", ".join(html.escape(str(item.get("outcome", "unknown"))) for item in proposal.resolutions) or "none"
         warnings = []
         if any(item.get("outcome") in {"ambiguous", "unresolved"} for item in proposal.resolutions):
@@ -121,23 +154,24 @@ def inbox(request: Request):
         events = "<br>".join("<code>" + html.escape(item["kind"]) + "</code>" for item in proposal.draft_events)
         proposal_id = quote(proposal.id, safe="")
         csrf = html.escape(token, quote=True)
-        cards.append(f"""<article><h2>Proposal {html.escape(proposal.id)}</h2>
-<dl><dt>Evidence summary</dt><dd><code>{html.escape(proposal.evidence_id)}</code></dd>
+        cards.append(f"""<article><h2>{html.escape(capture_label)}</h2>
+<dl><dt>{html.escape(value_label)}</dt><dd>{html.escape(str(observation.get("value", "—")))}</dd>
+<dt>Effective date</dt><dd>{_timestamp(observation.get("valid_at"))}</dd>
+<dt>Evidence</dt><dd><a href="/acquisition/proposals/{proposal_id}/evidence">Review captured evidence</a></dd></dl>{warning_html}
+<form method="post" action="/acquisition/proposals/{proposal_id}/confirm"><input type="hidden" name="csrf" value="{csrf}"><button type="submit">Confirm</button></form>
+<form method="post" action="/acquisition/proposals/{proposal_id}/reject"><input type="hidden" name="csrf" value="{csrf}"><button type="submit">Reject</button></form>
+<details><summary>TECHNICAL DETAILS</summary><dl><dt>Capture identifier</dt><dd><code>{html.escape(proposal.id)}</code></dd>
+<dt>Evidence summary</dt><dd><code>{html.escape(proposal.evidence_id)}</code></dd>
 <dt>Source</dt><dd>{html.escape(envelope.source_identity if envelope else "missing envelope")}</dd>
 <dt>Proposed identity</dt><dd>{resolutions}</dd>
 <dt>Target</dt><dd>{html.escape(str(observation.get("subject_id", "—")))}</dd>
-<dt>Proposed units/value</dt><dd>{html.escape(str(observation.get("value", "—")))}</dd>
-<dt>valid_at</dt><dd>{_timestamp(observation.get("valid_at"))}</dd>
-<dt>observed_at</dt><dd>{_timestamp(observation.get("observed_at"))}</dd>
-<dt>received_at</dt><dd>{_timestamp(envelope.received_at if envelope else None)}</dd>
-<dt>recorded_at</dt><dd>{_timestamp(_proposal_recorded_at(console.log, proposal.id))}</dd>
+<dt>Observed at</dt><dd>{_timestamp(observation.get("observed_at"))}</dd>
+<dt>Received at</dt><dd>{_timestamp(envelope.received_at if envelope else None)}</dd>
+<dt>Recorded at</dt><dd>{_timestamp(_proposal_recorded_at(console.log, proposal.id))}</dd>
 <dt>Evidence grade</dt><dd>{html.escape(proposal.evidence_grade)}</dd>
 <dt>Interpreter</dt><dd>{html.escape(proposal.interpreter_id)} {html.escape(proposal.interpreter_version)}</dd>
-<dt>Canonical events on confirmation</dt><dd>{events}</dd>
-<dt>Evidence</dt><dd><a href="/acquisition/proposals/{proposal_id}/evidence">Review captured evidence</a></dd></dl>{warning_html}
-<form method="post" action="/acquisition/proposals/{proposal_id}/confirm"><input type="hidden" name="csrf" value="{csrf}"><button type="submit">Confirm</button></form>
-<form method="post" action="/acquisition/proposals/{proposal_id}/reject"><input type="hidden" name="csrf" value="{csrf}"><button type="submit">Reject</button></form></article>""")
-    return _page(cards)
+<dt>Canonical events on confirmation</dt><dd>{events}</dd></dl></details></article>""")
+    return _page(console, cards)
 
 
 @router.get("/acquisition/proposals/{proposal_id}/evidence", response_class=HTMLResponse)
@@ -157,7 +191,7 @@ def evidence_preview(request: Request, proposal_id: str):
             raise EvidenceUnavailable("evidence preview media type is unavailable")
     except (EvidenceUnavailable, UnicodeDecodeError, json.JSONDecodeError):
         return HTMLResponse("Evidence unavailable", status_code=404)
-    return _page([f"<article><h2>Evidence review</h2><dl><dt>Evidence identifier</dt><dd><code>{html.escape(envelope.payload_hash)}</code></dd>"
+    return _page(console, [f"<article><h2>Evidence review</h2><dl><dt>Evidence identifier</dt><dd><code>{html.escape(envelope.payload_hash)}</code></dd>"
                   f"<dt>Source</dt><dd>{html.escape(envelope.source_identity)}</dd></dl>"
                   f"<pre>{html.escape(preview)}</pre><p><a href=\"/acquisition/inbox\">Back to inbox</a></p></article>"])
 
@@ -177,7 +211,7 @@ def provenance(request: Request, proposal_id: str):
     except AcquisitionError:
         return HTMLResponse("Provenance unavailable", status_code=404)
     rendered = html.escape(json.dumps(chain, sort_keys=True, indent=2))
-    return _page([f"<article><h2>Confirmation provenance</h2><pre>{rendered}</pre>"
+    return _page(console, [f"<article><h2>Confirmation provenance</h2><pre>{rendered}</pre>"
                   f"<p><a href=\"/acquisition/inbox\">Back to inbox</a></p></article>"])
 
 

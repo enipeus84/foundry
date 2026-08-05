@@ -841,13 +841,13 @@ def test_rfc010_phase_2_route_goldens_are_pinned_for_all_four_missions(
 
     assert hashes == {
         "financial-resilience":
-            "c82de9f26f914e9bd358b0ed620ae698fa2eb754b3fe6a39370f8f3364a24be9",
+            "c063483782191ab53cb3888176d47c256868d4ac76f4199d2f3296bed903e561",
         "financial-independence":
-            "0b818e93e043f86a56a00c83d224dddeacac390f42569507b7a19e02a75439e9",
+            "52c9c6e5fe2485c2878c1509fb47eadf474e3751f0a6608c9dbdeb7abbe1de29",
         "pension-independence":
-            "b683086d31525dfbd958a4ece3e84e6adaae9c3dcd1c7598bcdcc9e07cb45caf",
+            "95c61d7ff6ff72f4cb4c5ac82a933ec92615a5a3c5563319141d2e08bf7d91ab",
         "mortgage-freedom":
-            "a49c9f45d10a9fcbe2cdbc949ab6f4a1d3fef86cd17e5307535dc4398b59e938",
+            "745197651e84e8eeb192024dbbe1d27e01816d952cb783fdba62802c90300ad2",
     }
 
 
