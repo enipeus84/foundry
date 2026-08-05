@@ -53,7 +53,7 @@ Phases 1–4; Phases 5–10 remain outstanding and are separate burn candidates.
 |---|---|---|---|---|---|---|
 | RFC-012 | Telemetry Operations Console | **Complete — product remediation merged 2026-08-05** | [`RFC-012-telemetry-operations-console.md`](RFC-012-telemetry-operations-console.md) (Revision 2, after Governor amendments A1–A6) | [PR #30 comment](https://github.com/enipeus84/foundry/pull/30#issuecomment-5159867761) — SAFE: GO, two advisory findings, no remediation required | [`rfc-012-architecture-post-flight-report.md`](../rfc-012-architecture-post-flight-report.md) | [#30](https://github.com/enipeus84/foundry/pull/30) (architecture); [#35](https://github.com/enipeus84/foundry/pull/35) (product remediation) |
 | RFC-013 | Operations Capture Contracts | **Implementation ready for SAFE review** | — | — | [`rfc-013-implementation-report.md`](../rfc-013-implementation-report.md) | — |
-| RFC-015 | Capture Target Registration | **Architecture draft — proposed, not frozen; awaiting Governor review** | [`RFC-015-capture-target-registration.md`](RFC-015-capture-target-registration.md) | — | self-review [`RFC-015-architecture-self-review.md`](../reviews/RFC-015-architecture-self-review.md) | — |
+| RFC-015 | Capture Target Registry | **Architecture approved 2026-08-05 — Governor: GO WITH AMENDMENT (title). Not frozen; not yet implemented** | [`RFC-015-capture-target-registry.md`](RFC-015-capture-target-registry.md) | — | self-review [`RFC-015-architecture-self-review.md`](../reviews/RFC-015-architecture-self-review.md) | — |
 
 RFC-012 is the weekly exception-driven operating loop above RFC-011: an
 attention queue with capture, review and resolve actions. It is a strict
@@ -72,17 +72,26 @@ are recorded in RFC-012 §2.8 as **provisional programme direction only**.
 Neither has approved architecture, and each requires its own architecture burn
 and independent boundary challenge before any freeze.
 
-**The RFC-013 number is contested and remains a Governor decision.** The
+**The RFC-013 number is contested and remains an open Governor decision.** The
 provisional *Asset Registry & Provenance* boundary was displaced when the
 number was used for *Operations Capture Contracts*, whose implementation report
 states that it "claims neither a resolved RFC number nor architectural
-approval". RFC-015 does not resolve that; it deliberately takes the next free
-number rather than overwrite the live RFC-014 (*Governed Corrections*)
-boundary. RFC-015 proposes decomposing the displaced boundary into RFC-015
-(capture-target registration — occasional curation) and a future RFC-016
-(asset detail and provenance investigation — rare investigation), applying the
-rhythm test RFC-012 §2.8 required of its successor. All three questions are
-listed as Governor decisions G1–G3 in the RFC-015 draft.
+approval". The Governor has ruled that this is **recorded governance debt**
+and that *Capture Contracts is not retrospectively renumbered* during the
+RFC-015 burn; the number is settled separately.
+
+**RFC-015 was approved at Governor review on 2026-08-05 (GO WITH AMENDMENT).**
+It took the next free number rather than overwrite the live RFC-014
+(*Governed Corrections*) boundary, which **remains reserved**. The Governor
+accepted the decomposition of the displaced boundary into RFC-015 (capture
+target registry — occasional curation) and a future RFC-016 (asset detail and
+provenance investigation — rare investigation), applying the rhythm test
+RFC-012 §2.8 required of its successor. The amendment was to the title:
+*Capture Target Registry*, not *Capture Target Registration*, because
+registration is a workflow within a boundary that also owns the derived
+registry, discovery, compatibility, lifecycle and retirement. RFC-015 approves
+one new canonical event, `core.telemetry_stream.retired`; entity closure and
+stream retirement remain separate canonical facts.
 
 ## Engineering governance
 

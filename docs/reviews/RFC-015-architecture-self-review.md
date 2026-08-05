@@ -1,8 +1,14 @@
-# RFC-015 — Architecture Self-Review
+# RFC-015 — Capture Target Registry: Architecture Self-Review
 
-Adversarial review of [`RFC-015-capture-target-registration.md`](../rfcs/RFC-015-capture-target-registration.md),
+Adversarial review of [`RFC-015-capture-target-registry.md`](../rfcs/RFC-015-capture-target-registry.md),
 performed against the mission's explicit review challenges. Every claim below
 is grounded in a cited repository line, not in the RFC's own assertions.
+
+**Governor review outcome: GO WITH AMENDMENT.** The amendment is the title —
+*Capture Target Registry*, not *Capture Target Registration* — on the grounds
+that registration is one workflow inside a boundary that also owns the derived
+registry, discovery, compatibility, lifecycle and retirement. This review's
+findings were accepted; Part 4 records their dispositions as ruled.
 
 ---
 
@@ -210,9 +216,10 @@ but `statement_total` is also claimed by the legacy `_workflow()` mapping
 (`src/foundry/operations_web.py:117`) with a **different** canonical outcome.
 One property, two meanings, and a declarative compatibility rule cannot choose.
 `statement_total` is the RFC-011 reconciliation lens's input; `cash_balance` is
-the Path B record-only observation RFC-013 documented. Recommended to the
-Governor as G4 — **a recommendation against RFC-013's shipped metadata**, not a
-change applied here.
+the Path B record-only observation RFC-013 documented. Raised as G4 — **a
+recommendation against RFC-013's shipped metadata**. **Approved by the
+Governor**, to be removed **through an explicit governed amendment** to the
+Capture Contracts work rather than as a side effect of this burn.
 
 ### C6. Finance-specific or domain-neutral? — **Split by layer**
 
@@ -228,14 +235,17 @@ Operations do not change.
 
 | # | Finding | Disposition |
 |---|---|---|
-| S1 | `entity_exists=lambda _entity: True` at `src/foundry/operations_web.py:60` and in the capture POST path **disables** the existence check at `src/foundry/core/acquisition.py:262` in production | Must be fixed in Phase 1 before any registration path is exposed. Recorded in §10. Pre-existing defect, not introduced here. |
-| S2 | Brief sequenced retirement into Phase 4; append-only `setdefault` makes Phase 2 declarations irretractable until it ships | RFC challenges the sequence and moves retirement to Phase 1 (§14, G6) |
-| S3 | Deployed Cash ISA's `account_type` is unknown; if it is `brokerage` (as in the fixtures, where the ISA is a brokerage account with `tax_wrapper="isa"`) it is **not** admissible for `cash_balance` under §5.2 | Recorded as an open dependency (§13, G7), not guessed |
-| S4 | Nothing prevents two streams sharing `(household, subject, property)`; `declare()` checks only stream id (`:213`) | Uniqueness rule + conflict state (§3.4, UI state 7) |
-| S5 | The RFC adds a canonical event, which any freeze must justify | Four independent proofs of insufficiency (§1.5); footprint held to one |
+| # | Finding | Disposition *(post-review)* |
+|---|---|---|
+| S1 | `entity_exists=lambda _entity: True` at `src/foundry/operations_web.py:60` and in the capture POST path **disables** the existence check at `src/foundry/core/acquisition.py:262` in production | **Ruled an implementation blocker.** Now Phase 1 acceptance criterion **P1-A** (§14.1); no registration path may be exposed while the stub remains. Pre-existing defect, not introduced here. |
+| S2 | Brief sequenced retirement into Phase 4; append-only `setdefault` makes Phase 2 declarations irretractable until it ships | **Challenge upheld.** Retirement moved to Phase 1; retirement must precede bootstrap (§14, G6) |
+| S3 | Deployed Cash ISA's `account_type` is unknown; if it is `brokerage` (as in the fixtures, where the ISA is a brokerage account with `tax_wrapper="isa"`) it is **not** admissible for `cash_balance` under §5.2 | **Ruled:** must not be assumed eligible from its display name; resolve the canonical type at runtime and **fail closed** (§13, G7) |
+| S4 | Nothing prevents two streams sharing `(household, subject, property)`; `declare()` checks only stream id (`:213`) | Uniqueness rule + conflict state (§3.4, UI state 7); Phase 1 criterion **P1-D** |
+| S5 | The RFC adds a canonical event, which any freeze must justify | Four independent proofs of insufficiency (§1.5); footprint held to one. **Event approved**; entity closure and stream retirement remain separate canonical facts |
 
-**No finding blocks Governor review.** S1 and S3 are prerequisites for
-*implementation* phases, both explicitly recorded.
+No finding blocked approval. S1 and S3 are prerequisites for *implementation*
+phases and are now carried as binding Phase 1 and Phase 2 conditions rather
+than as advisory notes.
 
 ---
 
@@ -256,4 +266,6 @@ Operations do not change.
 
 ---
 
-**Status: ready for Governor review. Architecture is not frozen.**
+**Status: Governor review complete — GO WITH AMENDMENT. Title amendment
+applied. Architecture is approved but not frozen; the freeze gate is separate
+and has not been requested.**

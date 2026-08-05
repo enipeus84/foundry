@@ -1,10 +1,13 @@
-# RFC-015 — Capture Target Registration
+# RFC-015 — Capture Target Registry
 
-**Status:** Architecture draft — **not frozen**. Prepared for Governor review.
-**Working title:** Capture Target Registry
-**Proposed title:** Capture Target Registration
+**Status:** Architecture **approved — GO WITH AMENDMENT** at Governor review.
+Not frozen; the freeze gate is separate.
+**Title:** Capture Target Registry *(amended by the Governor from "Capture
+Target Registration": the architecture concerns the derived registry,
+discovery, compatibility, lifecycle and retirement of capture targets;
+registration is a workflow within that boundary, not the boundary itself)*
 **Depends on:** RFC-011 (acquisition), RFC-012 (Operations), RFC-013 (capture
-contracts, number pending Governor ratification)
+contracts; number contested and expressly **not** renumbered during this burn)
 **Supersedes in part:** the provisional "Asset Registry & Provenance" boundary
 recorded in RFC-012 §2.8
 
@@ -36,9 +39,15 @@ constrain the number this mission may take:
    registration would repeat exactly the overwrite that produced the RFC-013
    debt.
 
-**Recommendation: this mission is RFC-015 — Capture Target Registration.**
+**Recommendation: this mission is RFC-015 — Capture Target Registry.**
 Taking the next free number costs nothing and leaves both contested boundaries
 intact for the Governor to settle independently.
+
+> **Governor ruling (approved).** RFC-015 is the correct programme number.
+> RFC-014 remains reserved for Governed Corrections. The displacement of the
+> provisional RFC-013 boundary is recorded governance debt and must not be
+> repeated by overwriting RFC-014. **Capture Contracts is not retrospectively
+> renumbered during this burn.**
 
 ### Does this belong with "Asset Registry & Provenance"? — *No*
 
@@ -63,19 +72,28 @@ behind an investigative surface nobody needs until history exists.
 decomposed, not inherited:**
 
 ```text
-RFC-015  Capture Target Registration            this document
+RFC-015  Capture Target Registry                  this document
 RFC-016  Asset Detail & Provenance Investigation  successor; not proposed here
 ```
 
-The proposed title is **Capture Target Registration**, *not* "Capture Targets,
-Asset Registration & Provenance". Registration provenance is an **attribute of
-the declaration** (§8) and is fully in scope; provenance *investigation* is a
-**surface** and is not. Naming both in the title would re-import the boundary
-this section just split.
+The title is **Capture Target Registry**, *not* "Capture Targets, Asset
+Registration & Provenance". Two exclusions, for two different reasons:
 
-**Governor decisions requested:** (G1) ratify RFC-015 for this mission;
-(G2) settle the RFC-013 number independently; (G3) accept or reject the
-decomposition of the "Asset Registry & Provenance" boundary.
+- **"Provenance" is excluded** because registration provenance is an
+  **attribute of the declaration** (§8) and is fully in scope, whereas
+  provenance *investigation* is a **surface** and is not. Naming it in the
+  title would re-import the boundary this section just split.
+- **"Registration" is excluded** *(Governor amendment)* because registration
+  is one **workflow** (§7) inside a larger architecture that also owns the
+  derived registry (§2), discovery and compatibility (§6), lifecycle and
+  retirement (§9). Naming the boundary after one of its workflows would
+  understate it — and would invite a later RFC to claim the registry itself as
+  unclaimed territory.
+
+**Governor rulings (all three settled):** (G1) RFC-015 ratified for this
+mission; (G2) the RFC-013 number remains a separate, open Governor decision and
+is **not** resolved here; (G3) the decomposition of the "Asset Registry &
+Provenance" boundary is accepted.
 
 ---
 
@@ -401,9 +419,15 @@ recommend the Governor drop `statement_total` from
 `cash-balance-update.stream_properties`. `statement_total` is the RFC-011
 reconciliation lens's input, per RFC-013's own report; `cash_balance` is the
 Path B record-only observation. Keeping them distinct preserves the Path B
-boundary RFC-013 documented explicitly. **This is a recommendation against
-RFC-013's shipped metadata and is flagged for Governor decision (G4)**, not
-applied here.
+boundary RFC-013 documented explicitly.
+
+> **Governor ruling (approved — G4).** `statement_total` is to be removed from
+> the Cash Balance contract's compatibility set; it must not retain two
+> canonical meanings. The removal proceeds **through an explicit governed
+> amendment** to the Capture Contracts work — **not** as a side effect of this
+> architecture burn, and not in this branch. RFC-015 bootstraps cash targets on
+> `cash_balance` only, which is correct both before and after that amendment
+> lands.
 
 ---
 
@@ -648,9 +672,14 @@ repository and cannot be confirmed from it. The Cash ISA in particular carries
 `tax_wrapper == "isa"` on a `brokerage` account in the fixtures, which is *not*
 in the `cash_balance` admissible set of §5.2 — so whether the deployed "Cash
 ISA" is a `savings` account or a `brokerage` account **materially changes
-whether it is a valid cash target**. This must be resolved by inspecting the
-deployed log during Phase 2, before any declaration is appended. It is recorded
-here as an unresolved decision rather than guessed.
+whether it is a valid cash target**.
+
+> **Governor ruling (G7).** The deployed Cash ISA **must not be assumed
+> eligible from its display name.** Phase 2 resolves its canonical entity type
+> at runtime against the live log and **fails closed**: if the resolved
+> `account_type` is not in the `cash_balance` admissible set of §5.2, the
+> bootstrap declares nothing for it and reports why. An account is never
+> promoted to a target because its name contains "Cash" or "ISA".
 
 ---
 
@@ -677,6 +706,24 @@ implementable would create production state that cannot be corrected — a sold
 property would remain captureable, with no mechanism to stop it, until Phase 4
 shipped. Retirement is not hardening; it is a precondition for declaring
 anything real.
+
+> **Governor ruling (approved).** The delivery sequence is approved as
+> Phase 0 → 1 → 2 → 3 → 4 above. **Retirement must precede bootstrap**, because
+> declared streams would otherwise be permanently selectable in the append-only
+> model.
+
+### 14.1 Phase 1 acceptance criteria *(Governor ruling 7 — binding)*
+
+Phase 1 does not pass until **all** of the following hold. The first is an
+explicit **implementation blocker**:
+
+| # | Criterion |
+|---|---|
+| **P1-A** | **`entity_exists` is bound to the real Finance entity projection at the composition root.** The production stubs `entity_exists=lambda _entity: True` at `src/foundry/operations_web.py:60` and in the capture POST path are removed, restoring the check at `src/foundry/core/acquisition.py:262`. A test asserts that registering an unknown `subject_id` is refused. **No registration path may be exposed while the stub remains.** |
+| P1-B | The registry projection resolves targets by the §6 rule, with household equality enforced across stream, registration and session. |
+| P1-C | `core.telemetry_stream.retired` is implemented and folded by `rebuild()`; retired streams leave selection and remain resolvable for history. |
+| P1-D | `(household_id, subject_id, property)` uniqueness is enforced at declaration; pre-existing duplicates surface as a conflict (§3.4) rather than an arbitrary pick. |
+| P1-E | Orphan streams, cross-household streams and closed entities are excluded — each with its own test. |
 
 ---
 
@@ -734,16 +781,23 @@ anything real.
 
 ---
 
-## 18. Unresolved decisions for the Governor
+## 18. Governor decision register
 
-| # | Decision |
-|---|---|
-| G1 | Ratify **RFC-015 — Capture Target Registration** for this mission |
-| G2 | Settle the RFC-013 number and the displaced *Asset Registry & Provenance* boundary |
-| G3 | Accept the decomposition into RFC-015 (registration) + RFC-016 (provenance investigation) |
-| G4 | Drop `statement_total` from `cash-balance-update.stream_properties` (§6.1) |
-| G5 | Approve the single new event `core.telemetry_stream.retired` (§4.1) |
-| G6 | Approve moving retirement from Phase 4 into Phase 1 (§14) |
-| G7 | Confirm the deployed Cash ISA's `account_type` before Phase 2 declares anything (§13) |
+Governor review returned **GO WITH AMENDMENT**. All seven decisions are
+settled; the amendment is the title (§0), applied throughout.
 
-**This architecture is not frozen.** It is submitted for Governor review.
+| # | Decision | Ruling |
+|---|---|---|
+| G1 | RFC number for this mission | **Approved — RFC-015.** RFC-014 remains reserved for Governed Corrections |
+| G2 | The RFC-013 number and the displaced *Asset Registry & Provenance* boundary | **Deferred by ruling.** Recorded governance debt; Capture Contracts is **not** retrospectively renumbered during this burn |
+| G3 | Decomposition into RFC-015 (registry) + RFC-016 (provenance investigation) | **Accepted** |
+| G4 | `statement_total` on `cash-balance-update` | **Approved for removal** — via an **explicit governed amendment**, not as a side effect of this burn. It must not retain two canonical meanings (§6.1) |
+| G5 | New event `core.telemetry_stream.retired` | **Approved.** Entity closure and stream retirement remain **separate canonical facts** (§4.1, §4.2) |
+| G6 | Retirement moved from Phase 4 into Phase 1 | **Approved.** Retirement must precede bootstrap (§14) |
+| G7 | Deployed Cash ISA eligibility | **Ruled:** must **not** be assumed eligible from its display name. Resolve the canonical entity type at runtime and **fail closed** (§13) |
+| — | Title | **Amended:** *Capture Target Registry*, not *Capture Target Registration* (§0) |
+| — | Runtime bootstrap | **Approved.** No repository seed events containing invented or environment-specific entity identifiers (§7.2) |
+| — | `entity_exists` production stub | **Ruled:** an implementation blocker and explicit Phase 1 acceptance criterion — **P1-A** (§14.1) |
+
+**Architecture approved; not frozen.** The freeze gate is separate and has not
+been requested.
