@@ -16,7 +16,8 @@ from foundry.capture_contracts import (  # noqa: E402
     CaptureValidation, EvidencePolicy, capture_contract_registry,
 )
 from foundry.core.acquisition import (  # noqa: E402
-    AcquisitionError, ProposalInbox, TelemetryStream, TelemetryStreamRegistry,
+    AcquisitionError, AssetRegistration, AssetRegistry, ProposalInbox, TelemetryStream,
+    TelemetryStreamRegistry,
 )
 from foundry.core.entities import declare_party  # noqa: E402
 from foundry.core.entities import EntityProjection, join_household  # noqa: E402
@@ -134,11 +135,19 @@ def test_inbox_timestamp_rendering_rejects_unrenderable_stored_values():
 def _capture_streams(path):
     log = EventLog(path / "events.jsonl")
     household = declare_party(log, "household")
+    pension = finance.declare_account(log, "pension", "GBP", name="Pension")
+    cash = finance.declare_account(log, "checking", "GBP", name="Cash")
+    property_ = finance.declare_asset(log, "property", "GBP", name="Home")
+    assets = AssetRegistry(log, entity_exists=lambda subject_id: subject_id in {
+        pension.id, cash.id, property_.id,
+    })
+    for subject_id in (pension.id, cash.id, property_.id):
+        assets.register(AssetRegistration(subject_id, "finance", household.id))
     streams = TelemetryStreamRegistry(log)
     for identifier, subject_id, property_name in (
-        ("pension-value", "pension-1", "pension_balance"),
-        ("cash-value", "cash-1", "cash_balance"),
-        ("property-value", "property-1", "property_valuation"),
+        ("pension-value", pension.id, "pension_balance"),
+        ("cash-value", cash.id, "cash_balance"),
+        ("property-value", property_.id, "property_valuation"),
     ):
         streams.declare(TelemetryStream(
             id=identifier, subject_id=subject_id, property=property_name,
@@ -168,17 +177,19 @@ def _submit_capture(client, contract_id, stream_id, *, amount="450000", valid_at
 def test_identical_contract_submissions_reuse_the_existing_envelope_and_proposal(
         environment, contract_id, stream_id, evidence_reference):
     log = _capture_streams(environment)
+    finance_events_before = sum(event["kind"].startswith("finance.") for event in log.events())
     client = _client()
     first = _submit_capture(client, contract_id, stream_id, evidence_reference=evidence_reference)
     second = _submit_capture(client, contract_id, stream_id, evidence_reference=evidence_reference)
     assert first.status_code == second.status_code == 303
     assert len(ProposalInbox(log).proposals) == 1
     assert sum(event["kind"] == "core.telemetry_envelope.declared" for event in log.events()) == 1
-    assert not any(event["kind"].startswith("finance.") for event in log.events())
+    assert sum(event["kind"].startswith("finance.") for event in log.events()) == finance_events_before
 
 
 def test_changed_capture_values_dates_and_evidence_references_create_distinct_proposals(environment):
     log = _capture_streams(environment)
+    finance_events_before = sum(event["kind"].startswith("finance.") for event in log.events())
     client = _client()
     base = {"contract_id": "property-valuation-update", "stream_id": "property-value",
             "evidence_reference": "valuer-report-2026"}
@@ -191,6 +202,7 @@ def test_changed_capture_values_dates_and_evidence_references_create_distinct_pr
 
 def test_operations_discovers_contracts_and_creates_an_inert_property_draft(environment):
     log = _capture_streams(environment)
+    finance_events_before = sum(event["kind"].startswith("finance.") for event in log.events())
     client = _client()
     chooser = client.get("/operations/capture")
     assert chooser.status_code == 200
@@ -203,7 +215,7 @@ def test_operations_discovers_contracts_and_creates_an_inert_property_draft(envi
     created = _submit_capture(client, "property-valuation-update", "property-value",
                               evidence_reference="valuer-report-2026")
     assert created.status_code == 303 and created.headers["location"] == "/acquisition/inbox"
-    assert not any(event["kind"].startswith("finance.") for event in log.events())
+    assert sum(event["kind"].startswith("finance.") for event in log.events()) == finance_events_before
     proposal = next(iter(ProposalInbox(log).proposals.values()))
     assert proposal.draft_events[0]["kind"] == "finance.valuation.declared"
     assert proposal.state == "pending"
@@ -256,6 +268,8 @@ def test_confirmed_cash_capture_is_a_reconciliation_observation_not_a_finance_pr
     finance.link_ownership(log, "account", account.id, "owner", person.id)
     finance.declare_transaction(log, account.id, 1_000.0, "GBP", "income", 1_000.0)
     streams = TelemetryStreamRegistry(log)
+    AssetRegistry(log, entity_exists=lambda subject_id: subject_id == account.id).register(
+        AssetRegistration(account.id, "finance", household.id))
     streams.declare(TelemetryStream(
         id="cash-value", subject_id=account.id, property="cash_balance", channel="manual",
         refresh_policy="annual", confirmation_policy="review_each", source_identity="user:reviewer",

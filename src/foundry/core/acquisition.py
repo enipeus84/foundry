@@ -196,10 +196,12 @@ class TelemetryStreamRegistry:
     def __init__(self, log: EventLog):
         self.log = log
         self.streams: dict[str, TelemetryStream] = {}
+        self.retired: set[str] = set()
+        self.retirements: dict[str, dict[str, Any]] = {}
         self.rebuild()
 
     def rebuild(self) -> None:
-        self.streams = {}
+        self.streams, self.retired, self.retirements = {}, set(), {}
         for event in self.log.events():
             if event["kind"] == "core.telemetry_stream.declared":
                 payload = event["payload"]
@@ -208,6 +210,17 @@ class TelemetryStreamRegistry:
                 except (KeyError, TypeError, AcquisitionError):
                     continue  # hostile log events are not authority
                 self.streams.setdefault(stream.id, stream)
+            elif event["kind"] == "core.telemetry_stream.retired":
+                payload = event["payload"]
+                stream_id, reason, retired_at = (payload.get("stream_id"), payload.get("reason"),
+                                                  payload.get("retired_at"))
+                if (stream_id in self.streams and isinstance(reason, str) and reason.strip()
+                        and isinstance(retired_at, (int, float))):
+                    self.retired.add(stream_id)
+                    self.retirements.setdefault(stream_id, {
+                        "reason": reason, "retired_at": float(retired_at),
+                        "superseded_by": payload.get("superseded_by"),
+                    })
 
     def declare(self, stream: TelemetryStream, actor: str = "user") -> TelemetryStream:
         if stream.id in self.streams:

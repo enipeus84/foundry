@@ -28,7 +28,10 @@ from foundry.core.acquisition import (
     ProposalInbox, ResolutionService, TelemetryStream, TelemetryStreamRegistry,
     ValuationLenses,
 )
+from foundry.core.capture_targets import CaptureTargetRegistry
 from foundry.finance.acquisition import FinanceManualInterpreter
+from foundry.finance.capture_targets import FinanceCaptureTargetResolver
+from foundry.finance.entities import FinanceEntityProjection
 from foundry.mission_control import _as_of, _footer, _render
 from foundry.operations_console import OperationsConsoleModel
 
@@ -57,12 +60,21 @@ def _model(console) -> OperationsConsoleModel:
     envelopes = EnvelopeProjection(console.log)
     streams = TelemetryStreamRegistry(console.log)
     inbox = ProposalInbox(console.log)
-    registry = AssetRegistry(console.log, entity_exists=lambda _entity: True)
+    registry = _asset_registry(console)
     observations = CanonicalObservationProjection(console.log, envelopes)
     return OperationsConsoleModel(
         registry, streams, inbox,
         ValuationLenses(registry, streams, observations), envelopes,
     )
+
+
+def _target_registry(console) -> CaptureTargetRegistry:
+    return CaptureTargetRegistry(console.log, FinanceCaptureTargetResolver(FinanceEntityProjection(console.log)))
+
+
+def _asset_registry(console) -> AssetRegistry:
+    resolver = FinanceCaptureTargetResolver(FinanceEntityProjection(console.log))
+    return AssetRegistry(console.log, entity_exists=lambda subject_id: resolver.resolve(subject_id) is not None)
 
 
 def _page(console, title: str, body: str) -> HTMLResponse:
@@ -284,20 +296,21 @@ def capture_form(request: Request):
     if household is None:
         return _page(console, "Capture information", _operations_styles() + "<section class=\"ops-hero\"><h1>Nothing to capture yet.</h1><p>An active household is required before a capture can be recorded.</p></section>")
     streams = _manual_streams(console, household)
+    targets = _target_registry(console)
     registry = _contracts(request)
     contract_id = request.query_params.get("contract")
     if contract_id:
         contract = registry.get(contract_id)
         if contract is None:
             return HTMLResponse("Not found", status_code=404)
-        eligible = [stream for stream in streams if contract.accepts_stream(stream.property)]
+        eligible = targets.for_contract(household, contract)
         if not eligible:
             return _page(console, "Capture information", _operations_styles() +
-                         f"<section class=\"ops-hero\"><div class=\"ops-eyebrow\">OPERATIONS · CAPTURE</div><h1>{html.escape(contract.display_name)}</h1><p>No compatible manual telemetry stream is registered.</p><p><a href=\"/operations/capture\">Choose another capture type</a></p></section>")
+                         f"<section class=\"ops-hero\"><div class=\"ops-eyebrow\">OPERATIONS · CAPTURE</div><h1>{html.escape(contract.display_name)}</h1><p>No compatible Capture Targets are registered.</p><p><a href=\"/operations/capture\">Choose another capture type</a></p></section>")
         token = html.escape(webauth.csrf_token(email, webauth.load_config(), _CONTRACT_PURPOSE), quote=True)
         options = "".join(
-            f'<option value="{html.escape(stream.id, quote=True)}">{html.escape(stream.id)} · {html.escape(stream.subject_id)}</option>'
-            for stream in eligible
+            f'<option value="{html.escape(target.id, quote=True)}">{html.escape(target.entity.display_name or target.subject_id)} · {html.escape(_stream_label(target.stream))}</option>'
+            for target in eligible
         )
         rendered_fields = []
         for field in contract.schema:
@@ -325,10 +338,6 @@ def capture_form(request: Request):
         for contract in contracts
     )
     guided = [(stream, _workflow(stream)) for stream in streams if _workflow(stream)]
-    compatible_targets = [
-        stream for stream in streams
-        if any(contract.accepts_stream(stream.property) for contract in contracts)
-    ]
     token = html.escape(webauth.csrf_token(email, webauth.load_config(), _PURPOSE), quote=True)
     options = "".join(
         f'<option value="{html.escape(stream.id, quote=True)}">{html.escape(workflow["title"])} · {html.escape(_stream_label(stream))}</option>'
@@ -336,7 +345,7 @@ def capture_form(request: Request):
     )
     body = _operations_styles() + """<section class="ops-hero"><div class="ops-eyebrow">OPERATIONS · CAPTURE</div>
 <h1>What do you want to record?</h1><p>Tell Foundry what changed in ordinary terms. It will create a reviewable capture; nothing changes in your plan until you approve it.</p></section>"""
-    if contracts and (compatible_targets or guided):
+    if contracts and (targets.for_household(household) or guided):
         body += f'''<section class="ops-panel"><h2>WHAT DO YOU WANT TO RECORD?</h2><div class="ops-list">{cards}</div></section>'''
     if guided:
         body += f"""<section class="ops-panel"><h2>Capture an update</h2><form class="ops-form" method="post" action="/operations/capture">
@@ -349,7 +358,7 @@ def capture_form(request: Request):
 <button class="ops-submit" type="submit">CREATE REVIEW CAPTURE →</button></form></section>"""
     elif not contracts:
         body += """<section class="ops-panel"><h2>Capture is not configured</h2><p class="ops-empty">There are no registered manual updates that Foundry can safely turn into a guided capture yet. Technical capture remains available for the authorised operator.</p></section>"""
-    elif not compatible_targets:
+    elif not targets.for_household(household):
         body += """<section class="ops-panel"><h2>Capture Contracts are available</h2><p class="ops-empty">Operations is configured, but no compatible Capture Targets are currently registered.</p></section>"""
     technical_options = "".join(f'<option value="{html.escape(stream.id, quote=True)}">{html.escape(stream.id)}</option>' for stream in streams)
     body += f"""<details class="ops-disclosure"><summary>TECHNICAL DETAILS</summary>
@@ -410,10 +419,12 @@ async def capture(request: Request):
         try:
             console = _console(request)
             streams = TelemetryStreamRegistry(console.log)
-            stream = streams.streams.get(fields["stream_id"])
-            if (stream is None or stream.household_id != _household(console) or
-                    stream.channel != "manual" or not contract.accepts_stream(stream.property)):
+            household = _household(console)
+            eligible = {target.id: target for target in _target_registry(console).for_contract(household or "", contract)}
+            target = eligible.get(fields["stream_id"])
+            if target is None:
                 return HTMLResponse("Not found", status_code=404)
+            stream = target.stream
             capture_values = {name: fields.get(name, "") for name in contract_fields}
             normalised = contract.normalise(capture_values)
             capture_id = contract.capture_id(normalised, stream_id=stream.id, subject_id=stream.subject_id)
@@ -435,7 +446,7 @@ async def capture(request: Request):
             inbox = ProposalInbox(console.log)
             interpreter = FinanceManualInterpreter(
                 vault, EnvelopeProjection(console.log), streams,
-                ResolutionService(IdentityIndex(console.log), AssetRegistry(console.log, entity_exists=lambda _e: True), inbox),
+                ResolutionService(IdentityIndex(console.log), _asset_registry(console), inbox),
             )
             interpreter.interpret(envelope.id, email)
         except (KeyError, TypeError, ValueError, AcquisitionError, json.JSONDecodeError) as exc:
@@ -478,7 +489,7 @@ async def capture(request: Request):
         inbox = ProposalInbox(console.log)
         interpreter = FinanceManualInterpreter(
             vault, EnvelopeProjection(console.log), streams,
-            ResolutionService(IdentityIndex(console.log), AssetRegistry(console.log, entity_exists=lambda _e: True), inbox),
+            ResolutionService(IdentityIndex(console.log), _asset_registry(console), inbox),
         )
         interpreter.interpret(envelope.id, email)
     except (KeyError, TypeError, ValueError, AcquisitionError, json.JSONDecodeError) as exc:

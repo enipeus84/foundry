@@ -23,6 +23,8 @@ from foundry.core.acquisition import (
     redact_credentials,
 )
 from foundry.finance.acquisition import FINANCE_MANUAL_DRAFT_CONTRACT
+from foundry.finance.capture_targets import FinanceCaptureTargetResolver
+from foundry.finance.entities import FinanceEntityProjection
 from foundry.mission_control import _as_of, _footer, _render
 
 
@@ -62,6 +64,12 @@ def _vault_root() -> Path:
 
 def _vault(email: str) -> EvidenceVault:
     return EvidenceVault(_vault_root(), authorized=lambda actor: actor == email)
+
+
+def _asset_registry(console) -> AssetRegistry:
+    """Use the RFC-015 Finance resolver; never admit a made-up subject."""
+    resolver = FinanceCaptureTargetResolver(FinanceEntityProjection(console.log))
+    return AssetRegistry(console.log, entity_exists=lambda subject_id: resolver.resolve(subject_id) is not None)
 
 
 def _scoped_proposal(request: Request, proposal_id: str):
@@ -230,7 +238,13 @@ def _gate(request: Request, proposal_id: str, csrf: str | None):
     proposal = proposals.proposals.get(proposal_id)
     if proposal is None or proposal.household_id != _household_id(console):
         return None, HTMLResponse("Not found", status_code=404)
-    registry = AssetRegistry(console.log, entity_exists=lambda _entity_id: True)
+    registry = _asset_registry(console)
+    for observation in proposal.observations:
+        subject_id = observation.get("subject_id")
+        registration = registry.registrations.get(subject_id)
+        if (not isinstance(subject_id, str) or not registry.entity_exists(subject_id)
+                or registration is None or registration.household_id != proposal.household_id):
+            return None, HTMLResponse("Not found", status_code=404)
     return ConfirmationGate(console.log, proposals, TelemetryStreamRegistry(console.log),
                             IdentityIndex(console.log), registry,
                             FINANCE_MANUAL_DRAFT_CONTRACT), None
