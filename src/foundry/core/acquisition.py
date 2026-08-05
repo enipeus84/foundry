@@ -196,10 +196,12 @@ class TelemetryStreamRegistry:
     def __init__(self, log: EventLog):
         self.log = log
         self.streams: dict[str, TelemetryStream] = {}
+        self.retired: set[str] = set()
+        self.retirements: dict[str, dict[str, Any]] = {}
         self.rebuild()
 
     def rebuild(self) -> None:
-        self.streams = {}
+        self.streams, self.retired, self.retirements = {}, set(), {}
         for event in self.log.events():
             if event["kind"] == "core.telemetry_stream.declared":
                 payload = event["payload"]
@@ -208,6 +210,17 @@ class TelemetryStreamRegistry:
                 except (KeyError, TypeError, AcquisitionError):
                     continue  # hostile log events are not authority
                 self.streams.setdefault(stream.id, stream)
+            elif event["kind"] == "core.telemetry_stream.retired":
+                payload = event["payload"]
+                stream_id, reason, retired_at = (payload.get("stream_id"), payload.get("reason"),
+                                                  payload.get("retired_at"))
+                if (stream_id in self.streams and isinstance(reason, str) and reason.strip()
+                        and isinstance(retired_at, (int, float))):
+                    self.retired.add(stream_id)
+                    self.retirements.setdefault(stream_id, {
+                        "reason": reason, "retired_at": float(retired_at),
+                        "superseded_by": payload.get("superseded_by"),
+                    })
 
     def declare(self, stream: TelemetryStream, actor: str = "user") -> TelemetryStream:
         if stream.id in self.streams:
@@ -215,6 +228,21 @@ class TelemetryStreamRegistry:
         self.log.append("core.telemetry_stream.declared", stream.as_dict(), actor=actor)
         self.streams[stream.id] = stream
         return stream
+
+    def active_manual_streams(self, household_id: str) -> tuple[TelemetryStream, ...]:
+        """The sole selection view for new manual captures.
+
+        Retired streams remain resolvable in ``streams`` for historical
+        evidence, but are never candidates for a new manual capture.
+        """
+        if not isinstance(household_id, str) or not household_id:
+            return ()
+        return tuple(sorted(
+            (stream for stream in self.streams.values()
+             if stream.id not in self.retired and stream.channel == "manual"
+             and stream.household_id == household_id),
+            key=lambda stream: stream.id,
+        ))
 
 
 @dataclass(frozen=True)
@@ -430,7 +458,8 @@ class ManualAcquisitionProvider:
             raise AcquisitionError("manual provider needs at least one stream")
         for stream_id in self.stream_ids:
             stream = streams.streams.get(stream_id)
-            if stream is None or stream.channel != self.strategy:
+            if (stream is None or stream.id in streams.retired
+                    or stream.channel != self.strategy):
                 raise AcquisitionError("manual provider only serves declared manual streams")
 
     @staticmethod
@@ -449,7 +478,7 @@ class ManualAcquisitionProvider:
                 actor: str, source_identity: str, external_ref: str | None = None,
                 evidence_grade: str = "declared") -> TelemetryEnvelope:
         stream = self.streams.streams.get(stream_id)
-        if stream is None or stream_id not in self.stream_ids:
+        if stream is None or stream_id in self.streams.retired or stream_id not in self.stream_ids:
             raise AcquisitionError("stream is not served by this manual provider")
         if source_identity != stream.source_identity:
             raise AcquisitionError("source identity does not match stream declaration")

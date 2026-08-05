@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from itertools import count
+from copy import deepcopy
 
 import pytest
 
@@ -10,9 +11,12 @@ pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient  # noqa: E402
 
 from foundry import webauth  # noqa: E402
-from foundry.core.acquisition import EvidenceVault, TelemetryStream, TelemetryStreamRegistry  # noqa: E402
+from foundry.core.acquisition import (  # noqa: E402
+    AssetRegistration, AssetRegistry, EvidenceVault, TelemetryStream, TelemetryStreamRegistry,
+)
 from foundry.core.entities import declare_party  # noqa: E402
 from foundry.eventlog import EventLog  # noqa: E402
+from foundry.finance import entities as finance  # noqa: E402
 from foundry.web import app  # noqa: E402
 
 
@@ -45,9 +49,12 @@ def _pending_proposal(path, payload=None):
     payload = payload or b'{"evidence_marker":"captured evidence for proposal-1","observations":[{"quantity":4.0}]}'
     payload_hash, payload_ref = vault.put(payload, ALLOWED)
     household = declare_party(log, "household")
+    account = finance.declare_account(log, "checking", "GBP", name="Canonical account")
+    AssetRegistry(log, entity_exists=lambda subject_id: subject_id == account.id).register(
+        AssetRegistration(account.id, "finance", household.id))
     streams = TelemetryStreamRegistry(log)
     streams.declare(TelemetryStream(
-        id="units", subject_id="holding", property="units", channel="manual",
+        id="units", subject_id=account.id, property="units", channel="manual",
         refresh_policy="monthly", confirmation_policy="review_each",
         source_identity="user:reviewer", unit_or_currency="GBP",
         validation_contract="numeric", household_id=household.id,
@@ -62,9 +69,9 @@ def _pending_proposal(path, payload=None):
         "id": "proposal-1", "evidence_id": payload_hash, "envelope_id": "envelope-1",
         "household_id": household.id, "interpreter_id": "manual-json",
         "interpreter_version": "1", "interpreter_class": "deterministic",
-        "stream_id": "units", "draft_events": [{"kind": "finance.position.updated",
-            "payload": {"entity_id": "holding", "quantity": 4.0}}],
-        "observations": [{"stream_id": "units", "subject_id": "holding", "kind": "units",
+        "stream_id": "units", "draft_events": [{"kind": "finance.account.reconciliation_observed",
+            "payload": {"entity_id": account.id, "supplied_total": 4.0}}],
+        "observations": [{"stream_id": "units", "subject_id": account.id, "kind": "units",
             "value": 4.0, "valid_at": 1_980.0, "observed_at": 1_981.0,
             "external_document_ref": "statement-1"}], "resolutions": [],
         "evidence_grade": "declared", "notes": "<script>hostile</script>"})
@@ -91,7 +98,7 @@ def test_inbox_requires_session_csrf_escapes_content_and_confirms(environment):
     provenance = client.get(confirmed.headers["location"])
     assert provenance.status_code == 200
     assert "manual-json" in provenance.text and "evidence" in provenance.text
-    assert any(event["kind"] == "finance.position.updated" for event in log.events())
+    assert any(event["kind"] == "finance.account.reconciliation_observed" for event in log.events())
     assert any(event["kind"] == "core.observation_proposal.updated" and
                event["payload"]["resolution"] == "confirmed" for event in log.events())
 
@@ -132,3 +139,38 @@ def test_inbox_rejects_cross_household_proposal(environment):
     response = _client().post("/acquisition/proposals/other-proposal/reject", data={"csrf": csrf})
     assert response.status_code == 404
     assert proposal_id == "proposal-1"
+
+
+def test_confirmation_refuses_an_unknown_subject_identifier(environment):
+    log = _pending_proposal(environment)
+    declared = next(event for event in log.events()
+                    if event["kind"] == "core.observation_proposal.declared")
+    payload = deepcopy(declared["payload"])
+    payload["id"] = "unknown-subject-proposal"
+    payload["draft_events"][0]["payload"]["entity_id"] = "unknown-subject"
+    payload["observations"][0]["subject_id"] = "unknown-subject"
+    log.append("core.observation_proposal.declared", payload)
+    csrf = webauth.csrf_token(ALLOWED, webauth.load_config(), "rfc011-confirmation")
+    assert _client().post("/acquisition/proposals/unknown-subject-proposal/confirm",
+                          data={"csrf": csrf}).status_code == 404
+    assert not any(event["kind"] == "core.observation_proposal.updated"
+                   and event["payload"].get("entity_id") == "unknown-subject-proposal"
+                   for event in log.events())
+
+
+def test_confirmation_refuses_a_subject_registered_to_another_household(environment):
+    log = _pending_proposal(environment)
+    other_household = declare_party(log, "household")
+    other_account = finance.declare_account(log, "checking", "GBP", name="Other household")
+    AssetRegistry(log, entity_exists=lambda subject_id: subject_id == other_account.id).register(
+        AssetRegistration(other_account.id, "finance", other_household.id))
+    declared = next(event for event in log.events()
+                    if event["kind"] == "core.observation_proposal.declared")
+    payload = deepcopy(declared["payload"])
+    payload["id"] = "cross-household-subject-proposal"
+    payload["draft_events"][0]["payload"]["entity_id"] = other_account.id
+    payload["observations"][0]["subject_id"] = other_account.id
+    log.append("core.observation_proposal.declared", payload)
+    csrf = webauth.csrf_token(ALLOWED, webauth.load_config(), "rfc011-confirmation")
+    assert _client().post("/acquisition/proposals/cross-household-subject-proposal/confirm",
+                          data={"csrf": csrf}).status_code == 404

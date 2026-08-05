@@ -87,3 +87,22 @@ def test_guided_capture_uses_application_shell_and_existing_confirmation_gate(tm
         "entity_id": "holding-1", "quantity": 12.5, "valuation_date": 1_785_888_000.0,
     }}
     assert not any(event["kind"].startswith("finance.") for event in log.events())
+
+
+def test_retired_manual_streams_are_absent_from_guided_and_technical_selection(tmp_path):
+    log = EventLog(tmp_path / "events.jsonl")
+    household = declare_party(log, "household")
+    TelemetryStreamRegistry(log).declare(TelemetryStream(
+        id="retired-units", subject_id="holding-1", property="units", channel="manual",
+        refresh_policy="monthly", confirmation_policy="review_each",
+        source_identity="user:reviewer", unit_or_currency="GBP",
+        validation_contract="numeric", household_id=household.id,
+        expected_cadence="monthly"))
+    log.append("core.telemetry_stream.retired", {
+        "stream_id": "retired-units", "reason": "superseded", "retired_at": 1.0,
+    })
+
+    response = _client().get("/operations/capture")
+    assert response.status_code == 200
+    assert "Record an investment purchase, sale or RSU vest" not in response.text
+    assert "retired-units" not in response.text
