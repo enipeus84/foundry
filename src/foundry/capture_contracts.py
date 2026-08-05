@@ -10,11 +10,17 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+from hashlib import sha256
+import json
 import math
 import re
 from typing import Any, Iterable, Mapping
 
 from foundry.core.acquisition import AcquisitionError
+
+
+MIN_VALID_AT = 0.0
+MAX_VALID_AT = 253_402_300_799.0  # 9999-12-31T23:59:59Z
 
 
 class EvidencePolicy(str, Enum):
@@ -53,6 +59,8 @@ class CaptureValidation:
             raise AcquisitionError("amount must be a finite non-negative number")
         if not math.isfinite(valid_at):
             raise AcquisitionError("valid_at must be a finite timestamp")
+        if not MIN_VALID_AT <= valid_at <= MAX_VALID_AT:
+            raise AcquisitionError("valid_at is outside the supported Unix timestamp range")
         currency = str(values.get(self.currency_field, "")).upper()
         if not re.fullmatch(r"[A-Z]{3}", currency):
             raise AcquisitionError("currency must be a three-letter ISO code")
@@ -123,9 +131,11 @@ class CaptureContract:
             raise ValueError("capture contract version is required")
         if len({field.name for field in self.schema}) != len(self.schema):
             raise ValueError("capture contract schema contains duplicate fields")
+        if not self.stream_properties:
+            raise ValueError("capture contract must declare at least one stream property")
 
     def accepts_stream(self, property_name: str) -> bool:
-        return not self.stream_properties or property_name in self.stream_properties
+        return property_name in self.stream_properties
 
     def normalise(self, values: Mapping[str, str]) -> dict[str, Any]:
         fields = {item.name: item for item in self.schema}
@@ -147,6 +157,21 @@ class CaptureContract:
               capture_id: str) -> dict[str, Any]:
         return self.canonical_mapper.map(self.normalise(values), subject_id=subject_id,
                                          capture_id=capture_id)
+
+    def capture_id(self, values: Mapping[str, Any], *, stream_id: str,
+                   subject_id: str) -> str:
+        """Stable identifier for a declared valuation draft.
+
+        The id becomes part of immutable evidence, so it must be derived from
+        the same normalised inputs that define capture identity.  Randomness
+        here would bypass RFC-011 envelope idempotency.
+        """
+        identity = {"contract": self.identifier, "version": self.version,
+                    "stream_id": stream_id, "subject_id": subject_id,
+                    "values": dict(values)}
+        encoded = json.dumps(identity, sort_keys=True, separators=(",", ":"),
+                             ensure_ascii=False).encode("utf-8")
+        return f"capture-{self.identifier}-{sha256(encoded).hexdigest()[:24]}"
 
     def review_summary(self, values: Mapping[str, Any], *, subject_id: str) -> str:
         return self.review_template.format(subject_id=subject_id, **values)

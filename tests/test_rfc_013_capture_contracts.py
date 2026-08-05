@@ -10,6 +10,7 @@ pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient  # noqa: E402
 
 from foundry import webauth  # noqa: E402
+from foundry.acquisition_web import _timestamp  # noqa: E402
 from foundry.capture_contracts import (  # noqa: E402
     CanonicalMapper, CaptureContract, CaptureContractRegistry, CaptureField,
     CaptureValidation, EvidencePolicy, capture_contract_registry,
@@ -75,6 +76,22 @@ def test_fourth_contract_is_a_registry_change_not_an_operations_change():
     assert [item.identifier for item in registry.discover()][-1] == "test-fourth-capture"
 
 
+def test_contract_without_a_stream_property_fails_closed():
+    with pytest.raises(ValueError, match="stream property"):
+        CaptureContract(
+            identifier="unsafe-capture", version="1", display_name="Unsafe",
+            description="Must not accept all streams.", capabilities=("manual_capture",),
+            schema=(CaptureField("amount", "Amount", "number"),
+                    CaptureField("currency", "Currency", "text"),
+                    CaptureField("valid_at", "As at", "number")),
+            validation=CaptureValidation(), review_template="Review {subject_id}",
+            evidence_policy=EvidencePolicy.NONE,
+            canonical_mapper=CanonicalMapper("finance.account.reconciliation_observed", "test_value", {
+                "entity_id": "$subject_id", "supplied_total": "$amount", "valid_at": "$valid_at",
+            }),
+        )
+
+
 def test_required_evidence_and_canonical_mapping_are_contract_owned():
     contract = capture_contract_registry().get("property-valuation-update")
     assert contract is not None
@@ -96,30 +113,87 @@ def test_required_evidence_and_canonical_mapping_are_contract_owned():
     assert cash.draft({"amount": "1200", "currency": "GBP", "valid_at": "100"},
                       subject_id="cash-1", capture_id="capture-2")["canonical_event"]["kind"] == (
         "finance.account.reconciliation_observed")
+    for timestamp in ("-1", "253402300800", "1e300"):
+        with pytest.raises(AcquisitionError, match="timestamp"):
+            cash.draft({"amount": "1200", "currency": "GBP", "valid_at": timestamp},
+                       subject_id="cash-1", capture_id="capture-2")
+
+
+def test_inbox_timestamp_rendering_rejects_unrenderable_stored_values():
+    assert _timestamp(1e300) == "Invalid timestamp"
+
+
+def _capture_streams(path):
+    log = EventLog(path / "events.jsonl")
+    household = declare_party(log, "household")
+    streams = TelemetryStreamRegistry(log)
+    for identifier, subject_id, property_name in (
+        ("pension-value", "pension-1", "pension_balance"),
+        ("cash-value", "cash-1", "cash_balance"),
+        ("property-value", "property-1", "property_valuation"),
+    ):
+        streams.declare(TelemetryStream(
+            id=identifier, subject_id=subject_id, property=property_name,
+            channel="manual", refresh_policy="annual", confirmation_policy="review_each",
+            source_identity="user:reviewer", unit_or_currency="GBP", validation_contract="numeric",
+            household_id=household.id, expected_cadence="annual"))
+    return log
+
+
+def _submit_capture(client, contract_id, stream_id, *, amount="450000", valid_at="1700000000",
+                    evidence_reference=None):
+    data = {
+        "csrf": webauth.csrf_token(ALLOWED, webauth.load_config(), "rfc013-capture"),
+        "contract_id": contract_id, "stream_id": stream_id,
+        "amount": amount, "currency": "GBP", "valid_at": valid_at,
+    }
+    if evidence_reference is not None:
+        data["evidence_reference"] = evidence_reference
+    return client.post("/operations/capture", data=data)
+
+
+@pytest.mark.parametrize(("contract_id", "stream_id", "evidence_reference"), [
+    ("pension-balance-update", "pension-value", "pension-statement-2026"),
+    ("cash-balance-update", "cash-value", "cash-statement-2026"),
+    ("property-valuation-update", "property-value", "valuer-report-2026"),
+])
+def test_identical_contract_submissions_reuse_the_existing_envelope_and_proposal(
+        environment, contract_id, stream_id, evidence_reference):
+    log = _capture_streams(environment)
+    client = _client()
+    first = _submit_capture(client, contract_id, stream_id, evidence_reference=evidence_reference)
+    second = _submit_capture(client, contract_id, stream_id, evidence_reference=evidence_reference)
+    assert first.status_code == second.status_code == 303
+    assert len(ProposalInbox(log).proposals) == 1
+    assert sum(event["kind"] == "core.telemetry_envelope.declared" for event in log.events()) == 1
+    assert not any(event["kind"].startswith("finance.") for event in log.events())
+
+
+def test_changed_capture_values_dates_and_evidence_references_create_distinct_proposals(environment):
+    log = _capture_streams(environment)
+    client = _client()
+    base = {"contract_id": "property-valuation-update", "stream_id": "property-value",
+            "evidence_reference": "valuer-report-2026"}
+    assert _submit_capture(client, **base).status_code == 303
+    assert _submit_capture(client, **base, amount="451000").status_code == 303
+    assert _submit_capture(client, **base, valid_at="1700000001").status_code == 303
+    assert _submit_capture(client, **{**base, "evidence_reference": "valuer-report-reissue"}).status_code == 303
+    assert len(ProposalInbox(log).proposals) == 4
 
 
 def test_operations_discovers_contracts_and_creates_an_inert_property_draft(environment):
-    log = EventLog(environment / "events.jsonl")
-    household = declare_party(log, "household")
-    streams = TelemetryStreamRegistry(log)
-    streams.declare(TelemetryStream(
-        id="property-value", subject_id="property-1", property="property_valuation",
-        channel="manual", refresh_policy="annual", confirmation_policy="review_each",
-        source_identity="user:reviewer", unit_or_currency="GBP", validation_contract="numeric",
-        household_id=household.id, expected_cadence="annual"))
+    log = _capture_streams(environment)
     client = _client()
     chooser = client.get("/operations/capture")
     assert chooser.status_code == 200
     assert "WHAT DO YOU WANT TO RECORD?" in chooser.text
     assert "Pension Balance Update" in chooser.text
+    assert "evidence reference is recommended" in chooser.text.lower()
+    assert "evidence reference is optional" in chooser.text.lower()
     form = client.get("/operations/capture?contract=property-valuation-update")
     assert form.status_code == 200 and "Canonical event" not in form.text
-    csrf = webauth.csrf_token(ALLOWED, webauth.load_config(), "rfc013-capture")
-    created = client.post("/operations/capture", data={
-        "csrf": csrf, "contract_id": "property-valuation-update", "stream_id": "property-value",
-        "amount": "450000", "currency": "GBP", "valid_at": "1700000000",
-        "evidence_reference": "valuer-report-2026",
-    })
+    created = _submit_capture(client, "property-valuation-update", "property-value",
+                              evidence_reference="valuer-report-2026")
     assert created.status_code == 303 and created.headers["location"] == "/acquisition/inbox"
     assert not any(event["kind"].startswith("finance.") for event in log.events())
     proposal = next(iter(ProposalInbox(log).proposals.values()))
@@ -130,3 +204,8 @@ def test_operations_discovers_contracts_and_creates_an_inert_property_draft(envi
     })
     assert confirmed.status_code == 303
     assert any(event["kind"] == "finance.valuation.declared" for event in log.events())
+    duplicate = _submit_capture(client, "property-valuation-update", "property-value",
+                                evidence_reference="valuer-report-2026")
+    assert duplicate.status_code == 303
+    assert len(ProposalInbox(log).proposals) == 1
+    assert sum(event["kind"] == "finance.valuation.declared" for event in log.events()) == 1

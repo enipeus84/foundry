@@ -1,8 +1,10 @@
 # RFC-013 — Operations Capture Contracts: Implementation Report
 
-**Status:** implemented; ready for SAFE review.  **Scope:** metadata and
-orchestration only.  This report records the implementation of the approved
-Capture Contract Registry described in the RFC-013 mission brief.
+**Status:** proposed Capture Contracts change; SAFE returned **GO WITH
+FINDINGS** and the mandatory remediation has been performed.  **Scope:**
+metadata and orchestration only.  RFC-number and architecture reconciliation
+remain a Governor decision before merge; this report claims neither a resolved
+RFC number nor architectural approval.
 
 ## Delivered boundary
 
@@ -35,9 +37,31 @@ result is a pending acquisition proposal.  Confirmation remains exclusively
 at RFC-011's existing CSRF-protected inbox gate.  No submission writes a
 `finance.*` event directly.
 
-Evidence policies are explicit values: `NONE`, `OPTIONAL`, `RECOMMENDED` and
-`REQUIRED`.  The property valuation contract requires an evidence reference;
-all captures still retain the immutable RFC-011 evidence envelope.
+Evidence-reference policies are explicit values: `NONE`, `OPTIONAL`,
+`RECOMMENDED` and `REQUIRED`.  The property valuation contract requires an
+evidence reference; the UI distinguishes a recommended reference from an
+optional one.  Foundry stores the capture payload and reference string in the
+immutable RFC-011 evidence envelope.  It does not upload, verify or claim
+custody of the externally referenced artefact; manual capture remains at the
+existing `declared` evidence grade.
+
+## SAFE remediation
+
+F1 is resolved: a valuation draft identifier is derived from the contract
+identifier/version, stream, subject and normalised capture values (including
+the evidence reference).  Identical submissions therefore generate byte-
+identical evidence, reusing RFC-011's existing envelope and proposal
+idempotency.  Changes to amount, effective time or evidence reference create
+a distinct proposal, as documented policy.
+
+F2 is resolved: Operations form attributes are constructed without an escaped
+quote inside an f-string expression, preserving Python 3.10 parsing.
+
+F3 is hardened: capture `valid_at` is constrained to the Unix range from epoch
+through 9999-12-31, and inbox timestamp rendering safely reports invalid
+stored values.  F4 is hardened: a contract must declare at least one compatible
+stream property.  F5 is documented and made visible in the generic capture
+surface; it does not create an evidence-upload or custody subsystem.
 
 ## Verification
 
@@ -47,7 +71,7 @@ declarative mapping, authenticated generic rendering, proposal creation and
 subsequent confirmation.  It also asserts no canonical Finance event exists
 before confirmation.
 
-The focused compatibility suite passed:
+The focused remediation suite passed:
 
 ```text
 19 passed
@@ -56,7 +80,7 @@ tests/test_rfc_012_operations_web.py
 tests/test_rfc_011_acquisition.py
 ```
 
-The full suite also passed: `654 passed`.
+The remediated full suite passed: `660 passed`.
 
 ## Architectural non-changes
 

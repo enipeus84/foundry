@@ -81,7 +81,10 @@ def _timestamp(value: float | None) -> str:
     if value is None:
         return "—"
     import time
-    return time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime(value))
+    try:
+        return time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime(value))
+    except (OverflowError, OSError, TypeError, ValueError):
+        return "Invalid timestamp"
 
 
 def _page(items: list[str]) -> HTMLResponse:

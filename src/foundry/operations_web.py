@@ -5,7 +5,6 @@ from __future__ import annotations
 import html
 import os
 import time
-import uuid
 from pathlib import Path
 from urllib.parse import parse_qs
 
@@ -59,6 +58,18 @@ def _contracts(request: Request) -> CaptureContractRegistry:
     return registry if isinstance(registry, CaptureContractRegistry) else capture_contract_registry()
 
 
+def _evidence_reference_policy(contract: CaptureContract) -> str:
+    """Describe a reference honestly; it is not a verified artefact upload."""
+    policy = contract.evidence_policy.value
+    if policy == "REQUIRED":
+        return "An evidence reference is required; Foundry records the reference, not the external artefact."
+    if policy == "RECOMMENDED":
+        return "An evidence reference is recommended; Foundry records the reference, not the external artefact."
+    if policy == "OPTIONAL":
+        return "An evidence reference is optional; Foundry records it if supplied, not the external artefact."
+    return "No evidence reference is requested."
+
+
 def _page(body: str) -> HTMLResponse:
     return HTMLResponse("""<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>Foundry operations</title>
@@ -106,6 +117,7 @@ def capture_form(request: Request):
             f'<article><h2>{html.escape(contract.display_name)}</h2><p>{html.escape(contract.description)}</p>'
             f'<p class="muted">Version {html.escape(contract.version)} · Evidence: '
             f'{html.escape(contract.evidence_policy.value)}</p>'
+            f'<p class="muted">{html.escape(_evidence_reference_policy(contract))}</p>'
             f'<p><a href="/operations/capture?contract={html.escape(contract.identifier, quote=True)}">'
             f'Record this</a></p></article>'
             for contract in registry.discover())
@@ -123,18 +135,21 @@ def capture_form(request: Request):
                       f'{html.escape(stream.id)} · {html.escape(stream.subject_id)}</option>'
                       for stream in eligible)
     token = html.escape(webauth.csrf_token(email, webauth.load_config(), _PURPOSE), quote=True)
-    fields = "".join(
-        f'<label>{html.escape(field.label)}<input name="{html.escape(field.name, quote=True)}" '
-        f'type="{html.escape(field.input_type, quote=True)}" '
-        f'{"required" if field.required else ""} '
-        f'{"step=\"any\"" if field.input_type == "number" else ""}></label>'
-        f'<span class="muted">{html.escape(field.help_text)}</span>'
-        for field in contract.schema)
+    rendered_fields = []
+    for field in contract.schema:
+        required_attribute = " required" if field.required else ""
+        step_attribute = ' step="any"' if field.input_type == "number" else ""
+        rendered_fields.append(
+            f'<label>{html.escape(field.label)}<input name="{html.escape(field.name, quote=True)}"'
+            f' type="{html.escape(field.input_type, quote=True)}"{required_attribute}{step_attribute}></label>'
+            f'<span class="muted">{html.escape(field.help_text)}</span>')
+    fields = "".join(rendered_fields)
     if not eligible:
         return _page(f"<h1>{html.escape(contract.display_name)}</h1><p>No compatible manual telemetry stream is registered.</p>"
                      '<p><a href="/operations/capture">Choose another capture type</a></p>')
     return _page(f'''<h1>{html.escape(contract.display_name)}</h1><p>{html.escape(contract.description)}</p>
 <p class="muted">Version {html.escape(contract.version)} · Evidence policy: {html.escape(contract.evidence_policy.value)}</p>
+<p class="muted">{html.escape(_evidence_reference_policy(contract))}</p>
 <form method="post" action="/operations/capture"><input type="hidden" name="csrf" value="{token}">
 <input type="hidden" name="contract_id" value="{html.escape(contract.identifier, quote=True)}">
 <label>Target stream<select name="stream_id">{options}</select></label>{fields}
@@ -178,7 +193,7 @@ async def capture(request: Request):
             return HTMLResponse("Not found", status_code=404)
         values = {name: fields.get(name, "") for name in contract_fields}
         normalised = contract.normalise(values)
-        capture_id = f"capture-{contract.identifier}-{uuid.uuid4().hex}"
+        capture_id = contract.capture_id(normalised, stream_id=stream.id, subject_id=stream.subject_id)
         fact = contract.canonical_mapper.map(normalised, subject_id=stream.subject_id,
                                               capture_id=capture_id)
         vault_root = os.environ.get("FOUNDRY_EVIDENCE_VAULT_PATH")
