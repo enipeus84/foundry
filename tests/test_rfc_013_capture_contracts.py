@@ -19,7 +19,13 @@ from foundry.core.acquisition import (  # noqa: E402
     AcquisitionError, ProposalInbox, TelemetryStream, TelemetryStreamRegistry,
 )
 from foundry.core.entities import declare_party  # noqa: E402
+from foundry.core.entities import EntityProjection, join_household  # noqa: E402
+from foundry.core.metrics import MetricRegistry, MetricRequest  # noqa: E402
+from foundry.core.scope import Subject  # noqa: E402
 from foundry.eventlog import EventLog  # noqa: E402
+from foundry.finance import entities as finance  # noqa: E402
+from foundry.finance.entities import FinanceEntityProjection  # noqa: E402
+from foundry.finance.metrics import FinanceMetricProvider  # noqa: E402
 from foundry.web import app  # noqa: E402
 
 
@@ -110,6 +116,7 @@ def test_required_evidence_and_canonical_mapping_are_contract_owned():
     }}
     cash = capture_contract_registry().get("cash-balance-update")
     assert cash is not None
+    assert "does not update Finance balances" in cash.description
     assert cash.draft({"amount": "1200", "currency": "GBP", "valid_at": "100"},
                       subject_id="cash-1", capture_id="capture-2")["canonical_event"]["kind"] == (
         "finance.account.reconciliation_observed")
@@ -209,3 +216,36 @@ def test_operations_discovers_contracts_and_creates_an_inert_property_draft(envi
     assert duplicate.status_code == 303
     assert len(ProposalInbox(log).proposals) == 1
     assert sum(event["kind"] == "finance.valuation.declared" for event in log.events()) == 1
+
+
+def test_confirmed_cash_capture_is_a_reconciliation_observation_not_a_finance_projection_update(environment):
+    log = EventLog(environment / "events.jsonl")
+    household = declare_party(log, "household")
+    person = declare_party(log, "person")
+    join_household(log, person.id, household.id)
+    account = finance.declare_account(log, "checking", "GBP", liquidity_classification="liquid")
+    finance.link_ownership(log, "account", account.id, "owner", person.id)
+    finance.declare_transaction(log, account.id, 1_000.0, "GBP", "income", 1_000.0)
+    streams = TelemetryStreamRegistry(log)
+    streams.declare(TelemetryStream(
+        id="cash-value", subject_id=account.id, property="cash_balance", channel="manual",
+        refresh_policy="annual", confirmation_policy="review_each", source_identity="user:reviewer",
+        unit_or_currency="GBP", validation_contract="numeric", household_id=household.id,
+        expected_cadence="annual"))
+
+    def cash_available():
+        registry = MetricRegistry()
+        registry.register(FinanceMetricProvider(FinanceEntityProjection(log), EntityProjection(log)))
+        return registry.dispatch(MetricRequest("finance.cash_available", Subject("party", household.id),
+                                               as_of=1_700_000_000.0))
+
+    assert cash_available().value == 1_000.0
+    client = _client()
+    assert _submit_capture(client, "cash-balance-update", "cash-value", amount="1500",
+                           evidence_reference="cash-statement-2026").status_code == 303
+    proposal = next(iter(ProposalInbox(log).proposals.values()))
+    assert client.post(f"/acquisition/proposals/{proposal.id}/confirm", data={
+        "csrf": webauth.csrf_token(ALLOWED, webauth.load_config(), "rfc011-confirmation"),
+    }).status_code == 303
+    assert any(event["kind"] == "finance.account.reconciliation_observed" for event in log.events())
+    assert cash_available().value == 1_000.0

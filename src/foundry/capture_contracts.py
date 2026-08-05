@@ -218,6 +218,15 @@ _MONEY_SCHEMA = (
                  help_text="Statement, valuation report, or other source reference."),
 )
 
+_CASH_SCHEMA = (
+    CaptureField("amount", "Stated cash balance", "number",
+                 help_text="Recorded for reconciliation only; it does not update Finance projections."),
+    CaptureField("currency", "Currency", "text", help_text="Three-letter ISO currency code."),
+    CaptureField("valid_at", "As at (Unix timestamp)", "number", help_text="When this value was stated."),
+    CaptureField("evidence_reference", "Evidence reference", "text", required=False,
+                 help_text="Statement or other source reference."),
+)
+
 
 register_capture_contract(CaptureContract(
     identifier="pension-balance-update", version="1", display_name="Pension Balance Update",
@@ -234,10 +243,11 @@ register_capture_contract(CaptureContract(
 
 register_capture_contract(CaptureContract(
     identifier="cash-balance-update", version="1", display_name="Cash Balance Update",
-    description="Record a stated balance for an existing cash account.",
-    capabilities=("manual_capture", "finance_reconciliation", "review_required"), schema=_MONEY_SCHEMA,
+    description=("Record a stated cash-account total for reconciliation. It does not update "
+                 "Finance balances, net worth, liquidity, or other downstream projections."),
+    capabilities=("manual_capture", "finance_reconciliation", "review_required"), schema=_CASH_SCHEMA,
     validation=CaptureValidation(),
-    review_template="Review cash balance for {subject_id}: {currency} {amount:,.2f} at {valid_at:.0f}.",
+    review_template="Review cash reconciliation observation for {subject_id}: {currency} {amount:,.2f} at {valid_at:.0f}.",
     evidence_policy=EvidencePolicy.OPTIONAL,
     canonical_mapper=CanonicalMapper("finance.account.reconciliation_observed", "cash_balance", {
         "entity_id": "$subject_id", "supplied_total": "$amount", "valid_at": "$valid_at",

@@ -23,6 +23,16 @@ RFC-011 manual facts.  Pension and property values map to the pre-existing
 contract now admits the former, with its existing required payload shape.
 No canonical event definition changed.
 
+### Cash Balance Update product boundary
+
+Cash Balance Update is intentionally **record-only for Finance projections**.
+Its confirmed event is a stated account total used by RFC-011's reconciliation
+lens; it does not update the Finance transaction ledger, account balance, net
+worth, liquidity, or any other downstream Finance projection.  Finance values
+accounts from their transaction ledger and contained positions.  Changing that
+rule would alter the established Finance model, so this contract describes the
+boundary explicitly rather than implying a projection effect it does not have.
+
 ## Operations flow
 
 `GET /operations/capture` asks “What do you want to record?” and renders the
