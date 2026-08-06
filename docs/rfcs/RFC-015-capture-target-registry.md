@@ -4,6 +4,9 @@
 (HEAD `0ad18b3`). Approved GO WITH AMENDMENT at architecture review; the
 amendment is applied. Freeze record:
 [`RFC-015-architecture-freeze-record.md`](../reviews/RFC-015-architecture-freeze-record.md).
+The approved [Phase 2A Diagnostic Event Amendment](../reviews/RFC-015-phase-2a-diagnostic-event-amendment.md)
+adds the programme's second and final authorised event kind; no further
+canonical event kinds are authorised without Governor approval.
 Phase 0 has shipped; Phase 1 is open for implementation.
 **Title:** Capture Target Registry *(amended by the Governor from "Capture
 Target Registration": the architecture concerns the derived registry,
@@ -297,11 +300,14 @@ express retirement, and this is demonstrable rather than asserted:
 
 There is no combination of existing canonical events that retires a stream.
 
-**Therefore RFC-015 proposes exactly one new Core event:**
+**Therefore RFC-015's authorised Core event set is:**
 
 ```text
 core.telemetry_stream.retired
   payload: { stream_id, reason, retired_at, superseded_by? }
+
+core.capture_target_bootstrap.diagnostic
+  payload: defined by the approved Phase 2A Diagnostic Event Amendment
 ```
 
 Domain-neutral, append-only, no mutation, symmetric with the existing
@@ -759,7 +765,9 @@ explicit **implementation blocker**:
    domain entity agree on household.
 3. Capability is derived from canonical state; no mutable side-table.
 4. Operations names no domain type, no contract identifier and no entity.
-5. Exactly one new canonical event, with proof of insufficiency (§4.1).
+5. The two authorised canonical events are `core.telemetry_stream.retired` and
+   `core.capture_target_bootstrap.diagnostic`; any further event requires
+   Governor approval.
 6. Registration writes `core.*` declarations only; never `finance.*`.
 7. Retirement removes a target from selection and from nothing else.
 8. `(household_id, subject_id, property)` is unique among active targets.
@@ -818,6 +826,7 @@ settled; the amendment is the title (§0), applied throughout.
 | G3 | Decomposition into RFC-015 (registry) + RFC-016 (provenance investigation) | **Accepted** |
 | G4 | `statement_total` on `cash-balance-update` | **Approved for removal** — via an **explicit governed amendment**, not as a side effect of this burn. It must not retain two canonical meanings (§6.1) |
 | G5 | New event `core.telemetry_stream.retired` | **Approved.** Entity closure and stream retirement remain **separate canonical facts** (§4.1, §4.2) |
+| G8 | New event `core.capture_target_bootstrap.diagnostic` | **Approved by narrow Phase 2A amendment.** It records bootstrap diagnostics without changing target eligibility or projection ownership. |
 | G6 | Retirement moved from Phase 4 into Phase 1 | **Approved.** Retirement must precede bootstrap (§14) |
 | G7 | Deployed Cash ISA eligibility | **Ruled:** must **not** be assumed eligible from its display name. Resolve the canonical entity type at runtime and **fail closed** (§13) |
 | — | Title | **Amended:** *Capture Target Registry*, not *Capture Target Registration* (§0) |

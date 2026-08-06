@@ -34,8 +34,9 @@ The web composition boundary attempts bootstrap once after the existing startup
 seed hook. Discovery folds canonical events independently: a malformed event or
 conflicting target produces a replayable
 `core.capture_target_bootstrap.diagnostic` event and cannot stop the remaining
-eligible targets. The app records the first diagnostic for Operations and logs
-only its count. Request-time console reconstruction remains read-only.
+eligible targets. All applicable diagnostics are retained in the bootstrap
+result and surfaced in Operations as a concise complete set; logging records
+their count. Request-time console reconstruction remains read-only.
 
 ## F3: no partial declaration history
 

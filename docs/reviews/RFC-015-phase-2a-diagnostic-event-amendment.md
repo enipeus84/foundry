@@ -1,9 +1,12 @@
 # RFC-015 Phase 2A Amendment — Bootstrap Diagnostics
 
-**Status:** proposed for Governor approval before fresh SAFE review.
+**Status:** **approved by Governor — 2026-08-06.** This amendment is part of
+the authoritative RFC-015 architecture record.
 
 ## Narrow amendment
 
+This is a narrow amendment to [RFC-015 — Capture Target Registry](../rfcs/RFC-015-capture-target-registry.md)
+and its [architecture freeze record](RFC-015-architecture-freeze-record.md).
 RFC-015 Phase 2 adds one canonical event kind:
 
 ```text

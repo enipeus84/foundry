@@ -89,12 +89,15 @@ provenance investigation — rare investigation), applying the rhythm test
 RFC-012 §2.8 required of its successor. The amendment was to the title:
 *Capture Target Registry*, not *Capture Target Registration*, because
 registration is a workflow within a boundary that also owns the derived
-registry, discovery, compatibility, lifecycle and retirement. RFC-015 approves
-one new canonical event, `core.telemetry_stream.retired`; entity closure and
-stream retirement remain separate canonical facts.
+registry, discovery, compatibility, lifecycle and retirement. RFC-015's
+authorised canonical event set is `core.telemetry_stream.retired` and,
+by the approved [Phase 2A Diagnostic Event Amendment](../reviews/RFC-015-phase-2a-diagnostic-event-amendment.md),
+`core.capture_target_bootstrap.diagnostic`; entity closure and stream retirement
+remain separate canonical facts. No further canonical event kinds are authorised
+without Governor approval.
 
 **RFC-015's architecture was frozen at the Governor freeze gate on 2026-08-05**
-([freeze record](../reviews/RFC-015-architecture-freeze-record.md)). Phase 0 —
+([freeze record](../reviews/RFC-015-architecture-freeze-record.md); [Phase 2A amendment](../reviews/RFC-015-phase-2a-diagnostic-event-amendment.md)). Phase 0 —
 correcting the false "Capture is not configured" empty state — has shipped;
 Phases 1–4 are outstanding. Phase 0 corrected rendering only and implemented no
 registry behaviour, so it is not evidence that the Capture Target Registry
