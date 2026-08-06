@@ -150,7 +150,7 @@ def _operational_summary(view) -> str:
     """Translate model status into the operator's decision, not its clock."""
     actionable = sum(item.actionable for item in view.items)
     if view.nominal:
-        return "Everything registered is up to date. No operational action is waiting."
+        return view.summary_line()
     if actionable == 0:
         return "No operational action is waiting, but some information is still unavailable."
     return f"{actionable} {'item needs' if actionable == 1 else 'items need'} your attention."
@@ -229,7 +229,8 @@ def operations(request: Request):
     inbox = ProposalInbox(console.log)
     envelopes = EnvelopeProjection(console.log)
     pending = [proposal for proposal in inbox.proposals.values()
-               if proposal.state == "pending" and proposal.household_id == household]
+               if proposal.state == "pending" and proposal.household_id == household
+               and TelemetryStreamRegistry(console.log).is_active(proposal.stream_id)]
     validation_issues = sum(
         1 for proposal in pending
         if any(item.get("outcome") in {"ambiguous", "unresolved"} for item in proposal.resolutions)

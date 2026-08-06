@@ -191,6 +191,7 @@ class OperationsConsoleView:
     model_version: str
     fresh_stream_count: int
     unknown_count: int
+    retired_stream_count: int
 
     @property
     def nominal(self) -> bool:
@@ -201,6 +202,10 @@ class OperationsConsoleView:
         unknowns = (f"{_count(self.unknown_count, 'material value')} "
                     f"{'remains' if self.unknown_count == 1 else 'remain'} unavailable.")
         if self.terminal_state == TERMINAL_ALL_NOMINAL:
+            if self.retired_stream_count and not self.fresh_stream_count:
+                return ("No active telemetry requires an update. "
+                        f"{_count(self.retired_stream_count, 'retired stream')} "
+                        "intentionally suppressed.")
             return (f"All telemetry nominal - {self.fresh_stream_count} "
                     f"streams fresh as of {self.as_of:.0f}.")
         if self.terminal_state == TERMINAL_ACTIONABLE_COMPLETE:
@@ -216,7 +221,8 @@ class OperationsConsoleView:
         return {"model_version": self.model_version, "as_of": self.as_of,
                 "terminal_state": self.terminal_state, "nominal": self.nominal,
                 "summary": self.summary_line(),
-                "items": [item.as_dict() for item in self.items]}
+                "items": [item.as_dict() for item in self.items],
+                "retired_stream_count": self.retired_stream_count}
 
 
 class OperationsConsoleModel:
@@ -245,7 +251,7 @@ class OperationsConsoleModel:
             if proposal.state != "pending" or proposal.household_id != household_id:
                 continue
             stream = self.streams.streams.get(proposal.stream_id)
-            if stream is None:
+            if stream is None or not self.streams.is_active(proposal.stream_id):
                 # A proposal whose stream declaration is absent has no
                 # authoritative subject.  Presenting the stream id in the
                 # subject field would misreport identity (SAFE-33-08).
@@ -269,7 +275,7 @@ class OperationsConsoleModel:
                          known_at: float) -> list[AttentionItem]:
         items: list[AttentionItem] = []
         for stream in self.streams.streams.values():
-            if stream.household_id != household_id:
+            if stream.household_id != household_id or not self.streams.is_active(stream.id):
                 continue
             state = self.lenses.stream_freshness(stream.id, as_of=as_of, known_at=known_at)
             if state != "stale":
@@ -313,6 +319,10 @@ class OperationsConsoleModel:
         for subject_id, registration in sorted(self.registry.registrations.items()):
             if registration.household_id != household_id:
                 continue
+            if not any(stream.household_id == household_id and stream.subject_id == subject_id
+                       and self.streams.is_active(stream.id)
+                       for stream in self.streams.streams.values()):
+                continue
             market = self.lenses.market_value(subject_id, valid_at=as_of, known_at=known_at)
             if market["value"] is not None:
                 continue
@@ -346,7 +356,10 @@ class OperationsConsoleModel:
             model_version=self.version,
             fresh_stream_count=self._fresh_streams(household_id, as_of=as_of,
                                                    known_at=known_at),
-            unknown_count=unknown_count)
+            unknown_count=unknown_count,
+            retired_stream_count=sum(1 for stream in self.streams.streams.values()
+                                     if stream.household_id == household_id
+                                     and stream.id in self.streams.retired))
 
     @staticmethod
     def _deduplicate(items: Iterable[AttentionItem]) -> list[AttentionItem]:
@@ -366,5 +379,6 @@ class OperationsConsoleModel:
     def _fresh_streams(self, household_id: str, *, as_of: float, known_at: float) -> int:
         return sum(1 for stream in self.streams.streams.values()
                    if stream.household_id == household_id
+                   and self.streams.is_active(stream.id)
                    and self.lenses.stream_freshness(stream.id, as_of=as_of,
                                                     known_at=known_at) == "available")

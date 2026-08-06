@@ -702,7 +702,7 @@ adopted.
 | **0** | Empty-state correction (§11) | One-line condition fix removing a false claim about system state. Depends on nothing. Should not wait for the registry. |
 | **1** | Target projection, **retirement event**, fail-closed rules, real `entity_exists` | see below |
 | **2** | Bootstrap CLI (resolve-then-declare) + deployed-log identifier confirmation | needs Phase 1 |
-| **3** | Operations target-management surface (register, retire, conflict resolution) | needs Phase 2 to be useful |
+| **3** | Retired capture-target telemetry suppression | keeps terminal targets auditable while removing only current operational obligations |
 | **4** | Provenance typing, duplicate/conflict UX, lifecycle hardening | genuinely incremental |
 
 **The challenge: retirement must move from Phase 4 into Phase 1.** The brief
