@@ -47,3 +47,18 @@ admissibility only. It introduces no assessor changes.
 Phases 3–5 are not authorised by this freeze. In particular, Mission Assessment
 adoption remains Phase 4 and requires the per-mission amendments and Governor
 gates specified by RFC-016.
+
+---
+
+## Governor clarification C-016-01 — 2026-08-06
+
+**Decision: `basis` is optional and limited to 500 Unicode characters.**
+
+The frozen RFC requires `basis` to be length-bounded but did not state its
+numeric maximum. Review of the RFC, architecture report, decision register and
+this freeze record found no pre-existing value. This clarification completes
+that omitted precision without changing the authorised event set, target
+lifecycle, projection semantics, or any closed Governor decision.
+
+**RFC-016 Phase 2A — GO.** BOOSTER may implement this bound while remediating
+SAFE-016-01 through SAFE-016-05. No other implementation authority changes.
