@@ -287,6 +287,7 @@ def capture_form(request: Request):
     if email is None:
         return RedirectResponse("/login", status_code=303)
     console = _console(request)
+    diagnostic = getattr(request.app.state, "capture_target_bootstrap_diagnostic", None)
     household = _household(console)
     if household is None:
         return _page(console, "Capture information", _operations_styles() + "<section class=\"ops-hero\"><h1>Nothing to capture yet.</h1><p>An active household is required before a capture can be recorded.</p></section>")
@@ -340,6 +341,8 @@ def capture_form(request: Request):
     )
     body = _operations_styles() + """<section class="ops-hero"><div class="ops-eyebrow">OPERATIONS · CAPTURE</div>
 <h1>What do you want to record?</h1><p>Tell Foundry what changed in ordinary terms. It will create a reviewable capture; nothing changes in your plan until you approve it.</p></section>"""
+    if diagnostic is not None:
+        body += f'''<section class="ops-panel"><h2>Capture target bootstrap needs attention</h2><p class="ops-empty">Bootstrap stopped during {html.escape(diagnostic.validation)} validation for {html.escape(diagnostic.entity)}: {html.escape(diagnostic.reason)}. No new capture targets were created.</p></section>'''
     if contracts and (targets.for_household(household) or guided):
         body += f'''<section class="ops-panel"><h2>WHAT DO YOU WANT TO RECORD?</h2><div class="ops-list">{cards}</div></section>'''
     if guided:
