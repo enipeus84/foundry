@@ -33,6 +33,15 @@ class FinanceCaptureTargetResolver:
     def supports(self, entity: CaptureTargetEntity, property_name: str) -> bool:
         return entity.entity_type in _SUPPORTED_PROPERTIES.get(property_name, set())
 
+    def bootstrap_properties(self, entity: CaptureTargetEntity) -> tuple[str, ...]:
+        """Canonical type decides which manual properties may be bootstrapped.
+
+        Property assets have an additional canonical primary-residence proof,
+        applied by the bootstrapper; the resolver owns type compatibility.
+        """
+        return tuple(sorted(property_name for property_name, entity_types in _SUPPORTED_PROPERTIES.items()
+                            if entity.entity_type in entity_types))
+
 
 def finance_asset_registry(log: EventLog) -> AssetRegistry:
     """Build the only production Finance-aware asset registry."""

@@ -65,6 +65,7 @@ from foundry.core.mission_assessment import MissionAssessmentRegistry
 from foundry.demo_data import ensure_demo_data
 from foundry.eventlog import EventLog
 from foundry.finance.entities import FinanceEntityProjection
+from foundry.finance.runtime_bootstrap import bootstrap_finance_capture_targets
 from foundry.finance.metrics import FinanceMetricProvider
 from foundry.finance.mission_assessment import FinancialIndependenceAssessor
 from foundry.finance.mortgage_assessment import MortgageFreedomAssessor
@@ -141,6 +142,37 @@ def _maybe_seed_demo_data() -> None:
 
 
 _maybe_seed_demo_data()
+
+
+def _bootstrap_capture_targets() -> None:
+    """Attempt startup bootstrap without making ordinary data an availability fault."""
+    app.state.capture_target_bootstrap_diagnostic = None
+    app.state.capture_target_bootstrap_result = None
+    try:
+        log = EventLog(os.environ.get("FOUNDRY_DATA_PATH", DEFAULT_DATA_PATH))
+        households = [party for party in EntityProjection(log).parties.values()
+                      if party.party_type == "household" and party.status == "active"]
+        if len(households) != 1:
+            return
+        result = bootstrap_finance_capture_targets(log, households[0].id)
+        app.state.capture_target_bootstrap_result = result
+        if result.diagnostics:
+            app.state.capture_target_bootstrap_diagnostic = result.diagnostics[0]
+            logger.warning("capture target bootstrap diagnostics: count=%s", len(result.diagnostics))
+    except Exception as exc:  # Canonical state must never be an availability dependency.
+        diagnostic = {"household_id": "", "entity": "startup", "validation": "discovery",
+                      "reason": exc.__class__.__name__}
+        try:
+            if not any(event["kind"] == "core.capture_target_bootstrap.diagnostic"
+                       and event["payload"] == diagnostic for event in log.events()):
+                log.append("core.capture_target_bootstrap.diagnostic", diagnostic,
+                           actor="runtime_bootstrap")
+        except Exception:
+            pass  # Logging the failure remains best-effort; availability wins.
+        logger.warning("capture target bootstrap discovery failed: %s", exc.__class__.__name__)
+
+
+_bootstrap_capture_targets()
 
 
 def _build_console() -> Console:

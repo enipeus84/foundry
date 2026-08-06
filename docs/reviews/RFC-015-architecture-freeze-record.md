@@ -20,7 +20,7 @@ reopened; no repository evidence of a material contradiction was found.
 | 2 | Title consistently *RFC-015 — Capture Target Registry* | **PASS** | RFC ×6, index ×2, self-review ×2. The only occurrences of the old title are the three deliberate records of the amendment itself |
 | 3 | RFC-014 remains reserved for Governed Corrections | **PASS** | RFC §0 ruling block; index note. No document claims RFC-014 |
 | 4 | RFC-013 numbering displacement recorded as governance debt | **PASS** | RFC §0 (¶1, ruling block), §18 G2, index ¶ "The RFC-013 number is contested and remains an open Governor decision" |
-| 5 | `core.telemetry_stream.retired` is the only approved new canonical event | **PASS** | Every `core.*` identifier in the RFC enumerated: `asset_registry.declared`, `asset_registry.linked`, `telemetry_stream.declared`, `evidence.redacted` (all pre-existing) and `telemetry_stream.retired` (the one addition) |
+| 5 | RFC-015's authorised canonical event set is closed | **PASS** | `core.telemetry_stream.retired` was approved at freeze; the Governor-approved [Phase 2A Diagnostic Event Amendment](RFC-015-phase-2a-diagnostic-event-amendment.md) adds `core.capture_target_bootstrap.diagnostic`. No further kind is authorised without Governor approval. |
 | 6 | `entity_exists` production stub remains a binding Phase 1 blocker | **PASS** | RFC §14.1 **P1-A** (worded as blocker, "no registration path may be exposed while the stub remains"), §10, §18; self-review S1. Stub still present at `src/foundry/operations_web.py:60` — correctly untouched by Phase 0 |
 | 7 | Retirement precedes bootstrap | **PASS** | RFC §14 sequence 0→1→2→3→4 with retirement in Phase 1; ruling block and §18 G6 both state it |
 | 8 | Runtime bootstrap fails closed; no display-name inference | **PASS** | RFC §13 G7 ruling: resolve canonical type at runtime, declare nothing and report why if inadmissible, "never promoted because its name contains 'Cash' or 'ISA'"; §7.1 selects by `account_type`/`asset_category` only; §15 invariant 1 |
@@ -82,7 +82,7 @@ Every decision Phase 1 must make is already made in the frozen document:
 | Phase 1 question | Answered by |
 |---|---|
 | What is a target? | §2 — projection over `AssetRegistration` ⋈ `TelemetryStream` ⋈ domain entity |
-| Which events? | §3.1 (existing two) + §4.1 (`core.telemetry_stream.retired`, payload specified) |
+| Which events? | §3.1 (existing two) + §4.1 (`core.telemetry_stream.retired`) + approved [Phase 2A amendment](RFC-015-phase-2a-diagnostic-event-amendment.md) (`core.capture_target_bootstrap.diagnostic`) |
 | When is a target offered? | §6 — the six-clause rule, declarative |
 | When is it active? | §9 — the three-clause predicate |
 | Which entity types per property? | §5.2 — the descriptor table |
@@ -101,7 +101,9 @@ No open question requires BOOSTER to invent structure.
 2. A target exists only where stream, registration and domain entity agree on household.
 3. Capability is derived from canonical state; no mutable side-table.
 4. Operations names no domain type, no contract identifier and no entity.
-5. Exactly one new canonical event: `core.telemetry_stream.retired`.
+5. The authorised canonical event set is `core.telemetry_stream.retired` and
+   `core.capture_target_bootstrap.diagnostic`; no further kind is authorised
+   without Governor approval.
 6. Registration writes `core.*` declarations only; never `finance.*`.
 7. Retirement removes a target from selection and from nothing else.
 8. `(household_id, subject_id, property)` is unique among active targets.

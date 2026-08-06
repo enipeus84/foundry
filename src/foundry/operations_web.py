@@ -287,6 +287,8 @@ def capture_form(request: Request):
     if email is None:
         return RedirectResponse("/login", status_code=303)
     console = _console(request)
+    bootstrap_result = getattr(request.app.state, "capture_target_bootstrap_result", None)
+    fallback_diagnostic = getattr(request.app.state, "capture_target_bootstrap_diagnostic", None)
     household = _household(console)
     if household is None:
         return _page(console, "Capture information", _operations_styles() + "<section class=\"ops-hero\"><h1>Nothing to capture yet.</h1><p>An active household is required before a capture can be recorded.</p></section>")
@@ -340,6 +342,22 @@ def capture_form(request: Request):
     )
     body = _operations_styles() + """<section class="ops-hero"><div class="ops-eyebrow">OPERATIONS · CAPTURE</div>
 <h1>What do you want to record?</h1><p>Tell Foundry what changed in ordinary terms. It will create a reviewable capture; nothing changes in your plan until you approve it.</p></section>"""
+    bootstrap_diagnostics = (bootstrap_result.diagnostics if bootstrap_result is not None
+                             else ((fallback_diagnostic,) if fallback_diagnostic is not None else ()))
+    target_count = len(targets.for_household(household))
+    if bootstrap_diagnostics:
+        outcome = "partially completed" if target_count else "failed"
+        target_summary = (f"{target_count} capture target{'s' if target_count != 1 else ''} "
+                          f"{'is' if target_count == 1 else 'are'} registered."
+                          if target_count else "No capture targets were registered.")
+        details = "".join(
+            f"<li>{html.escape(item.validation)}: {html.escape(item.reason)}</li>"
+            for item in bootstrap_diagnostics)
+        body += f'''<section class="ops-panel"><h2>Capture target bootstrap {outcome}</h2><p class="ops-empty">Foundry recorded {len(bootstrap_diagnostics)} bootstrap issue{'s' if len(bootstrap_diagnostics) != 1 else ''}. {target_summary}</p><ul class="ops-empty">{details}</ul></section>'''
+    elif bootstrap_result is not None and target_count:
+        body += f'''<section class="ops-panel"><h2>Capture targets ready</h2><p class="ops-empty">Bootstrap completed successfully. {target_count} capture target{'s' if target_count != 1 else ''} {'is' if target_count == 1 else 'are'} registered.</p></section>'''
+    elif bootstrap_result is not None:
+        body += '''<section class="ops-panel"><h2>No eligible capture targets</h2><p class="ops-empty">Bootstrap completed successfully, but this household has no eligible entities to register.</p></section>'''
     if contracts and (targets.for_household(household) or guided):
         body += f'''<section class="ops-panel"><h2>WHAT DO YOU WANT TO RECORD?</h2><div class="ops-list">{cards}</div></section>'''
     if guided:
