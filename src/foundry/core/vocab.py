@@ -163,6 +163,14 @@ DESTINATION_DIRECTION = ClosedVocabulary(
     {"higher_is_better", "lower_is_better"},
 )
 
+# RFC-016 Mission Target contract.  Dimensions and horizon semantics are Core
+# concepts: domains describe metrics against them but cannot extend them.
+TARGET_DIMENSION = ClosedVocabulary(
+    "target_dimension", {"currency", "duration_months"})
+
+TARGET_HORIZON_KIND = ClosedVocabulary(
+    "target_horizon_kind", {"none", "by_date", "derived"})
+
 TELEMETRY_FORMAT = ClosedVocabulary(
     "telemetry_format",
     {"currency", "percent", "months", "number", "plain"},
