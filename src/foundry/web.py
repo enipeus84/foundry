@@ -65,6 +65,7 @@ from foundry.core.mission_assessment import MissionAssessmentRegistry
 from foundry.demo_data import ensure_demo_data
 from foundry.eventlog import EventLog
 from foundry.finance.entities import FinanceEntityProjection
+from foundry.finance.runtime_bootstrap import bootstrap_finance_capture_targets
 from foundry.finance.metrics import FinanceMetricProvider
 from foundry.finance.mission_assessment import FinancialIndependenceAssessor
 from foundry.finance.mortgage_assessment import MortgageFreedomAssessor
@@ -141,6 +142,24 @@ def _maybe_seed_demo_data() -> None:
 
 
 _maybe_seed_demo_data()
+
+
+def _bootstrap_capture_targets() -> None:
+    """Install Phase 2 declarations once during process composition.
+
+    Request-time console reconstruction is intentionally read-only.  The
+    append-only bootstrap therefore belongs beside the existing startup seed
+    hook, before any router can consume a Capture Target Registry.
+    """
+    log = EventLog(os.environ.get("FOUNDRY_DATA_PATH", DEFAULT_DATA_PATH))
+    entities = EntityProjection(log)
+    households = [party for party in entities.parties.values()
+                  if party.party_type == "household" and party.status == "active"]
+    if len(households) == 1:
+        bootstrap_finance_capture_targets(log, households[0].id)
+
+
+_bootstrap_capture_targets()
 
 
 def _build_console() -> Console:
