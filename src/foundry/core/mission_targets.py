@@ -6,7 +6,7 @@ vocabulary and never changes a Mission or an assessment contract.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 import math
 from numbers import Real
 from typing import Protocol
@@ -19,6 +19,7 @@ from .mission_assessment import MissionDefinition
 
 PREFIX = "core"
 TYPE = "mission_target"
+MAX_BASIS_LENGTH = 500
 
 
 class MissionTargetError(ValueError):
@@ -104,10 +105,11 @@ class MissionTargetProjection:
         self.definitions, self.metric_resolver = definitions, metric_resolver
         self.targets: dict[str, MissionTarget] = {}
         self.conflicts: dict[str, tuple[str, ...]] = {}
+        self._invalid_target_ids: set[str] = set()
         self.rebuild()
 
     def rebuild(self) -> None:
-        self.targets, self.conflicts = {}, {}
+        self.targets, self.conflicts, self._invalid_target_ids = {}, {}, set()
         for event in self.log.events():
             if event["kind"].startswith(f"{PREFIX}.{TYPE}."):
                 self._apply(event)
@@ -126,7 +128,7 @@ class MissionTargetProjection:
         verb = grammar.verb(event["kind"])
         if verb == "updated":
             prior = self.targets.get(target_id)
-            self._conflict(prior.mission_id if prior else f"invalid:{target_id}", target_id)
+            self._invalidate(target_id, prior)
             return
         if verb == "declared":
             try:
@@ -138,14 +140,22 @@ class MissionTargetProjection:
                 self._conflict(target.mission_id, target_id)
                 return
             self.targets[target_id] = target
+            if target_id in self._invalid_target_ids:
+                self._conflict(target.mission_id, target_id)
             return
         target = self.targets.get(target_id)
         if target is None:
-            self._conflict(f"invalid:{target_id}", target_id)
+            self._invalidate(target_id, None)
         elif verb == "closed":
             self.targets[target_id] = MissionTarget(**{**target.__dict__, "closed_at": event["ts"],
                                                         "history": target.history + (event["id"],)})
         else:
+            self._invalidate(target_id, target)
+
+    def _invalidate(self, target_id: str, target: MissionTarget | None) -> None:
+        """Poison an invalid lifecycle stream permanently for this replay."""
+        self._invalid_target_ids.add(target_id)
+        if target is not None:
             self._conflict(target.mission_id, target_id)
 
     def _target_from_event(self, event: dict) -> MissionTarget:
@@ -173,6 +183,9 @@ class MissionTargetProjection:
             tolerance=tolerance, basis=p.get("basis"), supersedes=p.get("supersedes"),
             provenance=(event["id"],), history=(event["id"],), declared_at=event["ts"],
         )
+        if target.basis is not None and (not isinstance(target.basis, str)
+                                         or len(target.basis) > MAX_BASIS_LENGTH):
+            raise MissionTargetError("target basis exceeds the 500 character limit")
         self._validate_loaded_target(target)
         return target
 
@@ -220,6 +233,10 @@ class MissionTargetProjection:
             for predecessor_id, children in successors.items():
                 if len(children) > 1:
                     self._conflict(mission_id, predecessor_id, *(child.id for child in children))
+            active = [target for target in grouped
+                      if target.closed_at is None and target.id not in successors]
+            if len(active) > 1:
+                self._conflict(mission_id, *(target.id for target in active))
             for target in grouped:
                 seen: set[str] = set()
                 cursor = target
@@ -282,8 +299,8 @@ class MissionTargetProjection:
             raise MissionTargetError("only by_date targets may carry a horizon")
         if tolerance and (tolerance.dimension != destination.dimension or tolerance.unit_or_currency != destination.unit_or_currency):
             raise MissionTargetError("target tolerance must have the destination unit and dimension")
-        if basis is not None and not isinstance(basis, str):
-            raise MissionTargetError("target basis must be text")
+        if basis is not None and (not isinstance(basis, str) or len(basis) > MAX_BASIS_LENGTH):
+            raise MissionTargetError("target basis must be text of at most 500 characters")
         household = self.entities.parties.get(household_id)
         mission = self.entities.missions.get(mission_id)
         if household is None or household.party_type != "household" or mission is None or mission.target_metric != metric_id:
