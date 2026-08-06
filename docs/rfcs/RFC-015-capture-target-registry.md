@@ -82,6 +82,16 @@ RFC-015  Capture Target Registry                  this document
 RFC-016  Asset Detail & Provenance Investigation  successor; not proposed here
 ```
 
+> **Amendment to G3 — Governor ruling GD-1, 2026-08-06.** The successor's
+> **number** is reassigned: *Asset Detail & Provenance Investigation* is now
+> **RFC-017**, and RFC-016 is *Mission Target Framework*
+> ([`RFC-016-mission-target-framework.md`](RFC-016-mission-target-framework.md) §0).
+> The decomposition itself, the boundary's subject and its successor status are
+> unchanged; only the number moves, and it moves by recorded decision rather
+> than by silent consumption — which is precisely the distinction §0's first
+> paragraph draws about the RFC-013 debt. The block above is retained as the
+> original record.
+
 The title is **Capture Target Registry**, *not* "Capture Targets, Asset
 Registration & Provenance". Two exclusions, for two different reasons:
 
@@ -838,7 +848,7 @@ settled; the amendment is the title (§0), applied throughout.
 |---|---|---|
 | G1 | RFC number for this mission | **Approved — RFC-015.** RFC-014 remains reserved for Governed Corrections |
 | G2 | The RFC-013 number and the displaced *Asset Registry & Provenance* boundary | **Deferred by ruling.** Recorded governance debt; Capture Contracts is **not** retrospectively renumbered during this burn |
-| G3 | Decomposition into RFC-015 (registry) + RFC-016 (provenance investigation) | **Accepted** |
+| G3 | Decomposition into RFC-015 (registry) + a successor (provenance investigation) | **Accepted.** **Amended 2026-08-06 by ruling GD-1:** the successor is **RFC-017**, not RFC-016; RFC-016 is *Mission Target Framework*. Decomposition and boundary unchanged (§0) |
 | G4 | `statement_total` on `cash-balance-update` | **Approved for removal** — via an **explicit governed amendment**, not as a side effect of this burn. It must not retain two canonical meanings (§6.1) |
 | G5 | New event `core.telemetry_stream.retired` | **Approved.** Entity closure and stream retirement remain **separate canonical facts** (§4.1, §4.2) |
 | G8 | New event `core.capture_target_bootstrap.diagnostic` | **Approved by narrow Phase 2A amendment.** It records bootstrap diagnostics without changing target eligibility or projection ownership. |
