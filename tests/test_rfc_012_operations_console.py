@@ -12,7 +12,7 @@ import uuid
 import pytest
 
 from foundry.core.acquisition import (
-    AcquisitionProviderRegistry, AssetRegistration, AssetRegistry,
+    AcquisitionError, AcquisitionProviderRegistry, AssetRegistration, AssetRegistry,
     CanonicalObservationProjection, ConfirmationGate, EnvelopeProjection,
     EvidenceVault, ExternalRef, IdentityIndex, ManualAcquisitionProvider,
     ProposalInbox, ResolutionService, TelemetryStream, TelemetryStreamRegistry,
@@ -163,6 +163,13 @@ def _kinds(view):
     return [item.kind for item in view.items]
 
 
+def _retire(world, stream_id):
+    world["log"].append("core.telemetry_stream.retired", {
+        "stream_id": stream_id, "reason": "retired for test", "retired_at": 1.0,
+    })
+    world["streams"].rebuild()
+
+
 def test_ac2_model_is_a_deterministic_fold_over_the_same_log_and_clock(world):
     _register_holding(world)
     first = _view(world, 200.0)
@@ -280,6 +287,58 @@ def test_pending_proposal_is_actionable_work_pending(world):
     assert view.terminal_state == TERMINAL_WORK_PENDING
     item = next(i for i in view.items if i.kind == "proposal_pending")
     assert item.action == "review" and item.evidence_id and item.proposal_id
+
+
+def test_rfc_015_phase_3_retirement_suppresses_only_the_retired_target(world):
+    _register_holding(world)
+    _observe(world, "holding-units", "units", 100.0, 10.0, 100.0)
+    _observe(world, "holding-price", "price", 2.0, 10.0, 100.0)
+    _observe(world, "account-total", "statement_total", 200.0, 10.0, 100.0, subject=ACCOUNT)
+    pending = _pending(world, "holding-units", 110.0, 20.0, 105.0)
+    _retire(world, "holding-units")
+
+    view = _view(world, 400 * DAY)
+
+    assert pending.id not in {item.proposal_id for item in view.items}
+    assert "holding-units" not in {item.stream_id for item in view.items}
+    assert "holding-price" in {item.stream_id for item in view.items}
+    assert world["streams"].streams["holding-units"].id == "holding-units"
+    assert "holding-units" in world["streams"].retired
+
+
+def test_rfc_015_phase_3_all_retired_targets_are_operationally_quiet_but_replayable(world):
+    _register_holding(world)
+    _observe(world, "holding-units", "units", 100.0, 10.0, 100.0)
+    _observe(world, "holding-price", "price", 2.0, 10.0, 100.0)
+    _observe(world, "account-total", "statement_total", 200.0, 10.0, 100.0, subject=ACCOUNT)
+    for stream_id in ("holding-register", "holding-units", "holding-price", "account-total"):
+        _retire(world, stream_id)
+
+    first = _view(world, 400 * DAY)
+    replayed_log = EventLog(world["log"].path)
+    envelopes = EnvelopeProjection(replayed_log)
+    registry = AssetRegistry(replayed_log, entity_exists=lambda e: e in {ACCOUNT, HOLDING})
+    streams = TelemetryStreamRegistry(replayed_log)
+    replayed = OperationsConsoleModel(
+        registry, streams, ProposalInbox(replayed_log),
+        ValuationLenses(registry, streams, CanonicalObservationProjection(replayed_log, envelopes)),
+        envelopes).view(HOUSEHOLD, as_of=400 * DAY, known_at=10_000.0)
+
+    assert first.items == ()
+    assert first.nominal and first.retired_stream_count == 4
+    assert "retired streams intentionally suppressed" in first.summary_line()
+    assert replayed.as_dict() == first.as_dict()
+    assert len(streams.streams) == 4 and streams.retired == {
+        "holding-register", "holding-units", "holding-price", "account-total"}
+
+
+def test_rfc_015_phase_3_retirement_refuses_pending_confirmation(world):
+    _register_holding(world)
+    proposal = _pending(world, "holding-units", 10.0, 20.0, 110.0)
+    _retire(world, "holding-units")
+
+    with pytest.raises(AcquisitionError, match="proposal target is retired"):
+        world["gate"].confirm(proposal.id, actor="reviewer")
 
 
 def test_ac11_one_canonical_subject_yields_one_item_per_kind(world):

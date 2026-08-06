@@ -103,6 +103,26 @@ def test_inbox_requires_session_csrf_escapes_content_and_confirms(environment):
                event["payload"]["resolution"] == "confirmed" for event in log.events())
 
 
+def test_retired_target_is_hidden_from_action_queue_but_historical_evidence_survives(environment):
+    log = _pending_proposal(environment)
+    log.append("core.telemetry_stream.retired", {
+        "stream_id": "units", "reason": "account closed", "retired_at": 2_001.0,
+    })
+    client = _client()
+    csrf = webauth.csrf_token(ALLOWED, webauth.load_config(), "rfc011-confirmation")
+
+    inbox = client.get("/acquisition/inbox")
+    confirmation = client.post("/acquisition/proposals/proposal-1/confirm", data={"csrf": csrf})
+    evidence = client.get("/acquisition/proposals/proposal-1/evidence")
+
+    assert "proposal-1" not in inbox.text
+    assert confirmation.status_code == 409
+    assert "proposal target is retired" in confirmation.text
+    assert evidence.status_code == 200
+    assert any(event["kind"] == "core.telemetry_stream.retired" for event in log.events())
+    assert any(event["kind"] == "core.observation_proposal.declared" for event in log.events())
+
+
 def test_evidence_preview_reads_authorized_vault_artifact_and_fails_closed(environment):
     _pending_proposal(environment)
     anonymous = TestClient(app, follow_redirects=False)

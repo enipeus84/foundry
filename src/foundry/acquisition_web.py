@@ -145,10 +145,12 @@ def inbox(request: Request):
         return _page(console, [])
     proposals = ProposalInbox(console.log)
     envelopes = EnvelopeProjection(console.log)
+    streams = TelemetryStreamRegistry(console.log)
     token = webauth.csrf_token(email, webauth.load_config(), _PURPOSE)
     cards = []
     for proposal in proposals.proposals.values():
-        if proposal.state != "pending" or proposal.household_id != household_id:
+        if (proposal.state != "pending" or proposal.household_id != household_id
+                or not streams.is_active(proposal.stream_id)):
             continue
         envelope = envelopes.envelopes.get(proposal.envelope_id)
         observation = proposal.observations[0] if proposal.observations else {}

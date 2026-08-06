@@ -244,6 +244,14 @@ class TelemetryStreamRegistry:
             key=lambda stream: stream.id,
         ))
 
+    def is_active(self, stream_id: str) -> bool:
+        """Whether a declared stream remains operationally selectable.
+
+        Retirement never removes the declaration from history; it only closes
+        the stream's current operational lifecycle.
+        """
+        return stream_id in self.streams and stream_id not in self.retired
+
 
 @dataclass(frozen=True)
 class AssetRegistration:
@@ -779,6 +787,8 @@ class ConfirmationGate:
         stream = self.streams.streams.get(proposal.stream_id)
         if stream is None or stream.household_id != proposal.household_id:
             raise AcquisitionError("proposal stream is unknown or cross-household")
+        if not self.streams.is_active(stream.id):
+            raise AcquisitionError("proposal target is retired")
         return proposal, stream
 
     def confirm(self, proposal_id: str, *, actor: str,
