@@ -105,7 +105,9 @@ No open question requires BOOSTER to invent structure.
    `core.capture_target_bootstrap.diagnostic`; no further kind is authorised
    without Governor approval.
 6. Registration writes `core.*` declarations only; never `finance.*`.
-7. Retirement removes a target from selection and from nothing else.
+7. Retirement removes a target from current selection and operational action
+   generation while preserving history, evidence, provenance and deterministic
+   replay.
 8. `(household_id, subject_id, property)` is unique among active targets.
 9. Every gate fails closed; ambiguity is refused, never resolved by guess.
 10. Entity closure and stream retirement remain separate canonical facts.

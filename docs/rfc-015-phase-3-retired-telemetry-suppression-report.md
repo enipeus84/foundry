@@ -23,6 +23,12 @@ retired-stream count. A retired stream cannot be captured or confirmed, and
 Phase 2 bootstrap remains unchanged: its existing retirement-aware no-resurrection
 behaviour continues to apply.
 
+## Deferred lifecycle item
+
+**M1 — retired pending-proposal disposition** is deferred to RFC-015 Phase 4.
+Phase 3 suppresses these proposals from operational action and preserves them
+as immutable history; it introduces no invented resolution or lifecycle event.
+
 ## Validation
 
 Focused regression: **55 passed, 1 upstream FastAPI/Starlette deprecation

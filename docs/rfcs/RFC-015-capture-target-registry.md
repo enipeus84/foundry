@@ -577,10 +577,12 @@ target.is_active ⇔
   ∧   entity.status == "active"
 ```
 
-### 9.1 History remains interpretable
+### 9.1 Operational suppression; history remains interpretable
 
-Retirement removes a target from **new-capture selection only**. It does not
-alter, hide or invalidate anything already captured:
+Retirement removes a target from new-capture selection **and current
+operational action generation**. A retired target raises no Update Now, overdue,
+missing-update, reminder, queue or degraded-operational-status obligation. It
+does not alter, hide or invalidate anything already captured:
 
 - `TelemetryStreamRegistry.streams` keeps the retired stream, so historical
   envelopes and proposals still resolve their stream and render their labels.
@@ -588,6 +590,8 @@ alter, hide or invalidate anything already captured:
   append-only, and retirement writes nothing to them.
 - A retired target renders in historical views with its retirement plainly
   stated, never blank and never silently dropped.
+- Evidence, provenance and replay remain available and deterministic; retirement
+  changes only the current operational interpretation of the same history.
 
 This satisfies acceptance criterion 7: a retired target disappears from
 new-capture selection without invalidating history.
@@ -721,6 +725,16 @@ anything real.
 > declared streams would otherwise be permanently selectable in the append-only
 > model.
 
+### 14.2 Phase 4 deferred lifecycle item — M1
+
+**M1 — retired pending-proposal disposition.** Phase 3 suppresses a pending
+proposal from operational queues and refuses its confirmation after the target
+retires, preserving the proposal as immutable historical evidence. It does not
+invent a proposal-resolution event or lifecycle transition merely to make that
+history look terminal. Phase 4 must define the governed disposition and
+historical presentation of such proposals, including any event, authority and
+replay semantics required. No Phase 3 behaviour is changed by this record.
+
 ### 14.0 Phase 0 — shipped, and what it deliberately did *not* do
 
 Phase 0 shipped at commit `0ad18b3`, touching only
@@ -769,7 +783,9 @@ explicit **implementation blocker**:
    `core.capture_target_bootstrap.diagnostic`; any further event requires
    Governor approval.
 6. Registration writes `core.*` declarations only; never `finance.*`.
-7. Retirement removes a target from selection and from nothing else.
+7. Retirement removes a target from current selection and operational action
+   generation while preserving history, evidence, provenance and deterministic
+   replay.
 8. `(household_id, subject_id, property)` is unique among active targets.
 9. Every gate fails closed; ambiguity is refused, never resolved by guess.
 
