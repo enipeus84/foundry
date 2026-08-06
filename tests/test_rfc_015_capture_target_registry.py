@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from foundry.core.acquisition import AcquisitionError, AssetRegistration, AssetRegistry, TelemetryStream, TelemetryStreamRegistry
+from foundry.core.acquisition import AcquisitionError, AssetRegistration, AssetRegistry, ProposalInbox, TelemetryStream, TelemetryStreamRegistry
 from foundry.core.capture_targets import CaptureTargetRegistry
 from foundry.core.entities import declare_party
 from foundry.eventlog import EventLog
@@ -33,6 +33,18 @@ def _registered_account(log: EventLog, household_id: str, account_type: str = "c
     AssetRegistry(log, entity_exists=lambda subject_id: subject_id == account.id).register(
         AssetRegistration(account.id, "finance", household_id))
     return account
+
+
+def _pending_proposal(log: EventLog, household_id: str, stream_id: str, proposal_id: str):
+    log.append("core.observation_proposal.declared", {
+        "id": proposal_id, "evidence_id": f"evidence-{proposal_id}",
+        "envelope_id": f"envelope-{proposal_id}", "household_id": household_id,
+        "interpreter_id": "test", "interpreter_version": "1",
+        "interpreter_class": "deterministic", "stream_id": stream_id,
+        "draft_events": [], "observations": [], "resolutions": [],
+        "evidence_grade": "declared",
+    })
+    return ProposalInbox(log).proposals[proposal_id]
 
 
 def test_unknown_entity_registration_fails_closed(tmp_path):
@@ -138,6 +150,55 @@ def test_retirement_is_household_scoped_idempotent_and_replayable(tmp_path):
     replayed = _registry(EventLog(tmp_path / "events.jsonl"))
     assert replayed.streams.retired == {declared.id}
     assert replayed.streams.retirements[declared.id]["reason"] == "provider moved"
+
+
+def test_retirement_rejects_all_pending_proposals_and_preserves_completed_history(tmp_path):
+    log = EventLog(tmp_path / "events.jsonl")
+    household = declare_party(log, "household")
+    account = _registered_account(log, household.id)
+    registry = _registry(log)
+    declared = registry.declare(_stream("retire-proposals", account.id, "cash_balance", household.id))
+    first = _pending_proposal(log, household.id, declared.id, "pending-first")
+    second = _pending_proposal(log, household.id, declared.id, "pending-second")
+    completed = _pending_proposal(log, household.id, declared.id, "already-confirmed")
+    rejected = _pending_proposal(log, household.id, declared.id, "already-rejected")
+    inbox = ProposalInbox(log)
+    inbox.resolve(completed.id, "confirmed", "completed before retirement", "reviewer")
+    inbox.resolve(rejected.id, "rejected", "rejected before retirement", "reviewer")
+
+    registry.retire(household_id=household.id, stream_id=declared.id,
+                    reason="provider moved", retired_at=123.0, actor="operator")
+    resolved = ProposalInbox(log).proposals
+
+    assert resolved[first.id].state == resolved[second.id].state == "rejected"
+    assert resolved[first.id].resolution_reason == f"capture target retired: {declared.id}"
+    assert resolved[completed.id].state == "confirmed"
+    assert resolved[rejected.id].state == "rejected"
+    transitions = [event for event in log.events()
+                   if event["kind"] == "core.observation_proposal.updated"
+                   and event["payload"]["entity_id"] in {first.id, second.id}]
+    assert [event["payload"]["entity_id"] for event in transitions] == [first.id, second.id]
+    assert all(event["actor"] == "operator" for event in transitions)
+
+
+def test_retired_pending_proposal_lifecycle_is_idempotent_and_replayable(tmp_path):
+    log = EventLog(tmp_path / "events.jsonl")
+    household = declare_party(log, "household")
+    account = _registered_account(log, household.id)
+    registry = _registry(log)
+    declared = registry.declare(_stream("retire-replay", account.id, "cash_balance", household.id))
+    pending = _pending_proposal(log, household.id, declared.id, "pending-replay")
+
+    retired = registry.retire(household_id=household.id, stream_id=declared.id,
+                              reason="provider moved", retired_at=123.0)
+    after_first = list(log.events())
+    assert registry.retire(household_id=household.id, stream_id=declared.id,
+                           reason="ignored", retired_at=999.0) == retired
+
+    replayed_log = EventLog(log.path)
+    assert list(replayed_log.events()) == after_first
+    assert ProposalInbox(replayed_log).proposals[pending.id].state == "rejected"
+    assert _registry(replayed_log).streams.retired == {declared.id}
 
 
 def test_operations_and_acquisition_use_the_canonical_finance_entity_resolver(tmp_path):

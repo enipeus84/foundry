@@ -12,7 +12,7 @@ from typing import Protocol
 
 from foundry.core.acquisition import (
     AcquisitionError, AssetRegistration, AssetRegistry, TelemetryStream,
-    TelemetryStreamRegistry,
+    ProposalInbox, TelemetryStreamRegistry,
 )
 from foundry.eventlog import EventLog
 
@@ -159,5 +159,11 @@ class CaptureTargetRegistry:
         if retirement.superseded_by is not None:
             payload["superseded_by"] = retirement.superseded_by
         self.log.append("core.telemetry_stream.retired", payload, actor=actor)
+        inbox = ProposalInbox(self.log)
+        for proposal in sorted(inbox.proposals.values(), key=lambda item: item.id):
+            if (proposal.state == "pending" and proposal.household_id == household_id
+                    and proposal.stream_id == stream_id):
+                inbox.resolve(proposal.id, "rejected",
+                              f"capture target retired: {stream_id}", actor)
         self.rebuild()
         return retirement
