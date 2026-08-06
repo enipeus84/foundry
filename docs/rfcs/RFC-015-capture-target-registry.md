@@ -707,7 +707,7 @@ adopted.
 | **1** | Target projection, **retirement event**, fail-closed rules, real `entity_exists` | see below |
 | **2** | Bootstrap CLI (resolve-then-declare) + deployed-log identifier confirmation | needs Phase 1 |
 | **3** | Retired capture-target telemetry suppression | keeps terminal targets auditable while removing only current operational obligations |
-| **4** | Provenance typing, duplicate/conflict UX, lifecycle hardening | genuinely incremental |
+| **4** | Retired pending-proposal lifecycle; provenance typing, duplicate/conflict UX and lifecycle hardening | completes M1 without changing target retirement semantics |
 
 **The challenge: retirement must move from Phase 4 into Phase 1.** The brief
 placed lifecycle in "provenance and lifecycle hardening". Repository evidence
@@ -725,15 +725,14 @@ anything real.
 > declared streams would otherwise be permanently selectable in the append-only
 > model.
 
-### 14.2 Phase 4 deferred lifecycle item — M1
+### 14.2 Phase 4 lifecycle item — M1
 
-**M1 — retired pending-proposal disposition.** Phase 3 suppresses a pending
-proposal from operational queues and refuses its confirmation after the target
-retires, preserving the proposal as immutable historical evidence. It does not
-invent a proposal-resolution event or lifecycle transition merely to make that
-history look terminal. Phase 4 must define the governed disposition and
-historical presentation of such proposals, including any event, authority and
-replay semantics required. No Phase 3 behaviour is changed by this record.
+**M1 — retired pending-proposal disposition.** Retirement rejects matching
+pending proposals through the existing `core.observation_proposal.updated`
+lifecycle event. The transition is household- and stream-scoped, append-only,
+deterministic under replay and idempotent on repeated retirement. Historical
+proposals, evidence and provenance remain available; confirmed, rejected and
+superseded proposals are unchanged. No event kind or payload is added.
 
 ### 14.0 Phase 0 — shipped, and what it deliberately did *not* do
 
