@@ -713,6 +713,18 @@ class FinanceEntityProjection:
         self.scenarios: dict[str, Scenario] = {}
         self.rebuild()
 
+    @classmethod
+    def empty(cls, log: EventLog) -> "FinanceEntityProjection":
+        """Create an empty projection for a caller-managed tolerant replay."""
+        projection = cls.__new__(cls)
+        projection.log = log
+        projection.accounts, projection.assets, projection.obligations = {}, {}, {}
+        projection.transactions, projection.valuations, projection.positions = {}, {}, {}
+        projection.recurring_series, projection.tax_jurisdictions = {}, {}
+        projection.exchange_rates, projection.tax_positions = {}, {}
+        projection.capital_gain_events, projection.assumption_sets, projection.scenarios = {}, {}, {}
+        return projection
+
     def rebuild(self) -> None:
         self.accounts, self.assets, self.obligations = {}, {}, {}
         self.transactions, self.valuations, self.positions = {}, {}, {}

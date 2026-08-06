@@ -181,6 +181,14 @@ class EntityProjection:
         self.missions: dict[str, Mission] = {}
         self.rebuild()
 
+    @classmethod
+    def empty(cls, log: EventLog) -> "EntityProjection":
+        """Create an empty projection for a caller-managed tolerant replay."""
+        projection = cls.__new__(cls)
+        projection.log = log
+        projection.parties, projection.employers, projection.missions = {}, {}, {}
+        return projection
+
     def rebuild(self) -> None:
         self.parties, self.employers, self.missions = {}, {}, {}
         for e in self.log.events():
