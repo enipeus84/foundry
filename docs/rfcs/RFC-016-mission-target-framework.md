@@ -1,14 +1,13 @@
 # RFC-016 — Mission Target Framework
 
-**Status:** **ARCHITECTURE — PRESENTED FOR FREEZE.** Governor rulings **GD-1**
-and **GD-11** are applied (2026-08-06). Not yet frozen: the freeze gate is a
-separate Governor act, and eight decisions remain open (§14). **No
-implementation is authorised by this document.**
+**Status:** **ARCHITECTURE FROZEN — Phase 1 and Phase 2 GO.** Governor rulings
+**GD-1** through **GD-11** are recorded (2026-08-06). The formal freeze record
+is [`../reviews/RFC-016-architecture-freeze-record.md`](../reviews/RFC-016-architecture-freeze-record.md).
 **Burn:** Architecture Burn (RFC-100 §3), Effort **HIGH**; governance
 amendments applied by the Phase 1A burn, Effort **STANDARD**.
 **Author:** EECOM (architecture Flight Controller role, Claude Opus 5).
 **Date:** 2026-08-06. **Amended:** 2026-08-06 (Phase 1A — Governor rulings
-GD-1, GD-11 and watch item W7).
+GD-1, GD-11 and watch item W7). **Frozen:** 2026-08-06 (Governor freeze gate).
 **Number:** **settled — RFC-016** by Governor ruling GD-1 (2026-08-06). *Asset
 Detail & Provenance Investigation* is reassigned to **RFC-017**, amending
 RFC-015 ruling G3. See §0.
@@ -20,6 +19,7 @@ remaining mission policies).
 this RFC supplies *intent*. The two meet only inside a domain assessor.
 **Self-review:** [`../reviews/RFC-016-architecture-self-review.md`](../reviews/RFC-016-architecture-self-review.md)
 **Architecture report:** [`../rfc-016-architecture-report.md`](../rfc-016-architecture-report.md)
+**Freeze record:** [`../reviews/RFC-016-architecture-freeze-record.md`](../reviews/RFC-016-architecture-freeze-record.md)
 
 ---
 
@@ -347,7 +347,7 @@ Same argument, same solution, applied to intent instead of assumptions.
 | Link a successor | `core.mission.linked` | **No** — `relate()` requires a member of `PARTY_RELATIONSHIP` (`grammar.py:75`); there is no relationship vocabulary for target supersession, and inventing one would put lineage in a relation while the payload lives elsewhere |
 | Record attainment | `achieve_mission` | **Must not be used** — see §7.5 |
 
-### 3.2 The authorised canonical event set *(Governor approval required — GD-2)*
+### 3.2 The authorised canonical event set *(Governor-approved — GD-2)*
 
 ```text
 core.mission_target.declared
@@ -888,9 +888,8 @@ change.
 
 ## 11. Implementation phases
 
-**No implementation is authorised by this document.** The sequence below is
-proposed for Governor approval; each phase re-enters the lifecycle as its own
-burn (RFC-100 §4.1).
+The sequence below is Governor-approved. Each phase re-enters the lifecycle as
+its own burn (RFC-100 §4.1); the freeze authorises Phase 1 and Phase 2 only.
 
 | Phase | Content | Rationale |
 |---|---|---|
@@ -987,24 +986,19 @@ Excluded by scope, and their absence is not hidden implementation:
 | **GD-11** | Whether this boundary instantiates Missions (§0.6) | **Settled — it does not.** RFC-016 governs targets attached to existing Missions. Mission instantiation is a successor boundary with its own burn and number |
 | **W7** | Mission Control assesses every active Mission against the last-declared household | **Recorded as a watch item** (§15). Pre-existing and platform-wide; not created, not fixed and not owned by this RFC |
 
-### 14.2 Open — required before or at the freeze gate
+### 14.2 Governor freeze rulings — 2026-08-06
 
-Eight decisions remain. **GD-2, GD-3, GD-4 and GD-10 are Phase 1 blocking**: an
-implementer cannot begin without the authorised event set, the vocabularies, the
-sequencing rule and the scoping rule. GD-5 through GD-9 bind only the phases
-they name and may be ruled later without holding Phase 1.
-
-| # | Decision | EECOM recommendation | Blocks |
-|---|---|---|---|
-| **GD-2** | **Two new canonical event kinds** — `core.mission_target.declared` and `core.mission_target.closed`; and the **prohibition** of `core.mission_target.updated` (§3.2) | Approve both kinds and the prohibition. Both are instances of the existing five-verb grammar; no third kind is requested | **Phase 1** |
-| **GD-3** | **Supersession and withdrawal ship in Phase 1**, before any real target is declared (§11.1) | Approve — the append-only log makes any other order unsafe | **Phase 1** |
-| **GD-4** | **Two new closed vocabularies** — `TARGET_DIMENSION` and `TARGET_HORIZON_KIND` (§5.3, §6) | Approve as **closed**, not extensible: a domain that could add a dimension could redefine comparison | **Phase 1** |
-| **GD-5** | **RFC-006 boundary.** This RFC changes no RFC-006 contract; assessors reach targets through a sibling projection (§4.1) | Approve, and note watch item **W1**: nothing structurally compels a provider to consult its target | Phase 4 |
-| **GD-6** | **Do targets move policy bands?** FI's *Independent* boundary is numerically the target (§4.2) | v1: **no**. Resolve per mission at adoption; it changes a frozen RFC-005 policy | Phase 4 (FI) |
-| **GD-7** | **Mortgage Freedom's `target_date == derived contractual ETA` rule** is incompatible with a household declaring a date it intends to beat (§6) | Do not change it here. Adoption requires a governed amendment to RFC-007 | Phase 4 (Mortgage) |
-| **GD-8** | **Assumption-implied destination vs declared target** for FI — today the divergence is reported as a limitation string (§1.3) | At adoption, the declared target should be the authority and the policy threshold derived from it; that is an RFC-005 amendment, not an architectural liberty | Phase 4 (FI) |
-| **GD-9** | **Adoption order and gate.** Financial Independence as the reference mission, followed by a mandatory Governor gate before the remaining three | Approve — the RFC-010 amendment 7 and RFC-011 Phase 5 precedents both exist for exactly this shape | Phase 4 |
-| **GD-10** | **Household scoping.** A `Mission` carries no household, so three-way equality is unenforceable; the target's household is authoritative and **first target binds** the mission to a household (§3.3) | Approve the two-way rule and first-target-binds. Note **W7**: assessing every active Mission against the last-declared household is a pre-existing platform gap this RFC neither creates nor fixes | **Phase 1** |
+| # | Decision | Disposition |
+|---|---|---|
+| **GD-2** | Two canonical event kinds and the `…updated` prohibition | **Accepted.** The authorised set is exactly `core.mission_target.declared` and `core.mission_target.closed`; `core.mission_target.updated` is prohibited and refused. |
+| **GD-3** | Supersession and withdrawal before real declaration | **Accepted.** Both ship in Phase 1; no real target may be declared first. |
+| **GD-4** | Closed target vocabularies | **Accepted.** `TARGET_DIMENSION` and `TARGET_HORIZON_KIND` are closed and not extensible by a domain. |
+| **GD-5** | RFC-006 boundary | **Accepted.** No RFC-006 contract changes; domain assessors use the sibling projection. W1 remains a watch item. |
+| **GD-6** | Policy bands | **Accepted.** v1 targets do not move policy bands. Any change is a per-mission governed adoption amendment. |
+| **GD-7** | Mortgage contractual ETA | **Accepted.** This RFC does not change the rule; adoption requires a governed RFC-007 amendment. |
+| **GD-8** | FI assumption-implied destination | **Deferred.** The RFC-005 adoption amendment must decide whether a declared target becomes the policy authority. This does not authorise any current assessor change. |
+| **GD-9** | Adoption order and gate | **Accepted.** Financial Independence is the reference adoption, followed by a mandatory Governor gate before the remaining missions. |
+| **GD-10** | Household scoping | **Accepted.** Target household is authoritative and first-target-binds applies; W7 remains a pre-existing watch item. |
 
 ---
 
@@ -1039,5 +1033,6 @@ Stated plainly so the document is not read as more than it is:
   `desired_annual_spending` once targets exist (GD-8).
 - It does not add a multi-member authorisation model; T6 remains a residual
   risk.
-- It is **not frozen.** Eight decisions are open (§14.2), four of which block
-  Phase 1. Freeze is a Governor act and is not claimed by this document.
+- It does not authorise Phase 3 or later. The Governor freeze authorises only
+  the Phase 1 Core contract and Phase 2 domain descriptor seam; later phases
+  retain their stated governed gates.

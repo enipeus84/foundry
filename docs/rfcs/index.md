@@ -53,7 +53,7 @@ Phases 1–4; Phases 5–10 remain outstanding and are separate burn candidates.
 |---|---|---|---|---|---|---|
 | RFC-012 | Telemetry Operations Console | **Complete — product remediation merged 2026-08-05** | [`RFC-012-telemetry-operations-console.md`](RFC-012-telemetry-operations-console.md) (Revision 2, after Governor amendments A1–A6) | [PR #30 comment](https://github.com/enipeus84/foundry/pull/30#issuecomment-5159867761) — SAFE: GO, two advisory findings, no remediation required | [`rfc-012-architecture-post-flight-report.md`](../rfc-012-architecture-post-flight-report.md) | [#30](https://github.com/enipeus84/foundry/pull/30) (architecture); [#35](https://github.com/enipeus84/foundry/pull/35) (product remediation) |
 | RFC-013 | Operations Capture Contracts | **Implementation ready for SAFE review** | — | — | [`rfc-013-implementation-report.md`](../rfc-013-implementation-report.md) | — |
-| RFC-016 | Mission Target Framework | **Architecture presented for freeze 2026-08-06** — Governor rulings GD-1 and GD-11 applied; eight decisions open, four of them Phase 1 blocking. **Not frozen; no implementation authorised** | [`RFC-016-mission-target-framework.md`](RFC-016-mission-target-framework.md) | — | self-review [`RFC-016-architecture-self-review.md`](../reviews/RFC-016-architecture-self-review.md); architecture report [`rfc-016-architecture-report.md`](../rfc-016-architecture-report.md) | — |
+| RFC-016 | Mission Target Framework | **Architecture frozen 2026-08-06** — Phase 1 Core contract and Phase 2 metric-descriptor seam authorised; later phases retain their stated Governor gates | [`RFC-016-mission-target-framework.md`](RFC-016-mission-target-framework.md) | — | self-review [`RFC-016-architecture-self-review.md`](../reviews/RFC-016-architecture-self-review.md); architecture report [`rfc-016-architecture-report.md`](../rfc-016-architecture-report.md); freeze record [`RFC-016-architecture-freeze-record.md`](../reviews/RFC-016-architecture-freeze-record.md) | [#43](https://github.com/enipeus84/foundry/pull/43) |
 | RFC-015 | Capture Target Registry | **Architecture frozen 2026-08-05** (Governor freeze gate at `0ad18b3`); Phases 0–3 shipped, Phase 4 in implementation | [`RFC-015-capture-target-registry.md`](RFC-015-capture-target-registry.md) | — | self-review [`RFC-015-architecture-self-review.md`](../reviews/RFC-015-architecture-self-review.md); freeze record [`RFC-015-architecture-freeze-record.md`](../reviews/RFC-015-architecture-freeze-record.md); Phase 3 report [`rfc-015-phase-3-retired-telemetry-suppression-report.md`](../rfc-015-phase-3-retired-telemetry-suppression-report.md); Phase 4 report [`rfc-015-phase-4-retired-pending-proposal-lifecycle-report.md`](../rfc-015-phase-4-retired-pending-proposal-lifecycle-report.md) | — |
 
 RFC-012 is the weekly exception-driven operating loop above RFC-011: an
@@ -107,14 +107,14 @@ registry behaviour, so it is not evidence that the Capture Target Registry
 exists. Phase 1 is blocked until the production `entity_exists` stub is
 replaced (criterion P1-A).
 
-**RFC-016 — Mission Target Framework — was presented for freeze on 2026-08-06**
-with Governor rulings **GD-1** and **GD-11** applied. It defines Foundry's
+**RFC-016 — Mission Target Framework — was frozen on 2026-08-06** with all
+Governor decisions recorded in its [freeze record](../reviews/RFC-016-architecture-freeze-record.md). It defines Foundry's
 canonical representation of strategic intent: a household-scoped, immutable,
 typed Mission Target, revised by supersession rather than mutation, held
 separately from the policy that judges progress and the evidence that measures
-it. It changes **no RFC-006 contract**. The architecture is **not frozen** —
-eight Governor decisions remain open (GD-2…GD-10), of which GD-2, GD-3, GD-4 and
-GD-10 block Phase 1 — and **no implementation is authorised**.
+it. It changes **no RFC-006 contract**. The freeze authorises its Core contract
+(Phase 1) and Finance metric-descriptor seam (Phase 2) only; all later phases
+retain their stated Governor gates.
 
 **RFC-017 is reserved for *Asset Detail & Provenance Investigation*.** By
 Governor ruling **GD-1** (2026-08-06), the successor boundary that RFC-015

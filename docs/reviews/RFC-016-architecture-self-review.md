@@ -20,6 +20,11 @@ would have specified an unenforceable security rule.
 > exclusion** with a successor burn to own it. The review text below is retained
 > unchanged as the record of the review as performed.
 
+> **Governor freeze, 2026-08-06.** GD-2 through GD-7, GD-9 and GD-10 are
+> accepted; GD-8 is deferred to the stated RFC-005 adoption amendment. This
+> review remains unchanged as the evidence presented to the gate. See the
+> [`RFC-016 architecture freeze record`](RFC-016-architecture-freeze-record.md).
+
 ---
 
 ## Part 1 — Current-state analysis

@@ -303,3 +303,15 @@ scoping rule during implementation.
 receives a formal GO and is frozen. On freeze, the freeze record is the
 Governor's artefact to issue — this burn does not write one, because a freeze
 record written by the party seeking the freeze is not evidence (RFC-100 §1.2).
+
+---
+
+## Governor freeze result — 2026-08-06
+
+**GO — RFC-016 is frozen.** The Governor accepted GD-2 through GD-7, GD-9 and
+GD-10, and deferred GD-8 to the stated RFC-005 adoption amendment. The formal
+record is [`reviews/RFC-016-architecture-freeze-record.md`](reviews/RFC-016-architecture-freeze-record.md).
+
+Phase 1 (Core contract) and Phase 2 (Finance metric-descriptor seam) are now
+authorised. This does not authorise Mission Assessment adoption: that remains
+Phase 4, under its per-mission amendments and Governor gates.
