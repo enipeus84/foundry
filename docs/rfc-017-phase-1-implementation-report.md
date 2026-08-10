@@ -1,9 +1,11 @@
 # RFC-017 — Value Provenance Framework: Phase 1 Implementation Report
 
-**Status:** SAFE remediation applied; pending SAFE Confirmation.  This report
-records the initial implementation and its bounded remediations against frozen
-authority `b8cc0ed9c63b10d2fbc03ec9440c154826c7efd6`.  It authorises no Phase 2
-work and claims no merge authority.
+**Status:** Phase 1 merged 2026-08-10 through merge commit
+`80ea9dbb8a241bc904148dd788a92ceddf5a0a34`, following independent SAFE
+confirmation **GO WITH ADVISORY** of candidate
+`82f7310a67aea4ac57936e76727a677f7fb0bc48`. This report records the initial
+implementation and its bounded remediations against frozen authority
+`b8cc0ed9c63b10d2fbc03ec9440c154826c7efd6`. It authorises no Phase 2 work.
 
 **Reviewed candidate:** `dfbaeab34041eb654f26a57afa541ca4c5ede28b` — SAFE
 verdict **REMEDIATE** (1 HIGH, 3 MEDIUM, 4 LOW, 4 observations).
