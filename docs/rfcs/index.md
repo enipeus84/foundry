@@ -54,7 +54,7 @@ Phases 1–4; Phases 5–10 remain outstanding and are separate burn candidates.
 | RFC-012 | Telemetry Operations Console | **Complete — product remediation merged 2026-08-05** | [`RFC-012-telemetry-operations-console.md`](RFC-012-telemetry-operations-console.md) (Revision 2, after Governor amendments A1–A6) | [PR #30 comment](https://github.com/enipeus84/foundry/pull/30#issuecomment-5159867761) — SAFE: GO, two advisory findings, no remediation required | [`rfc-012-architecture-post-flight-report.md`](../rfc-012-architecture-post-flight-report.md) | [#30](https://github.com/enipeus84/foundry/pull/30) (architecture); [#35](https://github.com/enipeus84/foundry/pull/35) (product remediation) |
 | RFC-013 | Operations Capture Contracts | **Implementation ready for SAFE review** | — | — | [`rfc-013-implementation-report.md`](../rfc-013-implementation-report.md) | — |
 | RFC-016 | Mission Target Framework | **Complete — merged 2026-08-06**. Frozen Phases 1–2 shipped; later phases retain their stated Governor gates | [`RFC-016-mission-target-framework.md`](RFC-016-mission-target-framework.md) | [`rfc-016-implementation-report.md`](../rfc-016-implementation-report.md) | SAFE review [`RFC-016-safe-review.md`](../reviews/RFC-016-safe-review.md); SAFE confirmation [`RFC-016-safe-confirmation.md`](../reviews/RFC-016-safe-confirmation.md); freeze record [`RFC-016-architecture-freeze-record.md`](../reviews/RFC-016-architecture-freeze-record.md); technical debt [`rfc-016-technical-debt.md`](../rfc-016-technical-debt.md) | [#44](https://github.com/enipeus84/foundry/pull/44) |
-| RFC-017 | Value Provenance Framework | **Phase 1 merged 2026-08-10**; architecture frozen at `b8cc0ed`; **Phases 2–5 unauthorised** | [`RFC-017-value-provenance-framework.md`](RFC-017-value-provenance-framework.md) | [`rfc-017-phase-1-implementation-report.md`](../rfc-017-phase-1-implementation-report.md) | self-review [`RFC-017-architecture-self-review.md`](../reviews/RFC-017-architecture-self-review.md); freeze record [`RFC-017-architecture-freeze-record.md`](../reviews/RFC-017-architecture-freeze-record.md); SAFE review [`RFC-017-safe-review.md`](../reviews/RFC-017-safe-review.md); SAFE confirmation [`RFC-017-safe-confirmation.md`](../reviews/RFC-017-safe-confirmation.md); technical debt [`rfc-017-technical-debt.md`](../rfc-017-technical-debt.md) | [#45](https://github.com/enipeus84/foundry/pull/45) |
+| RFC-017 | Value Provenance Framework | **Phase 1 merged 2026-08-10**; architecture frozen at `b8cc0ed`; **OBS-017-A resolved 2026-08-10 (GD-A1–GD-A7)** — Phase 1 implementation **remediation required** (contract conformance, not a vulnerability); **Phases 2–5 unauthorised** | [`RFC-017-value-provenance-framework.md`](RFC-017-value-provenance-framework.md) | [`rfc-017-phase-1-implementation-report.md`](../rfc-017-phase-1-implementation-report.md) | self-review [`RFC-017-architecture-self-review.md`](../reviews/RFC-017-architecture-self-review.md); freeze record [`RFC-017-architecture-freeze-record.md`](../reviews/RFC-017-architecture-freeze-record.md); SAFE review [`RFC-017-safe-review.md`](../reviews/RFC-017-safe-review.md); SAFE confirmation [`RFC-017-safe-confirmation.md`](../reviews/RFC-017-safe-confirmation.md); OBS-017-A investigation [`RFC-017-OBS-017-A-clarification.md`](../reviews/RFC-017-OBS-017-A-clarification.md); OBS-017-A ruling [`RFC-017-OBS-017-A-ruling.md`](../reviews/RFC-017-OBS-017-A-ruling.md); technical debt [`rfc-017-technical-debt.md`](../rfc-017-technical-debt.md) | [#45](https://github.com/enipeus84/foundry/pull/45), [#46](https://github.com/enipeus84/foundry/pull/46) |
 | RFC-015 | Capture Target Registry | **Architecture frozen 2026-08-05** (Governor freeze gate at `0ad18b3`); Phases 0–3 shipped, Phase 4 in implementation | [`RFC-015-capture-target-registry.md`](RFC-015-capture-target-registry.md) | — | self-review [`RFC-015-architecture-self-review.md`](../reviews/RFC-015-architecture-self-review.md); freeze record [`RFC-015-architecture-freeze-record.md`](../reviews/RFC-015-architecture-freeze-record.md); Phase 3 report [`rfc-015-phase-3-retired-telemetry-suppression-report.md`](../rfc-015-phase-3-retired-telemetry-suppression-report.md); Phase 4 report [`rfc-015-phase-4-retired-pending-proposal-lifecycle-report.md`](../rfc-015-phase-4-retired-pending-proposal-lifecycle-report.md) | — |
 
 RFC-012 is the weekly exception-driven operating loop above RFC-011: an
@@ -132,6 +132,21 @@ phases retain their stated gates. By ruling **GD-1** (R1 approved) the number is
 assigned to this framework; the rulings are recorded in
 [`RFC-017-value-provenance-framework.md`](RFC-017-value-provenance-framework.md)
 §0 and §14.
+
+**Phase 1 (`82f7310`) merged 2026-08-10; independent SAFE verdict GO WITH
+ADVISORY.** SAFE confirmation identified **OBS-017-A** — the merged
+implementation enforced literal `Subject` equality on recursive contributors,
+stricter than the frozen contract, making §7.1/§7.2's own worked decompositions
+inexpressible. EECOM's bounded investigation
+([`RFC-017-OBS-017-A-clarification.md`](../reviews/RFC-017-OBS-017-A-clarification.md))
+found this was a contract gap, not an implementation defect against the
+letter of the frozen text. **Governor rulings GD-A1 through GD-A7
+(2026-08-10)** resolved it as a bounded amendment — RFC-017 §9.1 (new)
+replaces `Subject` equality with Core-verified same-authority — recorded in
+[`RFC-017-OBS-017-A-ruling.md`](../reviews/RFC-017-OBS-017-A-ruling.md) and in
+RFC-017 §9, §9.1 and §14.1. Phase 1 implementation is **conformant to the
+frozen architecture as originally merged** and **requires a bounded
+remediation** before Phase 2, which remains unauthorised (GD-A7).
 
 > **Amendment history of this reservation — two recorded moves, no silent
 > consumption.** RFC-015 ruling **G3** earmarked *Asset Detail & Provenance

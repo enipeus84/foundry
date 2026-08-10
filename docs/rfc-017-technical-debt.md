@@ -2,7 +2,9 @@
 
 Recorded against the [frozen RFC-017 architecture](https://github.com/enipeus84/foundry/blob/b8cc0ed9c63b10d2fbc03ec9440c154826c7efd6/docs/rfcs/RFC-017-value-provenance-framework.md)
 (architecture authority `b8cc0ed`) and the Phase 1 implementation reviewed at
-`dfbaeab`.
+`dfbaeab`. **Amended 2026-08-10** by Governor rulings GD-A1–GD-A7 resolving
+OBS-017-A — see the dated blocks below and
+[`reviews/RFC-017-OBS-017-A-ruling.md`](reviews/RFC-017-OBS-017-A-ruling.md).
 
 ## Accepted Technical Debt
 
@@ -51,6 +53,22 @@ where that decision is made. W4's stated mitigation ("bounded by mandatory
 depth limits") should be corrected at the same time, because it is not
 sufficient on its own.
 
+> **Governor disposition — ruling GD-A5, 2026-08-10 (OBS-017-A).**
+> **SAFE-017-04 MUST CLOSE BEFORE THE NEXT CONSUMER.** The prior "future
+> disposition" above is superseded from a recommendation into a requirement,
+> for a specific reason: OBS-017-A's remediation (RFC-017 §9.1) replaces
+> `Subject` equality with same-authority verification, which is precisely what
+> makes a real household graph traversable. Under equality, a decomposition
+> could only ever reference values about one subject; under same-authority, a
+> household value may expand into every registered resource in the household
+> and each of *those* into its own contributors — the branching this debt
+> measured and warned about. The bounded Phase 1 conformance remediation
+> authorised by GD-A1–GD-A6 is **also authorised to close this debt**, via
+> per-resolution memoisation keyed by `ValueReference`, scoped to the lifetime
+> of one top-level `explain()` call. No persistent cache, cross-request cache,
+> mutable global cache, TTL semantics or cache event is authorised. Formal
+> ruling record: [`reviews/RFC-017-OBS-017-A-ruling.md`](reviews/RFC-017-OBS-017-A-ruling.md).
+
 ## Accepted Observations
 
 **OBS-017-A — coordinate rule contradicts the RFC's worked examples.**
@@ -75,6 +93,40 @@ states that Core *cannot* verify domain scope containment and assigns it to the
 domain, which suggests the Core rule should be temporal equality plus a
 non-broadening subject rule rather than subject equality — but that is an
 architectural decision and is not taken here.
+
+> **RESOLVED — Governor ruling GD-A1–GD-A6, 2026-08-10.**
+> **REAL ARCHITECTURE CONTRADICTION, confirmed.** Root cause: the frozen RFC
+> conflated `Subject` **identity** with authority **scope**, and separately
+> under-surveyed Core's own canonical authority — `AssetRegistry`
+> (`core/acquisition.py:266-334`) already binds `subject_id → household_id`
+> neutrally, already refuses cross-household containment, and has a production
+> writer, so §9's "Core cannot check it" was factually incomplete for the
+> household dimension. §7.1/§7.2 are **affirmed**; they were always correct.
+>
+> **Resolution:** RFC-017 §9.1 (new) replaces `Subject` equality with
+> same-authority verification (VP-SCOPE-1 through VP-SCOPE-6): temporal
+> coordinates stay exactly equal; a contributor's `Subject` may differ from its
+> parent's but must independently resolve, through canonical Core state, to
+> the one authorising household fixed at the root; the explainer may never
+> assert that authority itself.
+>
+> **Phase 1 disposition: REMEDIATION REQUIRED — contract conformance, not an
+> active vulnerability.** The merged implementation is fail-closed and
+> satisfied every stated acceptance criterion; it was simply stricter than the
+> frozen contract required. R1, R2, R3, R4, Loop 2, SAFE-017-01, SAFE-017-02
+> and SAFE-017-03 are unaffected — VP-SCOPE-1 preserves R1's temporal half
+> verbatim, and VP-SCOPE-3–5 replace only SAFE-017-02's `Subject` predicate.
+>
+> **Implementation constraint carried into the remediation:** the resolver
+> must not gain a direct dependency on `AssetRegistry`/`EventLog`/Finance — the
+> authority binding arrives through a narrow, read-only, Core-neutral protocol
+> injected at composition (conceptually `SubjectAuthority`), preserving P1-A
+> and P1-B.
+>
+> Phase 2 authority remains **NONE**. Formal ruling record:
+> [`reviews/RFC-017-OBS-017-A-ruling.md`](reviews/RFC-017-OBS-017-A-ruling.md);
+> EECOM's investigation (evidence, not itself a ruling):
+> [`reviews/RFC-017-OBS-017-A-clarification.md`](reviews/RFC-017-OBS-017-A-clarification.md).
 
 **OBS-017-B — refusal shapes are not uniform.** An expanded additive child that
 is *available* but carries no quantity raises `ValueProvenanceError`, whereas

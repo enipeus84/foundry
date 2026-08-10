@@ -1,17 +1,26 @@
 # RFC-017 — Value Provenance Framework
 
-**Status:** **ARCHITECTURE FROZEN — Phase 1 GO.** Governor rulings **GD-1**
-through **GD-10** are recorded (2026-08-06); GD-8 and GD-9 remain explicitly
-deferred and **confer no implementation authority**. The formal freeze record is
+**Status:** **ARCHITECTURE FROZEN — Phase 1 GO; Phase 1 implementation
+REMEDIATION REQUIRED.** Governor rulings **GD-1** through **GD-10** are
+recorded (2026-08-06); GD-8 and GD-9 remain explicitly deferred and **confer no
+implementation authority**. The formal freeze record is
 [`../reviews/RFC-017-architecture-freeze-record.md`](../reviews/RFC-017-architecture-freeze-record.md).
 Implementation authority is granted for **Phase 1 only** — the Core Value
 Provenance Framework, against acceptance criteria **P1-A through P1-H** (§11.1).
 Phases 2 and 3 remain architecturally described and require subsequent Governor
 authority; Phase 4 and later retain their stated gates.
+**Post-freeze amendment (2026-08-10):** Governor rulings **GD-A1** through
+**GD-A7** resolve **OBS-017-A** — see §9.1 (new) and §14.1 (new). The merged
+Phase 1 implementation (`82f7310`) enforced a stricter rule than the frozen
+architecture required; it remains fail-closed and is not unsafe, but requires a
+bounded conformance remediation before Phase 2. Formal record:
+[`../reviews/RFC-017-OBS-017-A-ruling.md`](../reviews/RFC-017-OBS-017-A-ruling.md).
 **Burn:** Architecture Burn (RFC-100 §3), Effort **HIGH** (Core seam);
-rulings applied by a governance burn, Effort **LOW**.
+rulings applied by a governance burn, Effort **LOW**; OBS-017-A amendment
+applied by a governance burn, Effort **MEDIUM**.
 **Author:** EECOM (architecture Flight Controller role, Claude).
-**Date:** 2026-08-06. **Amended:** 2026-08-06 (Governor rulings GD-1–GD-10).
+**Date:** 2026-08-06. **Amended:** 2026-08-06 (Governor rulings GD-1–GD-10);
+2026-08-10 (Governor rulings GD-A1–GD-A7, OBS-017-A).
 **Frozen:** 2026-08-06 (Governor freeze gate, head `b8cc0ed`).
 **Number:** **settled — RFC-017** by Governor ruling GD-1 (2026-08-06,
 **R1 approved**). *Asset Detail & Provenance Investigation* is re-earmarked as
@@ -1179,6 +1188,14 @@ two more `increases` contributions and the node's completeness is recomputed —
 with no framework change, no new vocabulary value and no schema migration. That
 is the test of whether the abstraction is the right size.
 
+> **Governor affirmation — GD-A1, 2026-08-10 (OBS-017-A).** §7.1 and §7.2 are
+> **affirmed as correct, unamended.** Both worked examples depict contributors
+> whose `Subject` differs from the explained value's — `resource:obligation`,
+> `resource:asset`, `resource:account` beneath a `party:household` value — and
+> that was always the intended shape. The merged Phase 1 implementation could
+> not express it; the framework's own examples were never wrong. §9.1 states
+> the rule that makes them expressible.
+
 ### 7.3 Sequence — resolving a bounded query
 
 ```text
@@ -1250,8 +1267,11 @@ does — no further.
    omitting `known_at` yields a current-state explanation that may never be
    presented as a historical one (§3.3).
 10. **Recursion is bounded and lazy; a cycle is a refusal, not a truncation**
-    (§5). Scope, `as_of` and `known_at` are carried down unchanged and are
-    never broadened by the resolver.
+    (§5). The authorising household, `as_of` and `known_at` are carried down
+    unchanged and are never broadened by the resolver. *(Clarified by Governor
+    ruling GD-A1–GD-A5, 2026-08-10, §9.1: "scope" here has always meant the
+    authority envelope the resolver dispatches within, never a requirement that
+    every contributor's `Subject` equal its parent's — see §9.1 VP-SCOPE-2/4.)*
 11. **A repeated additive contributor within one decomposition is refused; an
     expanded additive contributor must agree with its declared contribution;
     cross-decomposition double counting is not claimed to be detected** (§5.1,
@@ -1296,6 +1316,94 @@ is used where it is the honest answer.
   `Mission` having no household) and the reason it is stated this way here.
   Foundry still has **no multi-member authorisation model**; this RFC neither
   adds nor narrows one (residual, unchanged).
+
+  > **Amendment — Governor ruling GD-A6, 2026-08-10 (OBS-017-A).** Row one
+  > (**No scope substitution**) is unchanged and remains a **clarification**:
+  > it always constrained the resolver's dispatch behaviour, never contributor
+  > `Subject` identity, and §9.1 restates it in those terms.
+  >
+  > Row two (**Scope containment … Core cannot check it**) is **superseded as a
+  > normative claim.** It is **factually incomplete**, not merely permissive:
+  > Core owns a second canonical authority the original text did not survey —
+  > `AssetRegistry` (`core/acquisition.py:266-334`) — which binds
+  > `subject_id → household_id` neutrally, already refuses cross-household
+  > containment (`:317-318`), and has a production writer
+  > (`finance/runtime_bootstrap.py:121`, applied `:183`, itself gated on
+  > canonical Finance ownership being a subset of Core household membership).
+  > **Core can and must verify household-level containment.** Finer-grained
+  > containment — which resource within a household a caller may read — remains
+  > a per-domain obligation, unchanged. See §9.1 for the resulting contract.
+  >
+  > This block is retained beside the original text per RFC-100 §9.2; the
+  > original is not deleted. Ruling record:
+  > [`../reviews/RFC-017-OBS-017-A-ruling.md`](../reviews/RFC-017-OBS-017-A-ruling.md).
+
+### 9.1 Subject authority — Governor amendment GD-A1–GD-A6, 2026-08-10
+
+*(New subsection. Resolves OBS-017-A. Normative unless marked otherwise.)*
+
+The frozen text above never required a contributor's `Subject` to equal its
+parent's — every occurrence of `Subject` in this RFC is a field declaration or
+a constraint on the **resolver's dispatch behaviour**, and §7.1/§7.2 positively
+depict contributors whose subject differs from the explained value's. The
+Phase 1 implementation read `as_of`/`known_at`/`Subject` as one combined
+equality rule; that reading is safe but conflates two different concerns.
+**Subject is part of a value's identity. `as_of` and `known_at` are the query's
+temporal envelope. Requiring identity to be constant across a decomposition
+forbids decomposition.** This subsection separates them and states the
+authority rule Core actually enforces.
+
+**VP-SCOPE-1 — temporal coordinates.** For recursive provenance resolution,
+`as_of` and `known_at` **MUST** remain identical to the parent reference. Core
+**MUST NOT** alter, widen, default, or accept provider substitution of either
+temporal coordinate. *(Restates §9 row one and P1-F; no change in substance —
+R1 and SAFE-017-02's temporal guarantee is unchanged.)*
+
+**VP-SCOPE-2 — root authority.** One **authorising household MUST** be derived
+from canonical Core state for the root resolution, and **MUST NOT** change for
+the entire resolution. Ambiguous or unresolvable root authority **MUST**
+refuse.
+
+**VP-SCOPE-3 — child authority.** Every contributor and exclusion `Subject`
+**MUST** independently resolve, through canonical Core authority state, to the
+root authorising household. A `Subject` that is unknown, unregistered,
+ambiguous, or bound to another household **MUST** be refused. There is no
+"unknown means probably the same household" behaviour.
+
+**VP-SCOPE-4 — identity is not authority.** A contributor's or exclusion's
+`Subject` **MAY** differ from its parent's. Literal `Subject` equality **MUST
+NOT** be required or treated as the authority test.
+
+**VP-SCOPE-5 — the authority source.** The explainer **MUST NOT** declare,
+assert, override or supply the household authority used to admit a traversal.
+Core **MUST** derive it solely from canonical state established independently
+of the explainer — the currently-identified source is `AssetRegistry` plus Core
+party membership (`members_of`). This is a **structural** requirement, not
+merely a convention: an explainer that could assert its own authority would
+reintroduce exactly what R1 and SAFE-017-02 refuse — a provider choosing the
+coordinates Core resolves.
+
+**VP-SCOPE-6 — the boundary this does not claim.** RFC-017 guarantees
+**household isolation** at this boundary and nothing finer. Whether a caller
+may query a given household at all remains the caller's authorisation problem,
+unchanged; Foundry has no intra-household privilege boundary, and this
+amendment does not create one (T6 residual, unchanged).
+
+**Implementation constraint (binding on the remediation, not new architecture).**
+The resolver **MUST NOT** gain a direct dependency on `AssetRegistry`,
+`EventLog`, or any Finance module — `AssetRegistry` imports `EventLog`, and
+P1-B is asserted **structurally**. The authority binding **MUST** arrive through
+a narrow, read-only, Core-neutral protocol injected at the composition root,
+following the descriptor-seam pattern already used for `TargetMetricResolver`
+(RFC-016 §5.3) and `ExplanationDescriptor` (§6.2) — for example, conceptually,
+`SubjectAuthority.household_for(subject) -> str | None`. The exact name is not
+frozen by this amendment.
+
+**What this amendment does not authorise.** No canonical event. No new
+vocabulary value. No shape change to `ValueReference`, `ProvenanceNode`,
+`Contribution` or `Exclusion`. No change to the query signature. No general
+authorisation or capability subsystem. No Finance explainer. No Phase 2.
+
 - **Sensitive data and secrets.** A provenance carries no new data. It carries
   event ids that already exist, quantities the domain already computed, and a
   domain-authored `label` produced at read time. **Nothing is written**, so
@@ -1432,6 +1540,16 @@ honest state must exist before the surface that must handle it.
 | **P1-G** | A `derived` node with zero contributions reports `partial` with `residual = quantity` — not `complete`, not `observed` (FR-008) |
 | **P1-H** | The existing suite passes unmodified; no shipped value or rendered figure changes |
 
+> **Amendment — Governor ruling GD-A1–GD-A6, 2026-08-10 (OBS-017-A).**
+> **Clarification, retained beside the original.** P1-F was satisfied by the
+> merged Phase 1 implementation and remains satisfied: literal `Subject`
+> equality is a valid, stricter reading of "no scope substitution." Read
+> forward from this date, P1-F's `Subject` clause means **VP-SCOPE-2 through
+> VP-SCOPE-5** (§9.1) — the authorising household is fixed at the root and
+> verified by Core against canonical state — not literal equality. `as_of` and
+> `known_at` equality is unchanged in both readings (VP-SCOPE-1). The bounded
+> Phase 1 conformance remediation is evaluated against the amended reading.
+
 ---
 
 ## 12. Scope exclusions *(FR-004 — declared, not deferred debt)*
@@ -1522,6 +1640,36 @@ been given. No implementation is authorised. GD-8 and GD-9 are deferred, not
 granted: neither authorises an assessor change, an RFC-006 amendment or any
 change to `MetricResult`.
 
+### 14.1 Post-freeze amendment — OBS-017-A, 2026-08-10
+
+**All seven are disposed.** Raised by EECOM's bounded architecture
+investigation ([`../reviews/RFC-017-OBS-017-A-clarification.md`](../reviews/RFC-017-OBS-017-A-clarification.md),
+evidence only — not itself a ruling) and independent SAFE confirmation of
+merged Phase 1. Formal ruling record:
+[`../reviews/RFC-017-OBS-017-A-ruling.md`](../reviews/RFC-017-OBS-017-A-ruling.md).
+
+| # | Decision | Ruling |
+|---|---|---|
+| **GD-A1** | OBS-017-A determination and §7.1/§7.2 status | **Accepted — REAL ARCHITECTURE CONTRADICTION**, root cause: identity/authority conflation plus an incomplete survey of Core's own authority state. §7.1/§7.2 **affirmed**, unamended |
+| **GD-A2** | `as_of` for recursive resolution | **Accepted — MUST equal parent, unchanged** (VP-SCOPE-1) |
+| **GD-A3** | `known_at` for recursive resolution | **Accepted — MUST equal parent, unchanged** (VP-SCOPE-1) |
+| **GD-A4** | Root authority | **Accepted** — one authorising household, derived from canonical Core state, fixed for the resolution; ambiguous or unresolvable refuses (VP-SCOPE-2) |
+| **GD-A5** | Child authority | **Accepted** — every contributor/exclusion `Subject` independently resolves to the root household via canonical state; unknown, unregistered, ambiguous or foreign refuses (VP-SCOPE-3, VP-SCOPE-4). Also disposes **SAFE-017-04: MUST close before the next consumer**, folded into the same remediation as W4's corrected disposition |
+| **GD-A6** | Authority source | **Accepted** — the explainer MUST NOT assert household authority; Core derives it independently via `AssetRegistry` and party membership (VP-SCOPE-5). Does **not** authorise a direct `AssetRegistry` dependency from the resolver — a narrow read-only seam is required |
+| **GD-A7** | Phase 2 implementation authority | **Deferred.** Remains **NONE**. No Finance explainer or production provenance consumer is authorised by these rulings |
+
+**Phase 1 disposition: REMEDIATION REQUIRED, not unsafe.** The merged
+implementation (`82f7310`) is fail-closed and satisfied every stated Phase 1
+acceptance criterion; it enforced a rule **stricter** than the frozen
+architecture required. This is a **contract-conformance remediation**, not
+repair of an active disclosure vulnerability — no SAFE property (R1, R2, R3,
+R4, Loop 2, SAFE-017-01, SAFE-017-02, SAFE-017-03) is weakened by this
+amendment; VP-SCOPE-1 preserves R1's temporal half verbatim, and VP-SCOPE-3–5
+replace only SAFE-017-02's `Subject` predicate with a Core-verified one.
+
+**No other RFC is amended.** RFC-011 and RFC-015 are read for evidence
+(`AssetRegistry`, `runtime_bootstrap.py`), not changed.
+
 ---
 
 ## 15. Watch items and technical debt
@@ -1531,11 +1679,11 @@ change to `MetricResult`.
 | **W1** | Nothing compels a consumer to publish or consume provenance. A provider may keep discarding its decomposition (§1.2) and remain compliant | Watch item. Compelling it changes a frozen RFC-006/RFC-001 contract. Per-domain tests are the available defence — the same residual RFC-016 recorded as its own W1 |
 | **W2** | The framework cannot detect double counting across independently produced decompositions (§5.3) | Named, not fixed. Union rules are domain property (`aggregation.py:64-81`); adopting them into Core would make Core an aggregation authority |
 | **W3** | Executable historical calculation versions are not retained, so an old explanation is reproducible only while its version is still producible (§3.4) | Pre-existing and platform-wide. Contained by refusing rather than re-deriving; retention is a successor boundary |
-| **W4** | Recursive expansion multiplies an already-uncached per-request replay cost | Bounded by mandatory depth limits. A caching and invalidation policy is a platform-wide gap already on the debt register and is not created by this RFC |
+| **W4** | Recursive expansion multiplies an already-uncached per-request replay cost | ~~Bounded by mandatory depth limits. A caching and invalidation policy is a platform-wide gap already on the debt register and is not created by this RFC~~ **Corrected by Governor ruling GD-A5, 2026-08-10 (OBS-017-A, SAFE-017-04).** Depth limits alone do **not** bound total work — measured at up to 2,396,745 explainer resolutions for a legal, acyclic shape (`rfc-017-technical-debt.md`). Same-authority traversal (§9.1) is what makes a real household graph traversable, so this **must close in the Phase 1 conformance remediation**, before any consumer, via per-resolution memoisation keyed by `ValueReference` |
 | **W5** | Over-attribution in shipped code (`pension_assessment.py:1184-1241`) will persist until a phase adopts provenance for those metrics | Named, not fixed. Fixing it inside the current contract is impossible — there is one bag per result and nowhere to put a per-component association. That is the defect, not an oversight |
 | **W6** | Four existing meanings of the word *provenance* (§0.5) now have a fifth neighbour | Contained by binding naming discipline. Renaming existing fields is out of scope: they are live contracts on merged RFCs |
 | **W7** | `MissionAssessmentRegistry.dispatch` wraps every provider call in `except Exception` (`core/mission_assessment.py:538-544`), so a provenance failure inside an assessor would surface as a generic provider failure | Pre-existing; recorded by RFC-016 as its W6 and unchanged here. Named so it is not mistaken for something this RFC introduced |
-| **W8** | Core cannot verify **domain scope containment** during expansion (§9); it can only refuse to substitute a broader scope | Named, not fixed. `resolve_scope` takes no view on domain ownership by design (`core/scope.py:29-53`). Per-domain tests are the defence, and P1-F states exactly what Core does and does not guarantee |
+| **W8** | ~~Core cannot verify **domain scope containment** during expansion (§9); it can only refuse to substitute a broader scope~~ **Superseded by Governor ruling GD-A6, 2026-08-10 (OBS-017-A).** Narrowed, not withdrawn: Core **can and must** verify **household-level** containment, via canonical `AssetRegistry` state (§9.1 VP-SCOPE-2/3/5) — the original survey of Core's authority was incomplete. **Finer-than-household** containment (which resource *within* a household a caller may read) remains a per-domain obligation, unchanged | Original: `resolve_scope` takes no view on domain ownership by design (`core/scope.py:29-53`) — true of `resolve_scope`, incomplete as a statement about Core. §9.1 states the corrected boundary; per-domain tests remain the defence for what Core still does not check |
 | **W9** | Core cannot verify that a node's anchors genuinely support its quantity — only that an `observed` node has at least one | Accepted limit. Verifying it would require Core to re-derive the value, which is the boundary §6.1 exists to hold |
 
 ---
