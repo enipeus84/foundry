@@ -40,3 +40,7 @@ class DuplicateMissionAssessmentError(FoundryError):
     """A Mission assessment policy is already registered to a different
     provider. Like metric ownership, assessment ownership is exact and
     duplicate registration fails closed."""
+
+
+class DuplicateValueExplainerError(FoundryError):
+    """A Value Provenance value id is owned by more than one explainer."""
