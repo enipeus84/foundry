@@ -1,13 +1,18 @@
 # RFC-017 — Value Provenance Framework
 
-**Status:** **GOVERNOR RULINGS RECORDED — GO WITH RULINGS (2026-08-06).**
-GD-1 through GD-7 and GD-10 are ruled; GD-8 and GD-9 are deferred as
-recommended. **The architecture is not yet frozen** — freeze is a separate
-Governor gate, and **no implementation is authorised**.
+**Status:** **ARCHITECTURE FROZEN — Phase 1 GO.** Governor rulings **GD-1**
+through **GD-10** are recorded (2026-08-06); GD-8 and GD-9 remain explicitly
+deferred and **confer no implementation authority**. The formal freeze record is
+[`../reviews/RFC-017-architecture-freeze-record.md`](../reviews/RFC-017-architecture-freeze-record.md).
+Implementation authority is granted for **Phase 1 only** — the Core Value
+Provenance Framework, against acceptance criteria **P1-A through P1-H** (§11.1).
+Phases 2 and 3 remain architecturally described and require subsequent Governor
+authority; Phase 4 and later retain their stated gates.
 **Burn:** Architecture Burn (RFC-100 §3), Effort **HIGH** (Core seam);
 rulings applied by a governance burn, Effort **LOW**.
 **Author:** EECOM (architecture Flight Controller role, Claude).
 **Date:** 2026-08-06. **Amended:** 2026-08-06 (Governor rulings GD-1–GD-10).
+**Frozen:** 2026-08-06 (Governor freeze gate, head `b8cc0ed`).
 **Number:** **settled — RFC-017** by Governor ruling GD-1 (2026-08-06,
 **R1 approved**). *Asset Detail & Provenance Investigation* is re-earmarked as
 an **unnumbered future consumer boundary**, expressly amending GD-1 of RFC-016
@@ -1393,27 +1398,28 @@ the same change.
 
 ---
 
-## 11. Implementation phases *(non-binding; each re-enters the lifecycle as its own burn)*
+## 11. Implementation phases
 
-Nothing below is authorised by this document. RFC-100 §4.1 applies: each phase
-is its own burn, and a freeze authorises only the phases the Governor names.
+Each phase re-enters the lifecycle as its own burn (RFC-100 §4.1). **The
+2026-08-06 freeze authorises Phase 1 only**
+([freeze record](../reviews/RFC-017-architecture-freeze-record.md)).
 
-| Phase | Content | Why here |
-|---|---|---|
-| **1** | Core contract: the five shapes, the four vocabularies, the resolver, verification, completeness derivation, bounded recursion, cycle refusal. **Mock domain only** | the foundation; nothing real is explained |
-| **2** | First domain explainer: **property equity** (RFC-007). The decomposition already exists in code (`mortgage_assessment.py:716-732`) and moves out of display strings | proves the seam without inventing evidence; the one case where the target output is already known to be correct |
-| **3** | Second explainer: **pension wealth** — chosen because it is *partial* (§7.2). Exercises exclusions, contextual factors and the ownership share that is invisible today | proves the honesty machinery on a real gap rather than a clean case |
-| **4** | Consumer adoption, one consumer at a time, each behind its own governed amendment | any consumer that renders provenance changes what a household sees |
-| **5** | Whether `MetricResult`'s flat reference bag is superseded by anchors | **changes a frozen RFC-001 contract** (000 §13.3) with live consumers at `mission_control.py:1554-1556`. A Governor decision, not a cleanup |
+| Phase | Content | Authority | Why here |
+|---|---|---|---|
+| **1** | Core contract: the five shapes, the four vocabularies, the resolver, verification, completeness derivation, bounded recursion, cycle refusal. **Mock domain only** | **GO** — frozen 2026-08-06, against P1-A…P1-H | the foundation; nothing real is explained |
+| **2** | First domain explainer: **property equity** (RFC-007). The decomposition already exists in code (`mortgage_assessment.py:716-732`) and moves out of display strings | **Not authorised** — requires subsequent Governor authority | proves the seam without inventing evidence; the one case where the target output is already known to be correct |
+| **3** | Second explainer: **pension wealth** — chosen because it is *partial* (§7.2). Exercises exclusions, contextual factors and the ownership share that is invisible today | **Not authorised** — requires subsequent Governor authority | proves the honesty machinery on a real gap rather than a clean case |
+| **4** | Consumer adoption, one consumer at a time, each behind its own governed amendment | **Not authorised** — retains its stated gates | any consumer that renders provenance changes what a household sees |
+| **5** | Whether `MetricResult`'s flat reference bag is superseded by anchors | **Not authorised** — GD-9 deferred, conferring nothing | **changes a frozen RFC-001 contract** (000 §13.3) with live consumers at `mission_control.py:1554-1556`. A Governor decision, not a cleanup |
 
-**Sequencing rule proposed as binding.** Phase 3 (a partial explanation)
+**Sequencing rule — binding, ruled GD-7.** Phase 3 (a partial explanation)
 **must** ship before any Phase 4 consumer. A surface that only ever meets
 `complete` explanations will be built assuming completeness is normal, and will
 then present `partial` as an error. RFC-004.2's information-honesty pass and
 RFC-015's "retirement before bootstrap" ruling (G6) are the precedents: the
 honest state must exist before the surface that must handle it.
 
-### 11.1 Phase 1 acceptance criteria *(proposed as binding)*
+### 11.1 Phase 1 acceptance criteria *(binding — the frozen criteria for the authorised burn)*
 
 | # | Criterion |
 |---|---|
@@ -1557,9 +1563,11 @@ Stated plainly, so the document is not read as more than it is.
 - **It does not give provenance a surface.** Nothing a household can see
   changes until a consumer burn, which this document neither designs nor
   authorises.
-- **It is not frozen.** GD-1 through GD-10 are ruled and the register is closed,
-  but the freeze gate is a separate Governor act and has not been given. Until
-  it is, no phase — including Phase 1 — is authorised.
+- **The freeze authorises Phase 1 and nothing else.** Phase 1 is a Core
+  contract proven against a mock domain: it explains no real value, changes no
+  number a household sees, and adds no surface. Phases 2 and 3 — the first real
+  explainers — require subsequent Governor authority, and GD-8 and GD-9 remain
+  deferred, conferring none.
 - **It does not give the re-earmarked investigation surface an architecture.**
   GD-1 kept that boundary alive and unnumbered; it needs its own burn and its
   own boundary challenge, and this document is its prerequisite, not its

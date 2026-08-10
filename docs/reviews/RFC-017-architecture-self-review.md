@@ -27,6 +27,17 @@ refused every legitimate factor), **A5** (one field carrying two meanings) and
 > review text below is retained **unchanged** as the evidence presented to the
 > gate.
 
+> **Governor freeze, 2026-08-06.** The architecture is **frozen** at head
+> `b8cc0ed`, and **Phase 1 is GO** against acceptance criteria P1-A through
+> P1-H. GD-8 and GD-9 remain explicitly deferred and confer no implementation
+> authority. This review remains unchanged as the evidence presented to the
+> gate. See the
+> [`RFC-017 architecture freeze record`](RFC-017-architecture-freeze-record.md).
+>
+> Residuals **R2 through R6** survive the freeze as recorded: each is a stated
+> limit of the frozen architecture, not an open question, and each has a watch
+> item in RFC §15.
+
 ---
 
 ## Part 1 — Current-state analysis

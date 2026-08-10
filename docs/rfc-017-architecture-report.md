@@ -334,14 +334,14 @@ artefacts named above as deliberately unamended.
 | Implementation files changed | **none** |
 | Committed | yes — architecture package, then the governance amendments |
 | Pushed | yes |
-| PR | [#45](https://github.com/enipeus84/foundry/pull/45), **draft**; not for merge pending the Governor freeze gate (FR-005) |
+| PR | [#45](https://github.com/enipeus84/foundry/pull/45); architecture frozen at `b8cc0ed`. Merge remains a Governor act (FR-005) |
 
 ---
 
 ## Recommendation
 
-**Verdict: GO — rulings applied; the package is ready for the Governor freeze
-gate.**
+**Verdict: GO — rulings applied; the package went to the freeze gate and was
+frozen. See the freeze result below.**
 
 The framework is smaller than the problem it addresses, which was the
 Governor's stated guidance: four vocabularies, eleven values, five shapes, one
@@ -351,7 +351,7 @@ architectural invention: what a provenance record is, what is stored (nothing),
 what is verified, what is refused, how recursion terminates, what Core may and
 may not compute, and what "done" means are all decided in the document.
 
-### Remaining freeze blockers — **none**
+### Freeze blockers at the gate — **none**
 
 | Condition for freeze | State |
 |---|---|
@@ -372,20 +372,43 @@ verified, what is refused, how recursion terminates, what Core may and may not
 compute, and what "done" means are all decided in the document and all now
 ruled.
 
-**Two items the Governor may wish to note at the gate, neither a blocker:**
+**Two items were raised at the gate, and both are now ruled:**
 
-1. **Freeze scope.** RFC §11 proposes five phases. The precedent set by RFC-015
-   and RFC-016 is that a freeze authorises named phases only. Phases 1–3 are
-   coherent as a set (contract, one complete explanation, one partial one) and
-   Phase 4 onward carries stated governed gates; but which phases a freeze
-   authorises is the Governor's to name, and this report does not assume it.
-2. **§6.4 device.** The "changes no frozen contract" claim is currently prose
-   listing twelve contracts. RFC-016 §4 makes the equivalent claim as a
-   per-contract table, which is checkable line by line. Converting it is a
-   legitimate later improvement and was **not** done here, because this burn is
-   bounded to applying the rulings (FR-004).
+1. **Freeze scope — ruled: Phase 1 only.** RFC §11 now carries an Authority
+   column recording it. Phases 2 and 3 remain architecturally described and
+   unauthorised; Phase 4 and later retain their stated gates.
+2. **§6.4 device — ruled: not a blocker, and not to be done.** The contract is
+   already normative in the RFC, and documentation churn solely to restate it
+   is not authorised. The item is closed, not carried as debt.
 
-**Do not brief BOOSTER.** No implementation is authorised. GO WITH RULINGS is
-not a freeze, and the freeze record is the Governor's artefact to issue — this
-burn does not write one, because a freeze record written by the party seeking
-the freeze is not evidence (RFC-100 §1.2).
+---
+
+## Governor freeze result — 2026-08-06
+
+**GO — RFC-017 is FROZEN at head `b8cc0ed9c63b10d2fbc03ec9440c154826c7efd6`.**
+
+The Governor accepted the amended architecture, settled GD-1 through GD-7 as
+recorded, kept GD-8 and GD-9 explicitly deferred with **no implementation
+authority conferred**, and confirmed that GD-10 resolves programme numbering
+**without reserving successor RFC numbers**. The formal record is
+[`reviews/RFC-017-architecture-freeze-record.md`](reviews/RFC-017-architecture-freeze-record.md),
+held separately from this report and from the RFC and self-review at the
+Governor's direction, so the decision is never mistaken for self-certification
+(RFC-100 §1.2, §9.4).
+
+**Phase 1 is authorised** — the Core Value Provenance Framework, against
+acceptance criteria P1-A through P1-H, proven against a mock domain only. The
+freeze record enumerates the nine frozen invariants that Phase 1 must preserve;
+a change to any of them is a change to frozen architecture (FR-003) and a
+Governor decision, not an implementation choice.
+
+**Nothing else is authorised**: no Phase 2 or 3 explainer, no consumer or
+surface, no assessor change, no `MetricResult` change, no retrofit of a shipped
+metric, and no canonical event in this or any later phase.
+
+**Next burn.** Phase 1 is an **Implementation Burn owned by BOOSTER**
+(RFC-100 §3), requiring its own brief and its own pre-flight. EECOM has **no
+implementation authority** (§2.4) and this burn does not begin it. Under §2.9
+rule 1 the separation is on acts within a burn, so the role may be occupied by
+the same party on a later, separately classified burn — but it is a different
+burn, and it is not self-authorising.

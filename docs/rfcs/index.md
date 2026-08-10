@@ -54,7 +54,7 @@ Phases 1–4; Phases 5–10 remain outstanding and are separate burn candidates.
 | RFC-012 | Telemetry Operations Console | **Complete — product remediation merged 2026-08-05** | [`RFC-012-telemetry-operations-console.md`](RFC-012-telemetry-operations-console.md) (Revision 2, after Governor amendments A1–A6) | [PR #30 comment](https://github.com/enipeus84/foundry/pull/30#issuecomment-5159867761) — SAFE: GO, two advisory findings, no remediation required | [`rfc-012-architecture-post-flight-report.md`](../rfc-012-architecture-post-flight-report.md) | [#30](https://github.com/enipeus84/foundry/pull/30) (architecture); [#35](https://github.com/enipeus84/foundry/pull/35) (product remediation) |
 | RFC-013 | Operations Capture Contracts | **Implementation ready for SAFE review** | — | — | [`rfc-013-implementation-report.md`](../rfc-013-implementation-report.md) | — |
 | RFC-016 | Mission Target Framework | **Complete — merged 2026-08-06**. Frozen Phases 1–2 shipped; later phases retain their stated Governor gates | [`RFC-016-mission-target-framework.md`](RFC-016-mission-target-framework.md) | [`rfc-016-implementation-report.md`](../rfc-016-implementation-report.md) | SAFE review [`RFC-016-safe-review.md`](../reviews/RFC-016-safe-review.md); SAFE confirmation [`RFC-016-safe-confirmation.md`](../reviews/RFC-016-safe-confirmation.md); freeze record [`RFC-016-architecture-freeze-record.md`](../reviews/RFC-016-architecture-freeze-record.md); technical debt [`rfc-016-technical-debt.md`](../rfc-016-technical-debt.md) | [#44](https://github.com/enipeus84/foundry/pull/44) |
-| RFC-017 | Value Provenance Framework | **Governor rulings recorded 2026-08-06 — GO WITH RULINGS.** Awaiting the Governor freeze gate; no implementation is authorised | [`RFC-017-value-provenance-framework.md`](RFC-017-value-provenance-framework.md) | — | self-review [`RFC-017-architecture-self-review.md`](../reviews/RFC-017-architecture-self-review.md); architecture report [`rfc-017-architecture-report.md`](../rfc-017-architecture-report.md) | [#45](https://github.com/enipeus84/foundry/pull/45) |
+| RFC-017 | Value Provenance Framework | **Architecture frozen 2026-08-06** (Governor freeze gate at `b8cc0ed`); **Phase 1 GO**, Phases 2–5 unauthorised | [`RFC-017-value-provenance-framework.md`](RFC-017-value-provenance-framework.md) | — | self-review [`RFC-017-architecture-self-review.md`](../reviews/RFC-017-architecture-self-review.md); freeze record [`RFC-017-architecture-freeze-record.md`](../reviews/RFC-017-architecture-freeze-record.md); architecture report [`rfc-017-architecture-report.md`](../rfc-017-architecture-report.md) | [#45](https://github.com/enipeus84/foundry/pull/45) |
 | RFC-015 | Capture Target Registry | **Architecture frozen 2026-08-05** (Governor freeze gate at `0ad18b3`); Phases 0–3 shipped, Phase 4 in implementation | [`RFC-015-capture-target-registry.md`](RFC-015-capture-target-registry.md) | — | self-review [`RFC-015-architecture-self-review.md`](../reviews/RFC-015-architecture-self-review.md); freeze record [`RFC-015-architecture-freeze-record.md`](../reviews/RFC-015-architecture-freeze-record.md); Phase 3 report [`rfc-015-phase-3-retired-telemetry-suppression-report.md`](../rfc-015-phase-3-retired-telemetry-suppression-report.md); Phase 4 report [`rfc-015-phase-4-retired-pending-proposal-lifecycle-report.md`](../rfc-015-phase-4-retired-pending-proposal-lifecycle-report.md) | — |
 
 RFC-012 is the weekly exception-driven operating loop above RFC-011: an
@@ -117,10 +117,19 @@ it. It changes **no RFC-006 contract**. The freeze authorises its Core contract
 (Phase 1) and Finance metric-descriptor seam (Phase 2) only; all later phases
 retain their stated Governor gates.
 
-**RFC-017 is *Value Provenance Framework*.** By Governor ruling **GD-1 of
-RFC-017** (2026-08-06, **R1 approved**), the number is assigned to the canonical
-contract by which any observed value is deterministically explained from
-immutable evidence. The rulings are recorded in
+**RFC-017 — Value Provenance Framework — was frozen on 2026-08-06** with all
+Governor decisions recorded in its [freeze record](../reviews/RFC-017-architecture-freeze-record.md).
+It defines the canonical contract by which any observable value is
+deterministically explained from immutable evidence: a **projection, never
+canonical state**, introducing **zero canonical events in any phase**, whose
+completeness and residual are **derived by the framework and can never be
+declared by a domain**. It changes **no frozen contract** — not `MetricResult`,
+not RFC-006, not `MissionTarget`, and no existing domain calculation. The freeze
+authorises its **Core contract (Phase 1) only**, against acceptance criteria
+P1-A through P1-H and proven against a mock domain; Phases 2 and 3 remain
+architecturally described and require subsequent Governor authority, and later
+phases retain their stated gates. By ruling **GD-1** (R1 approved) the number is
+assigned to this framework; the rulings are recorded in
 [`RFC-017-value-provenance-framework.md`](RFC-017-value-provenance-framework.md)
 §0 and §14.
 
