@@ -16,6 +16,9 @@ from . import vocab
 from .scope import Subject
 
 
+USABLE_VALUE_STATUSES = frozenset({"available", "stale"})
+
+
 class ValueProvenanceError(ValueError):
     """An explanation is structurally inconsistent and cannot be trusted."""
 
@@ -160,11 +163,13 @@ class ProvenanceResolver:
             self._descriptors[descriptor.value_id] = descriptor
 
     def register(self, explainer: ValueExplainer) -> None:
-        value_ids = explainer.explainable_value_ids()
-        if not isinstance(value_ids, frozenset):
+        declared_ids = explainer.explainable_value_ids()
+        if not isinstance(declared_ids, frozenset):
             raise ValueProvenanceError("explainer value ids must be a frozenset")
+        value_ids = frozenset(_text(value_id, "explainer value id") for value_id in declared_ids)
+        if len(value_ids) != len(declared_ids):
+            raise DuplicateValueExplainerError("explainer declares duplicate canonical value ids")
         for value_id in value_ids:
-            _text(value_id, "explainer value id")
             existing = self._explainers.get(value_id)
             if existing is not None and existing is not explainer:
                 raise DuplicateValueExplainerError(f"{value_id!r} is already registered")
@@ -188,6 +193,7 @@ class ProvenanceResolver:
             return None
         self._verify_envelope(node, reference)
         self._verify_structure(node)
+        self._verify_emitted_coordinates(node)
         resolved = self._with_completeness(node)
         if depth == max_depth:
             return resolved
@@ -223,6 +229,14 @@ class ProvenanceResolver:
             raise ValueProvenanceError(
                 "recursive contributor must preserve subject, as_of, and known_at")
 
+    @classmethod
+    def _verify_emitted_coordinates(cls, node: ProvenanceNode) -> None:
+        for contribution in node.contributions:
+            cls._verify_child_coordinates(node.reference, contribution.contributor)
+        for exclusion in node.exclusions:
+            if exclusion.subject != node.reference.subject:
+                raise ValueProvenanceError("exclusions must preserve the requesting subject")
+
     @staticmethod
     def _verify_structure(node: ProvenanceNode) -> None:
         if node.kind == "observed":
@@ -243,7 +257,7 @@ class ProvenanceResolver:
             seen.add(item.contributor)
 
     def _with_completeness(self, node: ProvenanceNode) -> ProvenanceNode:
-        if node.status in {"unavailable", "unsupported"}:
+        if node.status not in USABLE_VALUE_STATUSES:
             return _resolved_node(replace(node, quantity=None), None, None)
         descriptor = self._descriptors.get(node.reference.value_id)
         if (descriptor is not None and node.quantity is not None

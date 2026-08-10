@@ -46,3 +46,19 @@ re-validation, not SAFE or merge authority.
 This is a provenance conflict discovered during resolution, not a conversion,
 substitution or correction of either magnitude.  Unit mismatch, malformed
 shapes and other contract-invalid inputs retain their existing refusal paths.
+
+## SAFE remediation
+
+**SAFE review SHA:** `dfbaeab34041eb654f26a57afa541ca4c5ede28b`.
+**Verdict:** REMEDIATE.  The frozen architecture remains unchanged.
+
+| Finding | Disposition | Remediation evidence |
+|---|---|---|
+| SAFE-017-01 — status coherence | Only `available` and `stale` may carry usable magnitude and coverage; every other current or future `METRIC_STATUS` value normalises to the non-usable shape | `test_safe_017_01_only_positive_usable_statuses_may_claim_magnitude`; domain-added status probe |
+| SAFE-017-02 — emitted coordinates | Every contribution is validated before output regardless of expansion state; exclusions preserve the requesting subject, the only coordinate carried by their frozen shape | unexpanded, contextual, depth-bound, nested and exclusion probes |
+| SAFE-017-03 — registry ownership | One declaration snapshot is normalised, collision-checked and used as the registry key | cross-explainer whitespace, internal collision and stateful-declaration probes |
+| SAFE-017-04 — recursive amplification | Accepted debt, not implemented in Phase 1 | [`rfc-017-technical-debt.md`](rfc-017-technical-debt.md) |
+
+SAFE LOW-1 through LOW-4 and OBS-1 through OBS-4 remain advisory.  This burn
+does not alter them except where the authorised coordinate hardening naturally
+extends the previous recursive-substitution defence.
