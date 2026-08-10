@@ -126,6 +126,20 @@ METRIC_STATUS = ExtensibleVocabulary(
     {"available", "unavailable", "unsupported", "stale", "error"},
 )
 
+# RFC-017 Value Provenance contract.  These values describe explanation
+# structure, not a domain's calculation or presentation semantics.
+PROVENANCE_NODE_KIND = ClosedVocabulary(
+    "provenance_node_kind", {"observed", "derived"})
+
+CONTRIBUTION_ROLE = ClosedVocabulary(
+    "contribution_role", {"increases", "decreases", "contextual"})
+
+EXPLANATION_COMPLETENESS = ClosedVocabulary(
+    "explanation_completeness", {"complete", "partial", "indivisible"})
+
+EXCLUSION_REASON = ClosedVocabulary(
+    "exclusion_reason", {"unobserved", "out_of_period", "incommensurable"})
+
 MISSION_TRAJECTORY = ClosedVocabulary(
     "mission_trajectory",
     {

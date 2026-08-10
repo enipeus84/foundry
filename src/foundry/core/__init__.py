@@ -35,6 +35,10 @@ from .decisions import Decision, DecisionOutcome, DecisionProjection
 from .evidence import EvidenceIndex
 from .metrics import MetricProvider, MetricRegistry, MetricRequest, MetricResult
 from .scope import Subject
+from .value_provenance import (
+    Contribution, Exclusion, ExplanationDescriptor, ProvenanceNode,
+    ProvenanceResolver, ValueExplainer, ValueProvenanceError, ValueReference,
+)
 from .flight_deck import Tile, compose_flight_deck, compose_tile
 from .mission_evaluation import evaluate_mission_status, get_mission_status
 from .mission_assessment import (
@@ -51,6 +55,8 @@ __all__ = [
     "EvidenceIndex",
     "MetricProvider", "MetricRegistry", "MetricRequest", "MetricResult",
     "Subject",
+    "Contribution", "Exclusion", "ExplanationDescriptor", "ProvenanceNode",
+    "ProvenanceResolver", "ValueExplainer", "ValueProvenanceError", "ValueReference",
     "Tile", "compose_flight_deck", "compose_tile",
     "evaluate_mission_status", "get_mission_status",
     "DeltaV", "ForecastPoint", "MissionAssessment", "MissionAssessmentProvider",
