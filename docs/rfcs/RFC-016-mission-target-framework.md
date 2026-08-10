@@ -10,7 +10,9 @@ amendments applied by the Phase 1A burn, Effort **STANDARD**.
 GD-1, GD-11 and watch item W7). **Frozen:** 2026-08-06 (Governor freeze gate).
 **Number:** **settled — RFC-016** by Governor ruling GD-1 (2026-08-06). *Asset
 Detail & Provenance Investigation* is reassigned to **RFC-017**, amending
-RFC-015 ruling G3. See §0.
+RFC-015 ruling G3. See §0. **Amended 2026-08-06** by ruling GD-1 of RFC-017:
+RFC-017 is *Value Provenance Framework* and the investigation boundary becomes
+**unnumbered**. RFC-016's number and contracts are unaffected.
 **Depends on:** RFC-001 (Core domain — Mission entity, grammar, vocabularies),
 RFC-005 (Financial Independence assessment), RFC-006 (Mission Assessment
 Framework — the boundary this RFC must not move), RFC-007/008/009 (the three
@@ -103,6 +105,20 @@ ruling should not be amended for the convenience of a later brief.
 > the provenance-investigation boundary to RFC-017 (2026-08-06). The index row
 > withheld by the drafting burn was added by the Phase 1A governance burn once
 > the ruling existed.
+
+> **Amendment — Governor ruling GD-1 of RFC-017, 2026-08-06.** The
+> reassignment recorded above **no longer holds for the number, and holds
+> entirely for the boundary.** RFC-017 is
+> [*Value Provenance Framework*](RFC-017-value-provenance-framework.md);
+> *Asset Detail & Provenance Investigation* is re-earmarked as an **unnumbered
+> future consumer boundary**, keeping its subject, its rare-investigation rhythm
+> and its successor status, and losing only its number — the second time this
+> boundary has moved by recorded decision rather than silent consumption.
+>
+> **Nothing in RFC-016 changes.** This RFC remains *Mission Target Framework* at
+> RFC-016; no contract, invariant, phase, acceptance criterion, event kind or
+> other ruling is affected. The text above is retained verbatim as the record of
+> the ruling as originally made (RFC-100 §9.2).
 
 ### 0.6 Scope ruling GD-11 — **settled, 2026-08-06**
 
@@ -982,7 +998,7 @@ Excluded by scope, and their absence is not hidden implementation:
 
 | # | Decision | Ruling |
 |---|---|---|
-| **GD-1** | The RFC number (§0) | **Settled — RFC-016.** *Asset Detail & Provenance Investigation* reassigned to **RFC-017**, expressly amending RFC-015 ruling G3. RFC-014 remains reserved for *Governed Corrections* |
+| **GD-1** | The RFC number (§0) | **Settled — RFC-016.** *Asset Detail & Provenance Investigation* reassigned to **RFC-017**, expressly amending RFC-015 ruling G3. RFC-014 remains reserved for *Governed Corrections*. **Amended 2026-08-06 by ruling GD-1 of RFC-017:** RFC-017 is *Value Provenance Framework*; the investigation boundary becomes **unnumbered** (§0 amendment block). RFC-016's own number and every other RFC-016 decision are unaffected |
 | **GD-11** | Whether this boundary instantiates Missions (§0.6) | **Settled — it does not.** RFC-016 governs targets attached to existing Missions. Mission instantiation is a successor boundary with its own burn and number |
 | **W7** | Mission Control assesses every active Mission against the last-declared household | **Recorded as a watch item** (§15). Pre-existing and platform-wide; not created, not fixed and not owned by this RFC |
 

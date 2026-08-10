@@ -1,17 +1,17 @@
 # RFC-017 — Value Provenance Framework
 
-**Status:** **PROPOSED — architecture burn complete, awaiting Governor review
-and freeze.** No decision in this document is ruled. **Governor decision GD-1
-(the RFC number, §0) is a NO-GO condition on freeze** and is raised, not
-assumed.
-**Burn:** Architecture Burn (RFC-100 §3), Effort **HIGH** (Core seam).
+**Status:** **GOVERNOR RULINGS RECORDED — GO WITH RULINGS (2026-08-06).**
+GD-1 through GD-7 and GD-10 are ruled; GD-8 and GD-9 are deferred as
+recommended. **The architecture is not yet frozen** — freeze is a separate
+Governor gate, and **no implementation is authorised**.
+**Burn:** Architecture Burn (RFC-100 §3), Effort **HIGH** (Core seam);
+rulings applied by a governance burn, Effort **LOW**.
 **Author:** EECOM (architecture Flight Controller role, Claude).
-**Date:** 2026-08-06.
-**Number:** **contested — see §0.** RFC-017 is currently reserved by Governor
-ruling GD-1 of RFC-016 (2026-08-06) for *Asset Detail & Provenance
-Investigation*. This burn was briefed as RFC-017 — Value Provenance Framework.
-The two are **adjacent but not the same boundary**; §0 states the analysis and
-two acceptable resolutions and adopts neither.
+**Date:** 2026-08-06. **Amended:** 2026-08-06 (Governor rulings GD-1–GD-10).
+**Number:** **settled — RFC-017** by Governor ruling GD-1 (2026-08-06,
+**R1 approved**). *Asset Detail & Provenance Investigation* is re-earmarked as
+an **unnumbered future consumer boundary**, expressly amending GD-1 of RFC-016
+and, through it, RFC-015 ruling G3. See §0.
 **Depends on:** RFC-001 (Core domain — Metric Provider contract, `Subject`,
 event grammar, closed vocabularies), RFC-011 (Asset & Telemetry Acquisition —
 canonical observations, evidence grades, bitemporal reads).
@@ -41,9 +41,39 @@ index; it is not a summary and does not substitute for the sections.
 | 9 | What contracts should downstream RFCs consume? | §6 |
 | 10 | What boundaries must remain outside RFC-017? | §6.4, §12 |
 
+Governor rulings **GD-1 through GD-10** are recorded in §14 and applied
+throughout. §0 carries the two that changed the document's own governance
+position: the number (GD-1) and the programme sequence (GD-10).
+
 ---
 
 ## 0. Naming and governance check *(Check 0 — performed before drafting)*
+
+> ### Governor ruling GD-1 — **settled, 2026-08-06**
+>
+> **This mission is RFC-017 — Value Provenance Framework.** Recommendation
+> **R1** of §0.3 is approved. *Asset Detail & Provenance Investigation* is
+> **re-earmarked as an unnumbered future consumer boundary**, expressly amending
+> GD-1 of [RFC-016](RFC-016-mission-target-framework.md) and, through it,
+> RFC-015 ruling **G3**.
+>
+> The displaced boundary keeps its subject, its rare-investigation rhythm and
+> its successor status, and loses only its number. It is recorded as a
+> **consumer** of this RFC — a surface that renders explanations, above a
+> substrate that produces them — and it takes a number when a burn is
+> commissioned for it.
+>
+> The amendment is recorded beside the text it amends, with the original wording
+> retained verbatim in every case (RFC-100 §9.2): RFC-016 §0 and §14.1, RFC-015
+> §0 and §18, and [`index.md`](index.md). This is the second recorded move of
+> this boundary and the second time it has moved by decision rather than by
+> silent consumption — the distinction that separates it from the standing
+> RFC-013 governance debt.
+>
+> §0.1–§0.3 below are retained **unchanged** as the analysis that produced the
+> ruling. They are a record of a question that is now closed, not an open
+> question. The [`index.md`](index.md) row that §0.3 withheld was added by this
+> governance burn once the ruling existed, closing the declared FR-017 gap.
 
 ### 0.1 The number is already spoken for, and the subject is adjacent
 
@@ -121,41 +151,45 @@ withheld until the number is ruled, exactly as RFC-016's Phase 1 burn withheld
 its own. The resulting FR-017 coherence gap is declared, not hidden (see the
 architecture report).
 
-### 0.4 The briefed programme numbers are not rulings either
+### 0.4 The programme sequence — collisions confirmed and ruled
 
-The brief positions RFC-017 in a programme:
+> ### Governor ruling GD-10 — **settled, 2026-08-06**
+>
+> **The programme-number collision is confirmed. RFC-018, RFC-019 and RFC-020
+> are not reserved numbers and must not be cited as such.**
+>
+> | Briefed as | Ruled |
+> |---|---|
+> | RFC-018 — Mission Target Capture | **Not a new boundary.** It is adoption of the RFC-016 contract — that RFC's own Phase 3 declaration surface — **unless a future architecture burn proves a genuinely new boundary** |
+> | RFC-019 — Mission Assessment | **Already belongs to RFC-006**, merged, with four live providers |
+> | RFC-020 — Flight Deck Intelligence | **Unnumbered.** Future Flight Deck intelligence takes a number when a burn is commissioned for it |
+>
+> **RFC-014 remains reserved for *Governed Corrections*.** Beyond it, no number
+> is reserved for future programme work.
+
+The brief positioned this RFC in a numbered programme sequence. Restated under
+the ruling, with the numbers removed and only the ordering retained — because
+the *ordering* was the useful part and the numbering was the collision:
 
 ```text
-RFC-011  Telemetry Acquisition        merged
-RFC-017  Value Provenance             this burn
-RFC-016  Mission Targets              merged
-RFC-018  Mission Target Capture       briefed direction only
-RFC-019  Mission Assessment           briefed direction only
-RFC-020  Flight Deck Intelligence     briefed direction only
+Telemetry Acquisition              RFC-011   merged
+Value Provenance                   RFC-017   this document
+Mission Targets                    RFC-016   merged
+Mission Target capture             ——        RFC-016 adoption (Phase 3)
+Mission assessment                 RFC-006   merged
+Flight Deck intelligence           ——        unnumbered future boundary
+Asset detail & provenance          ——        unnumbered future consumer (GD-1)
 ```
 
-**RFC-018, RFC-019 and RFC-020 are recorded here as programme direction and
-nothing more** — the same status RFC-012 §2.8 gave RFC-013 and RFC-014. None
-has an architecture, a boundary challenge or a Governor ruling. This RFC claims
-none of them, designs for none of them, and depends on none of them.
+**This RFC claims no number but its own, designs for none of these, and depends
+on none of them.** The dependency runs the other way: each is a potential
+consumer of the contract in §6, and a consumer that cannot obtain a
+decomposition does not compute one (RFC-012 R9, §6.1).
 
-Three collisions in that list are raised rather than resolved, because a
-successor burn that discovers them late pays more than a reviewer who sees them
-now:
-
-1. **RFC-014 remains reserved for *Governed Corrections*** ([`index.md`](index.md)).
-   Corrections and provenance meet: "this contribution is wrong" is a
-   correction, not an explanation. §12 excludes corrections from this RFC for
-   that reason.
-2. **"RFC-019 — Mission Assessment" names a boundary that already shipped.**
-   RFC-006 is the merged Mission Assessment Framework with four live providers.
-   Whatever RFC-019 turns out to be, it is not the first assessment RFC, and a
-   burn briefed under that title must first establish what it changes about a
-   frozen contract.
-3. **"RFC-018 — Mission Target Capture" is the Phase 3 declaration surface
-   RFC-016 §11 already specifies**, and RFC-016 §0.6 (GD-11) ruled that mission
-   *instantiation* is a separate unclaimed boundary. Both facts belong in that
-   burn's Check 0.
+One boundary relationship survives the ruling and is worth keeping in view:
+**corrections and provenance meet.** "This contribution is wrong" is a
+correction, not an explanation, and §12 excludes corrections from this RFC for
+that reason. RFC-014 is where that lands.
 
 ### 0.5 Naming discipline *(binding)*
 
@@ -1014,9 +1048,10 @@ participant.** That is not extra machinery; it is the machinery that makes
 | **RFC-016** Mission Targets | the household's declared destination; supersession lineage | how an observed value is composed | a Mission Target is itself an explainable value whose node is `observed` and terminates in its declaration event. **This RFC changes no RFC-016 contract and requires no target change** |
 | **RFC-017** *(this)* | the shape of an explanation; completeness and residual; recursion; the explainer seam | any value; any judgement; any presentation; any event | — |
 | **RFC-006** Mission Assessment | trajectory, margin, confidence, milestones, ETA | value composition | **unchanged.** An assessor may consume provenance; nothing compels it to, and no RFC-006 contract is touched (watch item **W1**) |
-| **RFC-018** *(direction)* Mission Target Capture | operational capture of intent | explanation | none |
-| **RFC-019** *(direction)* Mission Assessment | assessment judgement | explanation | may consume the contract; may not extend it locally |
-| **RFC-020** *(direction)* Flight Deck Intelligence | presentation, interaction, disclosure order | composition, arithmetic, completeness | **the only consumer that renders provenance.** RFC-012 R9 applies: a surface that cannot get a decomposition does not compute one |
+| **RFC-016 Phase 3** Mission Target capture | the operational surface that declares intent | explanation | none. **Not a separate boundary** — GD-10 |
+| **RFC-014** *(reserved)* Governed Corrections | disputing or correcting a fact | explanation | a residual is a **disclosure**, never an adjustment. "This contribution is wrong" lands here, not in §4 |
+| **Unnumbered** — Asset Detail & Provenance Investigation | the rare-investigation surface: asset detail, provenance timeline, audit browsing | composition, arithmetic, completeness | **a consumer of this RFC** (GD-1). It renders what §4 produces; RFC-012 R9 applies — a surface that cannot obtain a decomposition does not compute one |
+| **Unnumbered** — future Flight Deck intelligence | presentation, interaction, disclosure order | composition, arithmetic, completeness | as above; the disclosure order of a provenance tree is presentation and is outside §4 entirely |
 
 **Frozen contracts this RFC does not touch, stated so it is checkable:**
 `MetricRequest`, `MetricResult`, `MetricProvider`, `MetricRegistry`,
@@ -1421,8 +1456,10 @@ Excluded by scope. Their absence is not hidden implementation:
 - **Cross-decomposition double-count detection** (§5.3) — domain property.
 - **The RFC-013 numbering debt, RFC-014, and mission instantiation.** Open
   elsewhere; untouched here.
-- **RFC-018 / RFC-019 / RFC-020.** Recorded as briefed direction only (§0.4);
-  no architecture is proposed for any of them.
+- **Every consumer boundary named in §0.4 and §6.4.** No architecture is
+  proposed for any of them, numbered or unnumbered — including the *Asset Detail
+  & Provenance Investigation* surface that GD-1 re-earmarked, which requires its
+  own burn and its own boundary challenge.
 
 ---
 
@@ -1453,23 +1490,31 @@ Excluded by scope. Their absence is not hidden implementation:
 None of the following is ruled. Each carries an EECOM recommendation; none may
 be assumed.
 
-| # | Decision | EECOM recommendation | Blocks |
-|---|---|---|---|
-| **GD-1** | **The RFC number** (§0) — is this RFC-017, with the *Asset Detail & Provenance Investigation* surface re-earmarked to a successor number by dated ruling amending GD-1 of RFC-016? | **R1** — file here, re-earmark the surface, record the amendment | **freeze** |
-| **GD-2** | Provenance is a **deterministic projection with zero canonical events**, in every phase (§3) | Accept | **Phase 1** |
-| **GD-3** | The four closed vocabularies — `PROVENANCE_NODE_KIND`, `CONTRIBUTION_ROLE`, `EXPLANATION_COMPLETENESS`, `EXCLUSION_REASON` — and their eleven values (§4) | Accept as specified; extension is a governed Core change | **Phase 1** |
-| **GD-4** | **Completeness is derived, never declared** (§4.5) | Accept — it is the framework's honesty guarantee | **Phase 1** |
-| **GD-5** | Core's arithmetic bound: Core may sum and compare within one unit, and may never transform one (§6.1, §6.3) | Accept | **Phase 1** |
-| **GD-6** | Bounded, lazy recursion with cycle refusal; no unbounded expansion (§5) | Accept | **Phase 1** |
-| **GD-7** | The sequencing rule: a **partial** explanation ships before any consumer surface (§11) | Accept | Phase 3/4 |
-| **GD-8** | Whether an assessor may be *required* to consult provenance — an RFC-006 boundary question (**W1**) | **Defer.** Requiring it changes a frozen contract; per-domain tests are the available defence | Phase 4 |
-| **GD-9** | Whether `MetricResult`'s flat reference bag is eventually superseded by anchors (§11 Phase 5) | **Defer.** A frozen RFC-001 contract with live consumers; not a cleanup | Phase 5 |
-| **GD-10** | The programme numbers RFC-018/019/020, and the three collisions in §0.4 | **Record as direction only**; rule nothing now | — |
+**All ten are disposed. Nothing in this register is open.** The verdict was
+**GO WITH RULINGS** (2026-08-06). Freeze remains a separate Governor gate.
 
-**GD-1 is a freeze blocker.** GD-2 through GD-6 are Phase 1 blockers: freezing
-with any of them open would leave BOOSTER to choose the storage model, the
-vocabularies, the honesty rule or Core's arithmetic bound during
-implementation, which is the FR-013 failure.
+| # | Decision | Ruling |
+|---|---|---|
+| **GD-1** | The RFC number (§0) | **Settled — RFC-017 is Value Provenance Framework.** R1 approved. *Asset Detail & Provenance Investigation* is re-earmarked as an **unnumbered future consumer boundary**, amending GD-1 of RFC-016 and, through it, RFC-015 G3. Recorded in RFC-016 §0/§14.1, RFC-015 §0/§18 and [`index.md`](index.md) |
+| **GD-2** | Provenance is a **deterministic projection with zero canonical events**, in every phase (§3) | **Approved as recommended** |
+| **GD-3** | The four closed vocabularies — `PROVENANCE_NODE_KIND`, `CONTRIBUTION_ROLE`, `EXPLANATION_COMPLETENESS`, `EXCLUSION_REASON` — and their eleven values (§4) | **Approved as recommended.** Extension is a governed Core change |
+| **GD-4** | **Completeness is derived, never declared** (§4.5) | **Approved as recommended** |
+| **GD-5** | Core's arithmetic bound: sum and compare within one unit; never transform one (§6.1, §6.3) | **Approved as recommended** |
+| **GD-6** | Bounded, lazy recursion with cycle refusal; no unbounded expansion (§5) | **Approved as recommended** |
+| **GD-7** | Sequencing: a **partial** explanation ships before any consumer surface (§11) | **Approved as recommended** |
+| **GD-8** | Whether an assessor may be *required* to consult provenance — an RFC-006 boundary question (**W1**) | **Deferred as recommended.** Requiring it changes a frozen contract. This authorises no assessor change and no RFC-006 amendment |
+| **GD-9** | Whether `MetricResult`'s flat reference bag is superseded by anchors (§11 Phase 5) | **Deferred as recommended.** A frozen RFC-001 contract with live consumers; not a cleanup. Phase 5 remains unauthorised |
+| **GD-10** | The programme sequence (§0.4) | **Collision confirmed.** RFC-018/019/020 are **not reserved numbers**. Mission Target capture is RFC-016 adoption unless a future burn proves a new boundary; mission assessment belongs to RFC-006; Flight Deck intelligence is unnumbered |
+
+**No decision blocks the freeze gate.** GD-2 through GD-6 — the storage model,
+the vocabularies, the honesty rule, Core's arithmetic bound and the recursion
+rule — are all settled, so Phase 1 requires no architectural invention. The
+FR-013 failure mode this register existed to prevent is closed.
+
+**What the rulings do not authorise.** Freeze is a separate gate and has not
+been given. No implementation is authorised. GD-8 and GD-9 are deferred, not
+granted: neither authorises an assessor change, an RFC-006 amendment or any
+change to `MetricResult`.
 
 ---
 
@@ -1512,5 +1557,10 @@ Stated plainly, so the document is not read as more than it is.
 - **It does not give provenance a surface.** Nothing a household can see
   changes until a consumer burn, which this document neither designs nor
   authorises.
-- **It does not settle its own number** (§0). That is GD-1, and it is the
-  Governor's.
+- **It is not frozen.** GD-1 through GD-10 are ruled and the register is closed,
+  but the freeze gate is a separate Governor act and has not been given. Until
+  it is, no phase — including Phase 1 — is authorised.
+- **It does not give the re-earmarked investigation surface an architecture.**
+  GD-1 kept that boundary alive and unnumbered; it needs its own burn and its
+  own boundary challenge, and this document is its prerequisite, not its
+  design.

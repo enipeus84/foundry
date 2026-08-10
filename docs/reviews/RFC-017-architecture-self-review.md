@@ -14,6 +14,19 @@ implementation as unresolvable ambiguities: **A4** (a unit rule that would have
 refused every legitimate factor), **A5** (one field carrying two meanings) and
 **A7** (an authorisation guarantee Core cannot enforce).
 
+> **Subsequent rulings, 2026-08-06 — GO WITH RULINGS.** Residual **R1** ("the
+> RFC number is unresolved") is **closed** by Governor ruling **GD-1**: the
+> number is RFC-017 — *Value Provenance Framework* — and *Asset Detail &
+> Provenance Investigation* is re-earmarked as an unnumbered future consumer
+> boundary. Ruling **GD-10** confirmed the programme-number collision raised in
+> challenge C11's neighbourhood and removed RFC-018/019/020 from reservation.
+> GD-2 through GD-7 are approved as recommended; GD-8 and GD-9 are deferred as
+> recommended.
+>
+> **No residual other than R1 is affected**, and no amendment is withdrawn. The
+> review text below is retained **unchanged** as the evidence presented to the
+> gate.
+
 ---
 
 ## Part 1 — Current-state analysis
@@ -298,7 +311,7 @@ Recorded as residual **R1**.
 
 | # | Residual | Why it stands |
 |---|---|---|
-| **R1** | The RFC number is unresolved (§0) | By design. EECOM has no authority to amend a recorded Governor ruling (RFC-100 §2.4); GD-1 of this RFC raises it |
+| **R1** | ~~The RFC number is unresolved (§0)~~ — **CLOSED 2026-08-06 by ruling GD-1** | Was: by design; EECOM has no authority to amend a recorded Governor ruling (RFC-100 §2.4). Ruled R1: RFC-017 is *Value Provenance Framework*; the investigation boundary is unnumbered |
 | **R2** | Nothing compels any provider to publish a decomposition; a domain may keep discarding it and remain compliant (W1) | Compelling it changes a frozen RFC-001/RFC-006 contract. Per-domain tests are the available defence — the identical residual RFC-016 recorded |
 | **R3** | Core cannot verify that an anchor genuinely supports a node's quantity (W9) | Verifying it means re-deriving the value, which is the boundary §6.1 exists to hold |
 | **R4** | Cross-decomposition double counting is undetectable (W2) | Union rules are domain property (`aggregation.py:64-81`); adopting them would make Core an aggregation authority |
@@ -321,7 +334,7 @@ Recorded as residual **R1**.
 | **FR-013** Architecture before code | Documentation exclusively; no source, test, fixture, template or configuration changed |
 | **FR-014** Review artefact continuity | This document is the durable self-review artefact; every finding carries an assertion, a repository reference and a disposition |
 | **FR-015** Burn classification | Declared Architecture Burn; performed as one. No reclassification claimed |
-| **FR-017** Documentation coherence | Deliberately incomplete: [`../rfcs/index.md`](../rfcs/index.md) is **not** amended, because the number is unruled. The gap is declared in the architecture report rather than hidden |
+| **FR-017** Documentation coherence | Was deliberately incomplete at review time: [`../rfcs/index.md`](../rfcs/index.md) was not amended because the number was unruled, and the gap was declared rather than hidden. **Closed 2026-08-06** by the governance burn that applied GD-1 — index row added, and the reservation amendment recorded in RFC-015 and RFC-016 beside the retained originals |
 
 ---
 

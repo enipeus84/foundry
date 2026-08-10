@@ -92,6 +92,24 @@ RFC-016  Asset Detail & Provenance Investigation  successor; not proposed here
 > paragraph draws about the RFC-013 debt. The block above is retained as the
 > original record.
 
+> **Second amendment to G3 — Governor ruling GD-1 of RFC-017, 2026-08-06.** The
+> successor **loses its number and keeps its subject.** RFC-017 is
+> [*Value Provenance Framework*](RFC-017-value-provenance-framework.md) — the
+> canonical contract by which an observed value is explained. *Asset Detail &
+> Provenance Investigation* is re-earmarked as an **unnumbered future consumer
+> boundary**: it remains a real successor with the rare-investigation rhythm G3
+> assigned it, and it will take a number when a burn is commissioned for it.
+>
+> The decomposition G3 accepted is **unchanged twice over**: the registry half
+> is this document, and the investigation half still exists. What changed is
+> that the investigation half is now understood to be a **surface above a
+> substrate that did not exist when G3 was ruled** — RFC-017 §0.2 applies the
+> RFC-012 §2.8 rhythm test and finds a substrate with no rhythm at all, which is
+> a different boundary from a rare-investigation surface. Sequencing the
+> substrate first is correct regardless of numbering.
+>
+> Both amendment blocks are retained. Nothing above is rewritten.
+
 The title is **Capture Target Registry**, *not* "Capture Targets, Asset
 Registration & Provenance". Two exclusions, for two different reasons:
 
@@ -848,7 +866,7 @@ settled; the amendment is the title (§0), applied throughout.
 |---|---|---|
 | G1 | RFC number for this mission | **Approved — RFC-015.** RFC-014 remains reserved for Governed Corrections |
 | G2 | The RFC-013 number and the displaced *Asset Registry & Provenance* boundary | **Deferred by ruling.** Recorded governance debt; Capture Contracts is **not** retrospectively renumbered during this burn |
-| G3 | Decomposition into RFC-015 (registry) + a successor (provenance investigation) | **Accepted.** **Amended 2026-08-06 by ruling GD-1:** the successor is **RFC-017**, not RFC-016; RFC-016 is *Mission Target Framework*. Decomposition and boundary unchanged (§0) |
+| G3 | Decomposition into RFC-015 (registry) + a successor (provenance investigation) | **Accepted.** **Amended 2026-08-06 by ruling GD-1 (RFC-016):** the successor is **RFC-017**, not RFC-016; RFC-016 is *Mission Target Framework*. **Amended again 2026-08-06 by ruling GD-1 (RFC-017):** the successor is **unnumbered** — RFC-017 is *Value Provenance Framework*, and *Asset Detail & Provenance Investigation* is re-earmarked as an unnumbered future consumer boundary. Decomposition and boundary subject unchanged throughout (§0) |
 | G4 | `statement_total` on `cash-balance-update` | **Approved for removal** — via an **explicit governed amendment**, not as a side effect of this burn. It must not retain two canonical meanings (§6.1) |
 | G5 | New event `core.telemetry_stream.retired` | **Approved.** Entity closure and stream retirement remain **separate canonical facts** (§4.1, §4.2) |
 | G8 | New event `core.capture_target_bootstrap.diagnostic` | **Approved by narrow Phase 2A amendment.** It records bootstrap diagnostics without changing target eligibility or projection ownership. |

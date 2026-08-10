@@ -2,18 +2,26 @@
 
 Report shape per RFC-100 §11.1. Verdict vocabulary: `GO` · `CONCERN` · `NO-GO`.
 
-Covers one burn: the **RFC-017 Architecture Burn**, producing the architecture
-specification, its adversarial self-review and this report.
+Covers two burns against one architecture: the **RFC-017 Architecture Burn**
+(drafting) and the **RFC-017 governance burn** (applying Governor rulings GD-1
+through GD-10 and preparing for the freeze gate).
 
 ## Mission Declaration *(as run)*
 
-| Field | Declared | As run |
-|---|---|---|
-| **Spacecraft** | EECOM | EECOM |
-| **Fuel** | Claude | Claude (`claude-opus-5`) |
-| **Effort Level** | not stated in the brief | executed as **HIGH** |
-| **Mission Type** | Architecture Burn — "architecture-only burn" | Architecture Burn |
-| **Authority** | Governor, via engineering brief | unchanged |
+| Field | Architecture burn declared | Governance burn declared | As run |
+|---|---|---|---|
+| **Spacecraft** | EECOM | EECOM | EECOM |
+| **Fuel** | Claude | Claude | Claude |
+| **Effort Level** | not stated in the brief | not stated | Architecture burn as **HIGH**; governance burn as **LOW** |
+| **Mission Type** | Architecture Burn — "architecture-only burn" | applying Governor rulings | Architecture Burn, then a documentation-only governance burn |
+| **Authority** | Governor, via engineering brief | Governor ruling, 2026-08-06 | unchanged |
+
+**Classification of the second burn (FR-015).** The ruling briefed it as
+"amend the RFC, report, self-review and governance record". RFC-100 §3's
+nearest classification is **Documentation Burn** (EECOM, documentation only, no
+contract change, exits to Governor Review), which is what it was performed as.
+No burn reclassified itself; this is recorded so the applicable gate is
+unambiguous.
 
 **Effort level disclosure (RFC-100 §6.0).** The brief declared no effort level.
 RFC-100 §3.2 and §12.3 prescribe **HIGH** for an Architecture Burn and for any
@@ -41,16 +49,19 @@ rule 3 exactly. No burn reclassified itself.
 | 6 | Python environment | **N/A** | documentation-only burn; no test execution required by the change |
 | 7 | Caffeinate | **N/A** | no long-running job |
 | 8 | Worktrees | **PASS** | no stale worktree |
-| 9 | **RFC ownership** | **CONCERN — raised, not resolved** | **RFC-017 is reserved by Governor ruling GD-1 (2026-08-06)** for *Asset Detail & Provenance Investigation* |
+| 9 | **RFC ownership** | **PASS at the governance burn** (was a raised CONCERN at the architecture burn) | Governor ruling **GD-1**, 2026-08-06, settles the number: RFC-017 is *Value Provenance Framework* |
 
-**Pre-flight verdict: CONCERN, proceeded.**
+**Architecture burn pre-flight verdict: CONCERN, proceeded.**
 
-Check 9 is the same condition RFC-016's Phase 1 burn met and recorded, and it
+Check 9 was the same condition RFC-016's Phase 1 burn met and recorded, and it
 was handled the same way. The burn proceeded because stopping would have
 delivered nothing while the collision is itself the first thing the Governor
 needs analysis for, and because RFC-100 §6.0 makes a briefed number "a
 statement of fact, not a grant of authority" — something EECOM may neither rely
-on nor overturn. The analysis is RFC §0; the decision is **GD-1**.
+on nor overturn. The analysis is RFC §0; the decision was **GD-1**.
+
+**Governance burn pre-flight verdict: GO.** GD-1 resolved check 9. Branch and
+tree were re-verified clean before work began.
 
 ---
 
@@ -128,21 +139,24 @@ Assessment and any assessor change; capture, editing, correction and manual
 attribution workflows; API endpoints and implementation classes; retrofitting
 any shipped metric; caching and performance envelope; cross-decomposition
 double-count detection; the RFC-013 numbering debt, RFC-014, and mission
-instantiation; and any architecture for RFC-018/019/020.
+instantiation; and any architecture for the consumer boundaries named in RFC
+§0.4 and §6.4 — including the *Asset Detail & Provenance Investigation* surface
+that GD-1 re-earmarked, which requires its own burn and its own boundary
+challenge.
 
-**The index omission is deliberate and is declared, not hidden.**
-[`docs/rfcs/index.md`](rfcs/index.md) is **not** amended by this burn, because
-amending it would assert a number the Governor has not ruled — and the row it
-currently carries ("RFC-017 is reserved for *Asset Detail & Provenance
-Investigation*") is a **correct record of a live ruling** that EECOM has no
-authority to overwrite. This is the RFC-016 Phase 1 precedent applied
-unchanged. The resulting **FR-017 documentation-coherence gap is real and is
-declared**: on a GD-1 ruling, a follow-on governance burn adds the index row,
-records the GD-1 amendment beside the original ruling (retaining it verbatim,
-per RFC-100 §9.2), and closes the gap.
+**The index omission is closed.** The architecture burn deliberately left
+[`docs/rfcs/index.md`](rfcs/index.md) unamended rather than assert an unruled
+number — the RFC-016 Phase 1 precedent — and declared the resulting FR-017
+coherence gap rather than hiding it. With GD-1 ruled, the governance burn added
+the RFC-017 row, rewrote the reservation note, and recorded the boundary's
+re-earmarking in RFC-015 and RFC-016 beside their retained originals. The
+declared gap is therefore **closed rather than carried**.
 
-`PROJECT_STATUS.md` and `CHANGELOG.md` were **not** edited: RFC-100 §2.7 makes
-them TELMU's property, and no merged implementation exists to record.
+**Governance burn exclusions.** No production code, no tests, no contract
+change and no architectural change of any kind. The rulings were applied as
+recorded; nothing was reinterpreted. `PROJECT_STATUS.md` and `CHANGELOG.md`
+were **not** edited: RFC-100 §2.7 makes them TELMU's property, and no merged
+implementation exists to record.
 
 ---
 
@@ -211,45 +225,74 @@ ordering made part of the contract (A10).
 
 ---
 
-## Governor Decisions Required
+## Governor Decisions — ruled 2026-08-06
 
-**Ten, none ruled.** One blocks the freeze; five block Phase 1.
+**Verdict: GO WITH RULINGS. All ten decisions are disposed; none remains open.**
 
-| # | Decision | Blocks |
+| # | Decision | Ruling | Applied in |
+|---|---|---|---|
+| **GD-1** | The RFC number | **R1 approved.** RFC-017 is *Value Provenance Framework*; *Asset Detail & Provenance Investigation* becomes an **unnumbered future consumer boundary** | RFC §0 ruling block, header, §6.4, §12, §16; RFC-016 §0/§14.1/header; RFC-015 §0/§18; `index.md` |
+| **GD-2** | Deterministic projection, zero canonical events, every phase | **Approved as recommended** | RFC §3, §8 |
+| **GD-3** | Four closed vocabularies, eleven values | **Approved as recommended**; extension is a governed Core change | RFC §4 |
+| **GD-4** | Completeness derived, never declared | **Approved as recommended** | RFC §4.5 |
+| **GD-5** | Core's arithmetic bound | **Approved as recommended** | RFC §6.1, §6.3 |
+| **GD-6** | Bounded, lazy recursion with cycle refusal | **Approved as recommended** | RFC §5 |
+| **GD-7** | Partial explanation before any consumer surface | **Approved as recommended** | RFC §11 |
+| **GD-8** | Whether an assessor must consult provenance (W1) | **Deferred as recommended.** Authorises no assessor change and no RFC-006 amendment | RFC §14, W1 |
+| **GD-9** | Whether `MetricResult`'s reference bag is superseded | **Deferred as recommended.** Phase 5 remains unauthorised | RFC §11, §14 |
+| **GD-10** | The programme sequence | **Collision confirmed.** RFC-018/019/020 are **not reserved numbers**; Mission Target capture is RFC-016 adoption unless a future burn proves a new boundary; mission assessment belongs to RFC-006; Flight Deck intelligence is unnumbered | RFC §0.4 ruling block, §6.4, §12; `index.md` |
+
+### How the boundary re-earmarking was recorded — the auditability requirement
+
+The ruling required the reservation change to be "explicit and auditable". Four
+documents carry it, and in every case the **original wording is retained
+verbatim** with a dated amendment recorded beside it (RFC-100 §9.2):
+
+| Document | Change | Original retained? |
 |---|---|---|
-| **GD-1** | **The RFC number** (RFC §0) — file here and re-earmark the *Asset Detail & Provenance Investigation* surface to a successor number by dated ruling amending RFC-016's GD-1 (**R1**), or renumber this document and leave RFC-017 reserved (**R2**) | **freeze** |
-| **GD-2** | Deterministic projection with zero canonical events, in every phase | **Phase 1** |
-| **GD-3** | The four closed vocabularies and their eleven values | **Phase 1** |
-| **GD-4** | Completeness is derived, never declared | **Phase 1** |
-| **GD-5** | Core's arithmetic bound — sum and compare within one unit; never transform one | **Phase 1** |
-| **GD-6** | Bounded, lazy recursion with cycle refusal | **Phase 1** |
-| GD-7 | Sequencing: a partial explanation ships before any consumer surface | Phase 3/4 |
-| GD-8 | Whether an assessor may be *required* to consult provenance (W1) — recommendation: **defer** | Phase 4 |
-| GD-9 | Whether `MetricResult`'s reference bag is eventually superseded (§11 Phase 5) — recommendation: **defer** | Phase 5 |
-| GD-10 | RFC-018/019/020 — recommendation: **record as direction only**; RFC §0.4 raises three collisions, including that "RFC-019 — Mission Assessment" names a boundary RFC-006 already shipped | — |
+| `docs/rfcs/RFC-016-mission-target-framework.md` | header note; §0 amendment block after the retained "Ruled: R1" block; §14.1 GD-1 row extended | **yes** — the RFC-016 ruling text is untouched |
+| `docs/rfcs/RFC-015-capture-target-registry.md` | §0 **second** amendment block to G3, below the first; §18 G3 row records both amendments in sequence | **yes** — both the original block and the first amendment are untouched |
+| `docs/rfcs/index.md` | RFC-017 row added; reservation note rewritten with a three-move amendment history; GD-10 table added | n/a — an index, not a ruling record |
+| `docs/rfcs/RFC-017-value-provenance-framework.md` | §0 and §0.4 ruling blocks; §0.1–§0.3 retained as the analysis that produced the ruling | **yes** |
 
-**EECOM raises GD-1 and does not resolve it.** RFC-016's ruling GD-1 is
-recorded, dated and attributable, and RFC-100 §2.4 gives EECOM no authority to
-amend it. The recommendation is **R1**, on the same two distinguishing facts
-that carried R1 in RFC-016 §0.3 — the displacement would be *decided and
-recorded*, and the displaced boundary is unstarted — plus one this case adds:
-the substrate is prerequisite to the surface, so sequencing it first is correct
-regardless of which number each takes.
+**The boundary has now moved twice, and both moves are on the record.** G3
+earmarked it RFC-016; RFC-016's GD-1 moved it to RFC-017; RFC-017's GD-1 moved
+it off numbering. `index.md` states that history in one place so a reader never
+has to reconstruct it.
+
+### Two artefacts deliberately **not** amended
+
+| Artefact | Why |
+|---|---|
+| [`docs/reviews/RFC-016-architecture-freeze-record.md`](reviews/RFC-016-architecture-freeze-record.md) | A **Governor artefact** recording the result of a gate held on 2026-08-06. Its statement that "RFC-017 remains reserved for Asset Detail & Provenance Investigation" was true at that gate. Editing it would rewrite a historical record rather than amend a live one |
+| [`docs/rfc-016-architecture-report.md`](rfc-016-architecture-report.md) and RFC-016's self-review | Completed burn artefacts. Both describe what a past burn did and are accurate as of their dates |
+
+This is stated rather than left implicit, so a reader who greps for `RFC-017`
+and finds the older wording in those three files knows it is retained history,
+not an unpropagated amendment.
 
 ---
 
 ## Files Changed
 
-| File | Change |
-|---|---|
-| `docs/rfcs/RFC-017-value-provenance-framework.md` | new — the architecture |
-| `docs/reviews/RFC-017-architecture-self-review.md` | new — adversarial self-review |
-| `docs/rfc-017-architecture-report.md` | new — this report |
+| File | Change | Burn |
+|---|---|---|
+| `docs/rfcs/RFC-017-value-provenance-framework.md` | new — the architecture; GD-1 through GD-10 applied | architecture, governance |
+| `docs/reviews/RFC-017-architecture-self-review.md` | new — adversarial self-review; subsequent-rulings block added, R1 closed, FR-017 row updated | architecture, governance |
+| `docs/rfc-017-architecture-report.md` | new — this report | architecture, governance |
+| `docs/rfcs/index.md` | RFC-017 row; reservation note rewritten with its amendment history; GD-10 programme-number table | governance |
+| `docs/rfcs/RFC-016-mission-target-framework.md` | header note, §0 amendment block, §14.1 GD-1 row — **original text retained** | governance |
+| `docs/rfcs/RFC-015-capture-target-registry.md` | §0 second amendment block, §18 G3 row — **original text and first amendment both retained** | governance |
 
 **No production source, test, fixture, template, CSS or runtime configuration
-is touched** (FR-013, RFC-100 §3.1 rule 3). Documentation exclusively. No
-existing document is amended, including [`docs/rfcs/index.md`](rfcs/index.md)
-and the frozen RFC-015 and RFC-016 documents.
+is touched** (FR-013, RFC-100 §3.1 rule 3). Documentation exclusively.
+
+**On editing two frozen RFCs.** RFC-015 and RFC-016 are both frozen, and the
+changes to them are **amendment notes, not revisions**: no contract, invariant,
+phase, acceptance criterion, event kind or other ruling in either document is
+altered, and every original wording is retained verbatim. RFC-100 §9.2
+prescribes exactly this, and it is the same mechanism RFC-016's own Phase 1A
+burn used on RFC-015.
 
 ---
 
@@ -271,8 +314,15 @@ and the frozen RFC-015 and RFC-016 documents.
   by grep.
 - The claim that four exclusion paths append a limitation and one does not
   (defect 6) was verified against `pension_metrics.py:129-155`.
-- **Full test suite not run** — no source changed, so there is nothing this
+- **Full test suite not run** — no source changed, so there is nothing either
   burn could have broken.
+
+**Governance burn validation.** Every relative Markdown link in the six changed
+documents resolves (`tests/test_docs_governance.py` link rule, executed
+directly); every Markdown table in `index.md` has a consistent cell count; and
+an exhaustive grep for `RFC-017` across `docs/` confirms that the only
+occurrences of the superseded reservation wording are in the three historical
+artefacts named above as deliberately unamended.
 
 ---
 
@@ -282,16 +332,16 @@ and the frozen RFC-015 and RFC-016 documents.
 |---|---|
 | Branch | `claude/rfc-017-value-provenance-5ixkye` |
 | Implementation files changed | **none** |
-| Committed | yes — architecture package only |
+| Committed | yes — architecture package, then the governance amendments |
 | Pushed | yes |
-| PR | opened as **draft**; not for merge pending Governor review and a GD-1 ruling (FR-005) |
+| PR | [#45](https://github.com/enipeus84/foundry/pull/45), **draft**; not for merge pending the Governor freeze gate (FR-005) |
 
 ---
 
 ## Recommendation
 
-**Verdict: GO — the architecture package is complete and ready for Governor
-review, subject to a ruling on GD-1.**
+**Verdict: GO — rulings applied; the package is ready for the Governor freeze
+gate.**
 
 The framework is smaller than the problem it addresses, which was the
 Governor's stated guidance: four vocabularies, eleven values, five shapes, one
@@ -301,18 +351,41 @@ architectural invention: what a provenance record is, what is stored (nothing),
 what is verified, what is refused, how recursion terminates, what Core may and
 may not compute, and what "done" means are all decided in the document.
 
-**Requested next step:** Governor review, ruling **GD-1 first** — because the
-number governs whether this document may be indexed at all — and **GD-2 through
-GD-6 alongside any freeze**, each of which carries an EECOM recommendation and
-needs no further analysis.
+### Remaining freeze blockers — **none**
 
-**Do not brief BOOSTER.** No implementation is authorised until the
-architecture receives a formal GO and is frozen. On freeze, the freeze record
-is the Governor's artefact to issue — this burn does not write one, because a
-freeze record written by the party seeking the freeze is not evidence
-(RFC-100 §1.2).
+| Condition for freeze | State |
+|---|---|
+| RFC number settled and the reservation change recorded | **PASS** — GD-1; four documents amended, originals retained |
+| Programme-number collisions resolved | **PASS** — GD-10; no number is reserved beyond RFC-014 |
+| Canonical event contract settled | **PASS** — GD-2; zero events, in every phase |
+| Vocabularies settled | **PASS** — GD-3; four closed vocabularies, eleven values |
+| Honesty rule settled | **PASS** — GD-4; completeness is derived, never declared |
+| Core's computational bound settled | **PASS** — GD-5 |
+| Recursion and termination settled | **PASS** — GD-6 |
+| Sequencing settled | **PASS** — GD-7 |
+| Open implementation-critical decisions | **PASS** — none remain. GD-8 and GD-9 are deferred to future governed decisions and authorise nothing now |
+| Documentation coherence (FR-017) | **PASS** — the declared index gap is closed |
 
-**One dependency for whoever holds the pen after a GD-1 ruling:** the index row
-withheld above (FR-017) should be added in the same governance burn that
-records the ruling, so the coherence gap closes with the decision rather than
-outliving it.
+**Nothing blocks the freeze gate.** Phase 1 requires no architectural
+invention: what a provenance record is, what is stored (nothing), what is
+verified, what is refused, how recursion terminates, what Core may and may not
+compute, and what "done" means are all decided in the document and all now
+ruled.
+
+**Two items the Governor may wish to note at the gate, neither a blocker:**
+
+1. **Freeze scope.** RFC §11 proposes five phases. The precedent set by RFC-015
+   and RFC-016 is that a freeze authorises named phases only. Phases 1–3 are
+   coherent as a set (contract, one complete explanation, one partial one) and
+   Phase 4 onward carries stated governed gates; but which phases a freeze
+   authorises is the Governor's to name, and this report does not assume it.
+2. **§6.4 device.** The "changes no frozen contract" claim is currently prose
+   listing twelve contracts. RFC-016 §4 makes the equivalent claim as a
+   per-contract table, which is checkable line by line. Converting it is a
+   legitimate later improvement and was **not** done here, because this burn is
+   bounded to applying the rulings (FR-004).
+
+**Do not brief BOOSTER.** No implementation is authorised. GO WITH RULINGS is
+not a freeze, and the freeze record is the Governor's artefact to issue — this
+burn does not write one, because a freeze record written by the party seeking
+the freeze is not evidence (RFC-100 §1.2).
