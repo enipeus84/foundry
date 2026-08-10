@@ -92,14 +92,21 @@ scope containment and assigns it to the domain, which points at temporal
 equality plus a non-broadening subject rule — but that is an architectural
 decision and **is not taken here**.
 
-## Validation after remediation
+## Validation evidence sequence
 
-| Run | Result |
-|---|---|
-| RFC-017 focused (BOOSTER + TELMU + SAFE remediation) | **57 passed** (40 pre-existing, unchanged; 17 added) |
-| Full regression | **762 passed, 2 failed** |
-| The 2 failures | `test_demo_data.py::test_unwritable_path_fails_visibly` and `::test_maybe_seed_demo_data_propagates_the_failure` — environmental, not candidate defects. The suite ran as `euid 0`, and root writes into a `0500` directory, so the tests' premise cannot hold. Neither file is touched by this candidate, and both fail identically before the remediation |
-| `git diff --check` | clean |
+The entries below are deliberately chronological.  The closeout result is the
+authoritative validation for the final committed-tree candidate; earlier
+results remain as historical evidence and are not rewritten.
+
+| Stage | Run | Result |
+|---|---|---|
+| Historical pre-final-tree run | RFC-017 focused (BOOSTER + TELMU + SAFE remediation) | **57 passed** (40 pre-existing, unchanged; 17 added) |
+| Historical pre-final-tree run | Full regression | **762 passed, 2 failed**: `test_demo_data.py::test_unwritable_path_fails_visibly` and `::test_maybe_seed_demo_data_propagates_the_failure`. The suite ran as `euid 0`, so root could write into a `0500` directory and invalidate those tests' premise. Neither file is touched by the candidate. |
+| Independent confirmation of `cfe35c8` | Full regression | **761 passed, 3 failed**: the two root-environment demo-data failures above, plus the introduced broken RFC-017 technical-debt Markdown link (NEW-1). |
+| Closeout after NEW-1 | Docs governance | **4 passed** |
+| Closeout after NEW-1 | RFC-017 focused | **57 passed** |
+| Closeout after NEW-1 | Full regression | **764 passed, 1 pre-existing FastAPI deprecation warning** in the normal project environment |
+| Closeout after NEW-1 | `git diff --check` | clean |
 
 ## Scope boundary
 

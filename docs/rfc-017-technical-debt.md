@@ -1,7 +1,6 @@
 # RFC-017 — Technical Debt and Accepted Observations
 
-Recorded against the frozen architecture
-[`RFC-017-value-provenance-framework.md`](rfcs/RFC-017-value-provenance-framework.md)
+Recorded against the [frozen RFC-017 architecture](https://github.com/enipeus84/foundry/blob/b8cc0ed9c63b10d2fbc03ec9440c154826c7efd6/docs/rfcs/RFC-017-value-provenance-framework.md)
 (architecture authority `b8cc0ed`) and the Phase 1 implementation reviewed at
 `dfbaeab`.
 
