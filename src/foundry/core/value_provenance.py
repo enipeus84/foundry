@@ -20,6 +20,15 @@ class ValueProvenanceError(ValueError):
     """An explanation is structurally inconsistent and cannot be trusted."""
 
 
+# SAFE-017-01.  The statuses authorised to carry a usable magnitude and a
+# coverage claim, stated positively.  `METRIC_STATUS` is an extensible
+# vocabulary, so naming the failure statuses instead would let any status a
+# domain adds later inherit a fail-open default: an errored calculation could
+# present a confident `complete`.  Anything outside this set is normalised to
+# absent quantity, completeness and residual.
+MAGNITUDE_BEARING_STATUS = frozenset({"available", "stale"})
+
+
 def _text(value: object, field_name: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ValueProvenanceError(f"{field_name} must be a non-empty string")
@@ -160,11 +169,16 @@ class ProvenanceResolver:
             self._descriptors[descriptor.value_id] = descriptor
 
     def register(self, explainer: ValueExplainer) -> None:
-        value_ids = explainer.explainable_value_ids()
-        if not isinstance(value_ids, frozenset):
+        declared = explainer.explainable_value_ids()
+        if not isinstance(declared, frozenset):
             raise ValueProvenanceError("explainer value ids must be a frozenset")
+        # SAFE-017-03.  Normalise once, from the single ownership declaration,
+        # before duplicate validation and before registration.  `ValueReference`
+        # normalises its own `value_id`, so registering a raw key would let two
+        # explainers own ids that differ only by surrounding whitespace: the
+        # duplicate guard would not fire and one owner would be unreachable.
+        value_ids = frozenset(_text(value_id, "explainer value id") for value_id in declared)
         for value_id in value_ids:
-            _text(value_id, "explainer value id")
             existing = self._explainers.get(value_id)
             if existing is not None and existing is not explainer:
                 raise DuplicateValueExplainerError(f"{value_id!r} is already registered")
@@ -187,6 +201,7 @@ class ProvenanceResolver:
         if node is None:
             return None
         self._verify_envelope(node, reference)
+        self._verify_emitted_references(node)
         self._verify_structure(node)
         resolved = self._with_completeness(node)
         if depth == max_depth:
@@ -197,7 +212,6 @@ class ProvenanceResolver:
                 raise ValueProvenanceError("contribution expandable flag disagrees with registered explainer")
             if not contribution.expandable:
                 continue
-            self._verify_child_coordinates(resolved.reference, contribution.contributor)
             if contribution.contributor in path + (reference,):
                 return self._unavailable(resolved)
             child = self._resolve(contribution.contributor, max_depth=max_depth,
@@ -223,6 +237,25 @@ class ProvenanceResolver:
             raise ValueProvenanceError(
                 "recursive contributor must preserve subject, as_of, and known_at")
 
+    @classmethod
+    def _verify_emitted_references(cls, node: ProvenanceNode) -> None:
+        """SAFE-017-02.  Every reference Core emits carries the node's own
+        coordinates, whether or not it is ever expanded.
+
+        Verification used to run only immediately before a recursive dispatch,
+        so a contributor that was not expanded — because no explainer owned it,
+        or because the depth bound was reached — was returned to the caller
+        unchecked.  A node could therefore present a foreign `Subject` or a
+        `known_at` outside the requested frame inside an otherwise complete
+        explanation.  An exclusion carries no temporal coordinates, so only its
+        subject is checkable."""
+        for contribution in node.contributions:
+            cls._verify_child_coordinates(node.reference, contribution.contributor)
+        for exclusion in node.exclusions:
+            if exclusion.subject != node.reference.subject:
+                raise ValueProvenanceError(
+                    "exclusion subject must match the explained value's subject")
+
     @staticmethod
     def _verify_structure(node: ProvenanceNode) -> None:
         if node.kind == "observed":
@@ -243,7 +276,7 @@ class ProvenanceResolver:
             seen.add(item.contributor)
 
     def _with_completeness(self, node: ProvenanceNode) -> ProvenanceNode:
-        if node.status in {"unavailable", "unsupported"}:
+        if node.status not in MAGNITUDE_BEARING_STATUS:
             return _resolved_node(replace(node, quantity=None), None, None)
         descriptor = self._descriptors.get(node.reference.value_id)
         if (descriptor is not None and node.quantity is not None
