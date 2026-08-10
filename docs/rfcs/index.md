@@ -54,6 +54,7 @@ Phases 1–4; Phases 5–10 remain outstanding and are separate burn candidates.
 | RFC-012 | Telemetry Operations Console | **Complete — product remediation merged 2026-08-05** | [`RFC-012-telemetry-operations-console.md`](RFC-012-telemetry-operations-console.md) (Revision 2, after Governor amendments A1–A6) | [PR #30 comment](https://github.com/enipeus84/foundry/pull/30#issuecomment-5159867761) — SAFE: GO, two advisory findings, no remediation required | [`rfc-012-architecture-post-flight-report.md`](../rfc-012-architecture-post-flight-report.md) | [#30](https://github.com/enipeus84/foundry/pull/30) (architecture); [#35](https://github.com/enipeus84/foundry/pull/35) (product remediation) |
 | RFC-013 | Operations Capture Contracts | **Implementation ready for SAFE review** | — | — | [`rfc-013-implementation-report.md`](../rfc-013-implementation-report.md) | — |
 | RFC-016 | Mission Target Framework | **Complete — merged 2026-08-06**. Frozen Phases 1–2 shipped; later phases retain their stated Governor gates | [`RFC-016-mission-target-framework.md`](RFC-016-mission-target-framework.md) | [`rfc-016-implementation-report.md`](../rfc-016-implementation-report.md) | SAFE review [`RFC-016-safe-review.md`](../reviews/RFC-016-safe-review.md); SAFE confirmation [`RFC-016-safe-confirmation.md`](../reviews/RFC-016-safe-confirmation.md); freeze record [`RFC-016-architecture-freeze-record.md`](../reviews/RFC-016-architecture-freeze-record.md); technical debt [`rfc-016-technical-debt.md`](../rfc-016-technical-debt.md) | [#44](https://github.com/enipeus84/foundry/pull/44) |
+| RFC-017 | Value Provenance Framework | **Architecture frozen 2026-08-06** (Governor freeze gate at `b8cc0ed`); **Phase 1 GO**, Phases 2–5 unauthorised | [`RFC-017-value-provenance-framework.md`](RFC-017-value-provenance-framework.md) | — | self-review [`RFC-017-architecture-self-review.md`](../reviews/RFC-017-architecture-self-review.md); freeze record [`RFC-017-architecture-freeze-record.md`](../reviews/RFC-017-architecture-freeze-record.md); architecture report [`rfc-017-architecture-report.md`](../rfc-017-architecture-report.md) | [#45](https://github.com/enipeus84/foundry/pull/45) |
 | RFC-015 | Capture Target Registry | **Architecture frozen 2026-08-05** (Governor freeze gate at `0ad18b3`); Phases 0–3 shipped, Phase 4 in implementation | [`RFC-015-capture-target-registry.md`](RFC-015-capture-target-registry.md) | — | self-review [`RFC-015-architecture-self-review.md`](../reviews/RFC-015-architecture-self-review.md); freeze record [`RFC-015-architecture-freeze-record.md`](../reviews/RFC-015-architecture-freeze-record.md); Phase 3 report [`rfc-015-phase-3-retired-telemetry-suppression-report.md`](../rfc-015-phase-3-retired-telemetry-suppression-report.md); Phase 4 report [`rfc-015-phase-4-retired-pending-proposal-lifecycle-report.md`](../rfc-015-phase-4-retired-pending-proposal-lifecycle-report.md) | — |
 
 RFC-012 is the weekly exception-driven operating loop above RFC-011: an
@@ -88,8 +89,8 @@ accepted the decomposition of the displaced boundary into RFC-015 (capture
 target registry — occasional curation) and a future successor (asset detail and
 provenance investigation — rare investigation), applying the rhythm test
 RFC-012 §2.8 required of its successor. **That successor was originally
-earmarked RFC-016 and is now RFC-017** — see the RFC-017 note below. The
-amendment was to the title:
+earmarked RFC-016, then RFC-017, and is now unnumbered** — see the RFC-017
+note below. The amendment was to the title:
 *Capture Target Registry*, not *Capture Target Registration*, because
 registration is a workflow within a boundary that also owns the derived
 registry, discovery, compatibility, lifecycle and retirement. RFC-015's
@@ -116,16 +117,54 @@ it. It changes **no RFC-006 contract**. The freeze authorises its Core contract
 (Phase 1) and Finance metric-descriptor seam (Phase 2) only; all later phases
 retain their stated Governor gates.
 
-**RFC-017 is reserved for *Asset Detail & Provenance Investigation*.** By
-Governor ruling **GD-1** (2026-08-06), the successor boundary that RFC-015
-ruling G3 originally earmarked as RFC-016 is renumbered to RFC-017; RFC-016 is
-*Mission Target Framework*. The decomposition, the boundary's subject and its
-successor status are unchanged, and the renumbering is recorded in
-[`RFC-015-capture-target-registry.md`](RFC-015-capture-target-registry.md) §0
-and §18 rather than being applied silently — the distinction that separates this
-from the standing RFC-013 governance debt. **RFC-014 remains reserved for
-*Governed Corrections*.** No architecture exists for RFC-017; it requires its
-own burn and its own boundary challenge.
+**RFC-017 — Value Provenance Framework — was frozen on 2026-08-06** with all
+Governor decisions recorded in its [freeze record](../reviews/RFC-017-architecture-freeze-record.md).
+It defines the canonical contract by which any observable value is
+deterministically explained from immutable evidence: a **projection, never
+canonical state**, introducing **zero canonical events in any phase**, whose
+completeness and residual are **derived by the framework and can never be
+declared by a domain**. It changes **no frozen contract** — not `MetricResult`,
+not RFC-006, not `MissionTarget`, and no existing domain calculation. The freeze
+authorises its **Core contract (Phase 1) only**, against acceptance criteria
+P1-A through P1-H and proven against a mock domain; Phases 2 and 3 remain
+architecturally described and require subsequent Governor authority, and later
+phases retain their stated gates. By ruling **GD-1** (R1 approved) the number is
+assigned to this framework; the rulings are recorded in
+[`RFC-017-value-provenance-framework.md`](RFC-017-value-provenance-framework.md)
+§0 and §14.
+
+> **Amendment history of this reservation — two recorded moves, no silent
+> consumption.** RFC-015 ruling **G3** earmarked *Asset Detail & Provenance
+> Investigation* as RFC-016. RFC-016 ruling **GD-1** (2026-08-06) moved it to
+> RFC-017. RFC-017 ruling **GD-1** (2026-08-06) moved it off numbering
+> altogether. Each move is dated, attributable and recorded beside the text it
+> amends — in
+> [`RFC-015-capture-target-registry.md`](RFC-015-capture-target-registry.md) §0
+> and §18 and
+> [`RFC-016-mission-target-framework.md`](RFC-016-mission-target-framework.md)
+> §0 and §14.1 — with the original wording retained verbatim in every case
+> (RFC-100 §9.2). This is the discipline that separates the boundary from the
+> standing RFC-013 governance debt, applied twice.
+
+**Asset Detail & Provenance Investigation is an unnumbered future consumer
+boundary.** It keeps the subject and the rare-investigation rhythm that RFC-015
+ruling G3 gave it, and it takes a number when a burn is commissioned for it. It
+is a **consumer** of RFC-017: a surface that renders explanations, above a
+substrate that produces them. It has no architecture, no number and no
+authorised burn.
+
+**RFC-014 remains reserved for *Governed Corrections*.**
+
+**No RFC number is reserved for future programme work beyond RFC-014.** By
+ruling **GD-10** (2026-08-06), the RFC-018 / RFC-019 / RFC-020 sequence that
+appeared in an engineering brief is **not** a set of reserved numbers and must
+not be cited as one:
+
+| Briefed as | Ruled |
+|---|---|
+| RFC-018 — Mission Target Capture | **Not a new boundary.** Adoption of the RFC-016 contract — its Phase 3 declaration surface — unless a future architecture burn proves a genuinely new boundary |
+| RFC-019 — Mission Assessment | **Already belongs to RFC-006**, merged, with four live providers |
+| RFC-020 — Flight Deck Intelligence | **Unnumbered.** Future Flight Deck intelligence takes a number when a burn is commissioned |
 
 **Mission instantiation is unclaimed.** Ruling **GD-11** confirmed that RFC-016
 governs Mission Targets attached to *existing* Missions and does not instantiate
