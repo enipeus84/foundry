@@ -21,6 +21,14 @@ SCOPE = Subject("party", "household-1")
 OTHER = Subject("party", "household-2")
 
 
+class TestAuthority:
+    def household_for(self, subject):
+        return "household-1" if subject == SCOPE else "household-2" if subject == OTHER else None
+
+
+AUTHORITY = TestAuthority()
+
+
 def ref(value_id: str, *, subject: Subject = SCOPE, as_of: float = 10,
         known_at: float = 20) -> ValueReference:
     return ValueReference(subject, value_id, as_of, known_at)
@@ -46,7 +54,7 @@ class MockExplainer:
 
 
 def resolver_for(nodes, **kwargs):
-    resolver = ProvenanceResolver()
+    resolver = ProvenanceResolver(authority=AUTHORITY)
     resolver.register(MockExplainer(nodes, **kwargs))
     return resolver
 
@@ -94,13 +102,14 @@ def test_safe_017_01_status_allow_list_is_closed_against_vocabulary_extension():
 
 @pytest.mark.parametrize("role", ["increases", "decreases", "contextual"])
 def test_safe_017_02_unexpandable_contributor_coordinates_are_verified(role):
-    """A contributor Core never expands still cannot carry foreign coordinates.
+    """A contributor Core never expands still cannot carry foreign authority.
 
-    Reproducer: a hostile explainer marked the contributor non-expandable and
-    Core returned another household's subject inside a `complete` explanation.
+    The amended contract permits different Subject identities only when Core
+    independently resolves the same household. A hostile explainer still
+    cannot return a foreign-household subject inside a `complete` explanation.
     """
     root = ref("parent")
-    foreign = ref("unowned.value", subject=OTHER, as_of=9999, known_at=9999)
+    foreign = ref("unowned.value", subject=OTHER)
     quantity = None if role == "contextual" else 100.0
     resolver = resolver_for({"parent": node(
         root, quantity=100.0,
@@ -152,7 +161,7 @@ def test_safe_017_02_conforming_references_still_resolve():
 def test_safe_017_03_ownership_is_normalised_before_duplicate_validation():
     """Two explainers could own ids differing only by whitespace: the duplicate
     guard did not fire and the second owner became unreachable."""
-    resolver = ProvenanceResolver()
+    resolver = ProvenanceResolver(authority=AUTHORITY)
     first = MockExplainer({"finance.net_worth": node(ref("finance.net_worth"))})
     second = MockExplainer({}, value_ids={" finance.net_worth "})
     resolver.register(first)
@@ -161,7 +170,7 @@ def test_safe_017_03_ownership_is_normalised_before_duplicate_validation():
 
 
 def test_safe_017_03_normalised_ownership_routes_a_padded_declaration():
-    resolver = ProvenanceResolver()
+    resolver = ProvenanceResolver(authority=AUTHORITY)
     resolver.register(MockExplainer(
         {"v": lambda reference: node(reference, quantity=1.0)},
         value_ids={"  v  "}))
@@ -177,5 +186,5 @@ def test_safe_017_03_ownership_is_read_exactly_once():
             calls.append(1)
             return super().explainable_value_ids()
 
-    ProvenanceResolver().register(Counting({"v": node(ref("v"))}))
+    ProvenanceResolver(authority=AUTHORITY).register(Counting({"v": node(ref("v"))}))
     assert len(calls) == 1

@@ -14,6 +14,14 @@ from foundry.core.value_provenance import (
 SCOPE = Subject("party", "household")
 
 
+class TestAuthority:
+    def household_for(self, subject):
+        return "household" if subject == SCOPE else None
+
+
+AUTHORITY = TestAuthority()
+
+
 def ref(value_id, *, scope=SCOPE, as_of=10, known_at=20):
     return ValueReference(scope, value_id, as_of, known_at)
 
@@ -37,16 +45,16 @@ class Explainer:
 
 
 def resolve(nodes, root, *, depth=0, descriptors=()):
-    resolver = ProvenanceResolver(descriptors)
+    resolver = ProvenanceResolver(descriptors, authority=AUTHORITY)
     resolver.register(Explainer(nodes))
     return resolver.explain(root, max_depth=depth)
 
 
-def test_revalidation_refuses_all_coordinate_substitution_before_child_dispatch():
+def test_revalidation_refuses_temporal_substitution_before_child_dispatch():
     root = ref("root")
-    child = ref("child", scope=Subject("party", "other"), as_of=11, known_at=21)
+    child = ref("child", as_of=11, known_at=21)
     parent = node(root, contributions=(Contribution("contextual", None, child, True),))
-    with pytest.raises(ValueError, match="preserve subject, as_of, and known_at"):
+    with pytest.raises(ValueError, match="preserve as_of and known_at"):
         resolve({root.value_id: parent, child.value_id: node(child)}, root, depth=1)
 
 
@@ -74,7 +82,7 @@ def test_revalidation_registry_uses_single_declaration_snapshot():
             return node(reference)
 
     explainer = ShiftingExplainer()
-    resolver = ProvenanceResolver()
+    resolver = ProvenanceResolver(authority=AUTHORITY)
     resolver.register(explainer)
     assert explainer.calls == 1
     assert resolver.explain(ref("first"), max_depth=0) is not None

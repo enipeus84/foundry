@@ -69,6 +69,21 @@ sufficient on its own.
 > mutable global cache, TTL semantics or cache event is authorised. Formal
 > ruling record: [`reviews/RFC-017-OBS-017-A-ruling.md`](reviews/RFC-017-OBS-017-A-ruling.md).
 
+> **Remediated — Phase 1 OBS-017-A conformance remediation, 2026-08-11.**
+> SAFE-017-04's repeated-identical-reference amplification class is closed by
+> per-top-level-resolution memoisation of verified provider output, keyed by
+> the full `ValueReference`. The cache is not persistent, global, or shared
+> across requests. Authority, coordinate, depth, and path-cycle verification
+> still run on every traversal. The executable eight-branch probe now performs
+> **10** provider resolutions (`root + 8 branches + shared`) rather than **17**
+> path-based resolutions; the diamond resolves its shared node once per call.
+> See [`rfc-017-phase-1-conformance-remediation-report.md`](rfc-017-phase-1-conformance-remediation-report.md).
+>
+> **Remaining risk.** This is not a general performance claim. A graph with
+> genuinely distinct `ValueReference`s still performs one provider resolution
+> per distinct reference; any broader performance envelope remains future Core
+> work and must be reassessed before a materially branching consumer.
+
 ## Accepted Observations
 
 **OBS-017-A — coordinate rule contradicts the RFC's worked examples.**

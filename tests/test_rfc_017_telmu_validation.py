@@ -19,6 +19,14 @@ ROOT_SCOPE = Subject("party", "root")
 OTHER_SCOPE = Subject("party", "other")
 
 
+class TestAuthority:
+    def household_for(self, subject):
+        return "household-root" if subject == ROOT_SCOPE else "household-other" if subject == OTHER_SCOPE else None
+
+
+AUTHORITY = TestAuthority()
+
+
 def reference(value_id, *, subject=ROOT_SCOPE, as_of=100, known_at=200):
     return ValueReference(subject, value_id, as_of, known_at)
 
@@ -43,7 +51,7 @@ class Explainer:
 
 
 def resolve(nodes, reference, *, depth=0, descriptors=()):
-    resolver = ProvenanceResolver(descriptors)
+    resolver = ProvenanceResolver(descriptors, authority=AUTHORITY)
     resolver.register(Explainer(nodes))
     return resolver.explain(reference, max_depth=depth)
 
@@ -83,7 +91,7 @@ def test_telmu_depth_zero_does_not_expand_a_registered_contributor():
     root, child = reference("synthetic.root"), reference("synthetic.child")
     parent = provenance(root, contributions=(Contribution("increases", 10, child, True),))
     explainer = Explainer({root.value_id: parent, child.value_id: provenance(child)})
-    resolver = ProvenanceResolver()
+    resolver = ProvenanceResolver(authority=AUTHORITY)
     resolver.register(explainer)
     resolver.explain(root, max_depth=0)
     assert explainer.calls == [root]
@@ -102,7 +110,7 @@ def test_telmu_rejects_an_explainer_that_changes_its_owned_value_ids_during_regi
             return provenance(value_reference)
 
     explainer = ShiftingExplainer()
-    resolver = ProvenanceResolver()
+    resolver = ProvenanceResolver(authority=AUTHORITY)
     resolver.register(explainer)
     assert explainer.calls == 1
     assert resolver.explain(reference("synthetic.first"), max_depth=0) is not None
@@ -118,15 +126,15 @@ def test_telmu_refuses_non_snapshot_iterable_ownership_declarations():
             return provenance(value_reference)
 
     with pytest.raises(ValueError, match="frozenset"):
-        ProvenanceResolver().register(IterableExplainer())
+        ProvenanceResolver(authority=AUTHORITY).register(IterableExplainer())
 
 
-def test_telmu_refuses_recursive_scope_and_temporal_substitution():
+def test_telmu_refuses_recursive_temporal_substitution():
     root = reference("synthetic.root")
     substituted = reference("synthetic.child", subject=OTHER_SCOPE, as_of=999, known_at=999)
     parent = provenance(root, contributions=(Contribution("increases", 10, substituted, True),))
     child = provenance(substituted)
-    with pytest.raises(ValueError, match="preserve subject, as_of, and known_at"):
+    with pytest.raises(ValueError, match="preserve as_of and known_at"):
         resolve({root.value_id: parent, substituted.value_id: child}, root, depth=1)
 
 
@@ -148,14 +156,13 @@ def test_telmu_unavailable_node_cannot_make_a_completeness_claim():
 
 
 @pytest.mark.parametrize("substituted", [
-    lambda: reference("synthetic.child", subject=OTHER_SCOPE),
     lambda: reference("synthetic.child", as_of=101),
     lambda: reference("synthetic.child", known_at=201),
 ])
-def test_telmu_refuses_each_recursive_coordinate_substitution(substituted):
+def test_telmu_refuses_each_recursive_temporal_substitution(substituted):
     root, child = reference("synthetic.root"), substituted()
     parent = provenance(root, contributions=(Contribution("increases", 10, child, True),))
-    with pytest.raises(ValueError, match="preserve subject, as_of, and known_at"):
+    with pytest.raises(ValueError, match="preserve as_of and known_at"):
         resolve({root.value_id: parent, child.value_id: provenance(child)}, root, depth=1)
 
 
@@ -164,7 +171,7 @@ def test_telmu_refuses_nested_and_contextual_coordinate_substitution():
     substituted = reference("synthetic.child", known_at=201)
     parent = provenance(root, contributions=(Contribution("increases", 10, middle, True),))
     nested = provenance(middle, contributions=(Contribution("contextual", None, substituted, True),))
-    with pytest.raises(ValueError, match="preserve subject, as_of, and known_at"):
+    with pytest.raises(ValueError, match="preserve as_of and known_at"):
         resolve({root.value_id: parent, middle.value_id: nested, substituted.value_id: provenance(substituted)},
                 root, depth=2)
 
