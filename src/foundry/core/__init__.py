@@ -35,6 +35,7 @@ from .decisions import Decision, DecisionOutcome, DecisionProjection
 from .evidence import EvidenceIndex
 from .metrics import MetricProvider, MetricRegistry, MetricRequest, MetricResult
 from .scope import Subject
+from .subject_authority import CanonicalSubjectAuthority, SubjectAuthority
 from .value_provenance import (
     Contribution, Exclusion, ExplanationDescriptor, ProvenanceNode,
     ProvenanceResolver, ValueExplainer, ValueProvenanceError, ValueReference,
@@ -55,6 +56,7 @@ __all__ = [
     "EvidenceIndex",
     "MetricProvider", "MetricRegistry", "MetricRequest", "MetricResult",
     "Subject",
+    "CanonicalSubjectAuthority", "SubjectAuthority",
     "Contribution", "Exclusion", "ExplanationDescriptor", "ProvenanceNode",
     "ProvenanceResolver", "ValueExplainer", "ValueProvenanceError", "ValueReference",
     "Tile", "compose_flight_deck", "compose_tile",

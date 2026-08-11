@@ -15,6 +15,14 @@ from foundry.errors import DuplicateValueExplainerError
 SCOPE = Subject("party", "household-1")
 
 
+class TestAuthority:
+    def household_for(self, subject):
+        return "household-1" if subject == SCOPE else None
+
+
+AUTHORITY = TestAuthority()
+
+
 def ref(value_id: str, *, as_of: float = 10, known_at: float = 20) -> ValueReference:
     return ValueReference(SCOPE, value_id, as_of, known_at)
 
@@ -39,7 +47,7 @@ class MockExplainer:
 
 
 def resolver_for(nodes, *, descriptors=()):
-    resolver = ProvenanceResolver(descriptors)
+    resolver = ProvenanceResolver(descriptors, authority=AUTHORITY)
     resolver.register(MockExplainer(nodes))
     return resolver
 
@@ -85,7 +93,7 @@ def test_observed_contract_refuses_non_terminal_or_unanchored_nodes(bad):
 
 def test_refuses_unknown_unit_mismatch_repeated_contributor_and_empty_version():
     root = ref("example.total")
-    unknown = ProvenanceResolver().explain(root, max_depth=0)
+    unknown = ProvenanceResolver(authority=AUTHORITY).explain(root, max_depth=0)
     assert unknown is None
     child = ref("example.part")
     repeated = node(root, contributions=(
@@ -121,7 +129,7 @@ def test_expansion_carries_the_identical_bitemporal_scope_and_respects_depth():
     parent = node(root, contributions=(Contribution("increases", 10, child, True),))
     child_node = node(child, quantity=10)
     explainer = MockExplainer({root.value_id: parent, child.value_id: child_node})
-    resolver = ProvenanceResolver()
+    resolver = ProvenanceResolver(authority=AUTHORITY)
     resolver.register(explainer)
     resolver.explain(root, max_depth=0)
     assert explainer.calls == [root]
@@ -141,7 +149,7 @@ def test_frozen_clock_explanation_excludes_later_facts_and_replays_identically()
             anchor = "event-early" if reference.known_at < 30 else "event-late"
             return node(reference, kind="observed", anchors=(anchor,))
 
-    resolver = ProvenanceResolver()
+    resolver = ProvenanceResolver(authority=AUTHORITY)
     resolver.register(ClockExplainer())
     historical = ref("example.clock", known_at=20)
     first, second = resolver.explain(historical, max_depth=0), resolver.explain(historical, max_depth=0)
@@ -174,7 +182,7 @@ def test_closed_vocabulary_duplicate_ownership_and_non_declarable_completeness()
     with pytest.raises(TypeError):
         ProvenanceNode(root, "derived", "available", 1, "credits", "v", (), (), (), "Mock", "complete")
     one, two = MockExplainer({root.value_id: node(root)}), MockExplainer({root.value_id: node(root)})
-    resolver = ProvenanceResolver()
+    resolver = ProvenanceResolver(authority=AUTHORITY)
     resolver.register(one)
     with pytest.raises(DuplicateValueExplainerError):
         resolver.register(two)

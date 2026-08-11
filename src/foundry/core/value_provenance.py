@@ -14,6 +14,7 @@ from typing import Protocol
 from ..errors import DuplicateValueExplainerError, VocabularyError
 from . import vocab
 from .scope import Subject
+from .subject_authority import SubjectAuthority
 
 
 class ValueProvenanceError(ValueError):
@@ -160,9 +161,11 @@ class ValueExplainer(Protocol):
 class ProvenanceResolver:
     """Explicit resolver registry plus bounded, lazy structural verification."""
 
-    def __init__(self, descriptors: tuple[ExplanationDescriptor, ...] = ()) -> None:
+    def __init__(self, descriptors: tuple[ExplanationDescriptor, ...] = (), *,
+                 authority: SubjectAuthority | None = None) -> None:
         self._explainers: dict[str, ValueExplainer] = {}
         self._descriptors: dict[str, ExplanationDescriptor] = {}
+        self._authority = authority
         for descriptor in descriptors:
             if descriptor.value_id in self._descriptors:
                 raise DuplicateValueExplainerError(f"duplicate descriptor for {descriptor.value_id!r}")
@@ -188,22 +191,33 @@ class ProvenanceResolver:
     def explain(self, reference: ValueReference, *, max_depth: int) -> ProvenanceNode | None:
         if isinstance(max_depth, bool) or not isinstance(max_depth, int) or max_depth < 0:
             raise ValueProvenanceError("max_depth must be a non-negative integer")
-        return self._resolve(reference, max_depth=max_depth, depth=0, path=())
+        if self._authority is None:
+            raise ValueProvenanceError("subject authority is required")
+        household = self._authority.household_for(reference.subject)
+        if not isinstance(household, str) or not household:
+            raise ValueProvenanceError("root subject has no unambiguous household authority")
+        return self._resolve(reference, max_depth=max_depth, depth=0, path=(),
+                             household=household, cache={})
 
     def _resolve(self, reference: ValueReference, *, max_depth: int, depth: int,
-                 path: tuple[ValueReference, ...]) -> ProvenanceNode | None:
+                 path: tuple[ValueReference, ...], household: str,
+                 cache: dict[ValueReference, ProvenanceNode]) -> ProvenanceNode | None:
         if reference in path:
             return None
-        explainer = self._explainers.get(reference.value_id)
-        if explainer is None:
-            return None
-        node = explainer.explain(reference)
-        if node is None:
-            return None
-        self._verify_envelope(node, reference)
-        self._verify_emitted_references(node)
-        self._verify_structure(node)
-        resolved = self._with_completeness(node)
+        self._verify_subject_authority(reference.subject, household)
+        resolved = cache.get(reference)
+        if resolved is None:
+            explainer = self._explainers.get(reference.value_id)
+            if explainer is None:
+                return None
+            node = explainer.explain(reference)
+            if node is None:
+                return None
+            self._verify_envelope(node, reference)
+            self._verify_structure(node)
+            resolved = self._with_completeness(node)
+            cache[reference] = resolved
+        self._verify_emitted_references(resolved, household)
         if depth == max_depth:
             return resolved
         for contribution in resolved.contributions:
@@ -215,7 +229,8 @@ class ProvenanceResolver:
             if contribution.contributor in path + (reference,):
                 return self._unavailable(resolved)
             child = self._resolve(contribution.contributor, max_depth=max_depth,
-                                  depth=depth + 1, path=path + (reference,))
+                                  depth=depth + 1, path=path + (reference,),
+                                  household=household, cache=cache)
             if child is None:
                 raise ValueProvenanceError("expandable contributor produced no provenance")
             if child.status == "unavailable":
@@ -232,13 +247,15 @@ class ProvenanceResolver:
 
     @staticmethod
     def _verify_child_coordinates(parent: ValueReference, child: ValueReference) -> None:
-        if (child.subject != parent.subject or child.as_of != parent.as_of
-                or child.known_at != parent.known_at):
+        if child.as_of != parent.as_of or child.known_at != parent.known_at:
             raise ValueProvenanceError(
-                "recursive contributor must preserve subject, as_of, and known_at")
+                "recursive contributor must preserve as_of and known_at")
 
-    @classmethod
-    def _verify_emitted_references(cls, node: ProvenanceNode) -> None:
+    def _verify_subject_authority(self, subject: Subject, household: str) -> None:
+        if self._authority is None or self._authority.household_for(subject) != household:
+            raise ValueProvenanceError("subject is outside the authorising household")
+
+    def _verify_emitted_references(self, node: ProvenanceNode, household: str) -> None:
         """SAFE-017-02.  Every reference Core emits carries the node's own
         coordinates, whether or not it is ever expanded.
 
@@ -250,11 +267,10 @@ class ProvenanceResolver:
         explanation.  An exclusion carries no temporal coordinates, so only its
         subject is checkable."""
         for contribution in node.contributions:
-            cls._verify_child_coordinates(node.reference, contribution.contributor)
+            self._verify_child_coordinates(node.reference, contribution.contributor)
+            self._verify_subject_authority(contribution.contributor.subject, household)
         for exclusion in node.exclusions:
-            if exclusion.subject != node.reference.subject:
-                raise ValueProvenanceError(
-                    "exclusion subject must match the explained value's subject")
+            self._verify_subject_authority(exclusion.subject, household)
 
     @staticmethod
     def _verify_structure(node: ProvenanceNode) -> None:
