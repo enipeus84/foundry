@@ -8,7 +8,13 @@ from pathlib import Path
 import pytest
 
 from foundry.core.acquisition import AssetRegistration, AssetRegistry
-from foundry.core.entities import EntityProjection, declare_party, join_household, update_party
+from foundry.core.entities import (
+    EntityProjection,
+    declare_mission,
+    declare_party,
+    join_household,
+    update_party,
+)
 from foundry.core.metrics import MetricRequest
 from foundry.core.scope import Subject
 from foundry.core.subject_authority import CanonicalSubjectAuthority
@@ -20,9 +26,14 @@ from foundry.core.value_provenance import (
     ValueProvenanceError,
     ValueReference,
 )
+from foundry.demo_data import ensure_demo_data
 from foundry.eventlog import EventLog
 from foundry.finance import entities as fin
 from foundry.finance.entities import FinanceEntityProjection
+from foundry.finance.pension_assessment import (
+    POLICY_ID as PENSION_POLICY_ID,
+    TARGET_METRIC as PENSION_TARGET_METRIC,
+)
 from foundry.finance.pension_evidence import PensionEvidenceProjection, record_pension_evidence
 from foundry.finance.pension_metrics import FinancePensionMetricProvider
 from foundry.finance.pension_provenance import (
@@ -99,6 +110,13 @@ def _production_resolver(log, tmp_path, monkeypatch, household, accounts):
         log, entity_exists=lambda subject_id: subject_id in FinanceEntityProjection(log).accounts)
     for account in accounts:
         assets.register(AssetRegistration(account.id, "finance", household.id))
+    declare_mission(
+        log,
+        "Pension provenance composition fixture",
+        target_metric=PENSION_TARGET_METRIC,
+        assessment_policy_id=PENSION_POLICY_ID,
+        assumption_set_id=next(iter(FinanceEntityProjection(log).assumption_sets)),
+    )
     monkeypatch.setenv("FOUNDRY_DATA_PATH", str(tmp_path / "events.jsonl"))
     return _build_console().provenance
 
@@ -353,6 +371,61 @@ def test_explainer_has_no_writer_or_contribution_history_path():
 
 def test_production_composition_registers_without_exposing_a_consumer(tmp_path, monkeypatch):
     monkeypatch.setenv("FOUNDRY_DATA_PATH", str(tmp_path / "events.jsonl"))
+    log = EventLog(tmp_path / "events.jsonl")
+    before = tuple(log.events())
     console = _build_console()
     assert console.provenance is not None
     assert PENSION_WEALTH in console.provenance._explainers
+    assert tuple(log.events()) == before
+
+
+def test_production_composition_uses_mission_assumptions_and_canonical_account_authority(
+        tmp_path, monkeypatch):
+    path = tmp_path / "events.jsonl"
+    ensure_demo_data(str(path))
+    monkeypatch.setenv("FOUNDRY_DATA_PATH", str(path))
+    log = EventLog(path)
+    core = EntityProjection(log)
+    finance = FinanceEntityProjection(log)
+    mission = next(
+        item for item in core.missions.values()
+        if (item.status == "active"
+            and item.assessment_policy_id == PENSION_POLICY_ID
+            and item.target_metric == PENSION_TARGET_METRIC)
+    )
+    assert mission.assumption_set_id is not None
+    assert len([item for item in finance.assumption_sets.values()
+                if item.status == "active"]) > 1
+    household = next(item for item in core.parties.values()
+                     if item.party_type == "household" and item.status == "active")
+    as_of = max(event["ts"] for event in log.events())
+    unregistered = fin.declare_account(log, "pension", "GBP")
+    fin.link_ownership(log, "account", unregistered.id, "owner", "unknown-person")
+    console = _build_console()
+    metric = console.registry.dispatch(MetricRequest(
+        PENSION_WEALTH, Subject("party", household.id), as_of,
+        assumption_set_id=mission.assumption_set_id,
+    ))
+    root = console.provenance.explain(
+        ValueReference(Subject("party", household.id), PENSION_WEALTH, as_of, as_of),
+        max_depth=0,
+    )
+
+    assert metric.value == 62_000.0
+    assert root is not None
+    assert root.quantity == metric.value
+    assert root.completeness == "complete"
+    with pytest.raises(ValueProvenanceError, match="unambiguous household authority"):
+        console.provenance.explain(
+            ValueReference(Subject("resource", unregistered.id), RAW_VALUATION, as_of, as_of),
+            max_depth=0,
+        )
+
+    wrong_assumption = next(
+        item.id for item in finance.assumption_sets.values()
+        if item.status == "active" and item.id != mission.assumption_set_id)
+    wrong_metric = console.registry.dispatch(MetricRequest(
+        PENSION_WEALTH, Subject("party", household.id), as_of,
+        assumption_set_id=wrong_assumption,
+    ))
+    assert (wrong_metric.value, wrong_metric.status) != (metric.value, metric.status)

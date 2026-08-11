@@ -17,6 +17,18 @@ The explainer registers through `web.py:_build_console()` with a
 registration read views. It adds no route, API, Flight Deck, Operations or
 Mission Assessment consumer.
 
+SAFE-P2-01 is remediated in that same composition boundary. The active Pension
+Independence mission supplies its declared assumption-set id to the explainer;
+production composition disables the explainer's isolated-test convenience
+fallback to a uniquely active set. It therefore fails closed if there is no
+single authoritative mission selection. Before the authority snapshot is
+constructed, composition adds an in-memory `AssetRegistry` binding only for an
+active pension account whose canonical Finance value-ownership links resolve
+through active Core people to exactly one active household. This is a read-only
+projection binding, not an `AssetRegistry.register()` call or a new event.
+An absent, foreign, or ambiguous ownership path remains unregistered and is
+refused by unchanged `CanonicalSubjectAuthority`.
+
 ## Governor rulings applied
 
 GD-P2-A adds the one authorised Core vocabulary value, `conflicting`.
@@ -84,6 +96,14 @@ The terminal-id probe deliberately registers an explainer for the terminal
 identifier and confirms the existing resolver rejects its conflict with the
 non-expandable edge when traversal is requested. No resolver rule is relaxed.
 
+The production-composition regression uses the shipped synthetic dataset's
+multiple active assumption sets. Its Pension Independence mission selects the
+same set that produces the available £62,000 metric result, and provenance
+reproduces that root. A different active set produces a different pension
+result; provenance does not guess it. The regression also confirms that an
+account with no canonical person/household ownership path remains refused, and
+that console construction appends no event.
+
 ## Remaining limitations
 
 `ValueReference` has no attribution dimension, so the attributed edge remains
@@ -92,3 +112,11 @@ that the metric actually retains; provenance neither restores discarded links
 nor decides whether Finance's filter-before-weight behaviour is desirable.
 No contribution, growth, tax-relief, transfer, withdrawal or fee provenance is
 provided by this phase.
+
+SAFE-P2-02 remains a governance/history concern: the final reviewed candidate
+must include the Governor authority in its ancestry, but this remediation does
+not perform that history operation. SAFE-P2-03 remains governed wording debt:
+the pension descriptor tolerance also applies to expandable-child agreement
+for this value id, although Phase 2 pension attribution edges are terminal.
+No Core change is authorised. TELMU-P2-02 remains non-blocking debt; the
+resolver's max-depth terminal-registry behaviour is unchanged.

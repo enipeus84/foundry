@@ -44,9 +44,11 @@ class FinancePensionExplainer:
     same provider uses, preserving its deliberately filtered ownership links.
     """
 
-    def __init__(self, log, *, assumption_set_id: str | None = None):
+    def __init__(self, log, *, assumption_set_id: str | None = None,
+                 allow_implicit_assumption_set: bool = True):
         self._log = log
         self._assumption_set_id = assumption_set_id
+        self._allow_implicit_assumption_set = allow_implicit_assumption_set
 
     def explainable_value_ids(self) -> frozenset[str]:
         # The attribution and ownership-context identifiers are intentional
@@ -75,6 +77,8 @@ class FinancePensionExplainer:
     def _assumption_id(self, finance) -> str | None:
         if self._assumption_set_id is not None:
             return self._assumption_set_id
+        if not self._allow_implicit_assumption_set:
+            return None
         active = sorted(
             item.id for item in finance.assumption_sets.values()
             if item.status == "active")
