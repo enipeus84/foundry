@@ -64,7 +64,7 @@ from foundry.core.evidence import EvidenceIndex
 from foundry.core.metrics import MetricRegistry
 from foundry.core.mission_assessment import MissionAssessmentRegistry
 from foundry.core.subject_authority import CanonicalSubjectAuthority
-from foundry.core.value_provenance import ProvenanceResolver
+from foundry.core.value_provenance import ExplanationDescriptor, ProvenanceResolver
 from foundry.demo_data import ensure_demo_data
 from foundry.eventlog import EventLog
 from foundry.finance.entities import FinanceEntityProjection
@@ -199,7 +199,9 @@ def _build_console() -> Console:
         log, entity_exists=lambda subject_id: subject_id in finance_entities.accounts)
     authority = CanonicalSubjectAuthority.from_canonical_state(
         asset_registrations=assets.registrations, parties=core_entities.parties)
-    provenance = ProvenanceResolver(authority=authority)
+    provenance = ProvenanceResolver((
+        ExplanationDescriptor("finance.pension_wealth", "GBP", tolerance=1e-6),
+    ), authority=authority)
     provenance.register(FinancePensionExplainer(log))
     assessments = MissionAssessmentRegistry()
     register_finance_mission_definitions(assessments)

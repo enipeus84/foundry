@@ -1,7 +1,7 @@
 # RFC-017 Phase 2 — Pension Provenance Implementation Report
 
 **Status:** Candidate for TELMU validation. **Authority:** Governor amendment
-`aa316cc7ab740b2eeaea893ff5fee25ebbb40fc6` (GD-P2-A through GD-P2-F).
+`6b35850eba8ecd3654143699f7ca186e5571ccd8` (GD-P2-A through GD-P2-I).
 
 ## Delivered boundary
 
@@ -40,6 +40,24 @@ weighting semantics. OBS-PENSION-01 is reproduced as a regression: a retained
 implicit person ownership link can receive full attribution when the existing
 metric has filtered out a co-owner's link.
 
+GD-P2-G/H/I add descriptor-scoped numeric reconciliation. Composition registers
+`ExplanationDescriptor("finance.pension_wealth", "GBP", tolerance=1e-6)`.
+The tolerance affects only Core's completeness classification for this value;
+it does not change the metric root, per-account attributed quantities,
+exclusions, or the literal residual. Thus representation-level float drift may
+be `complete` while its non-zero residual remains disclosed. A £0.01 mismatch
+remains `partial`, and values without this descriptor retain exact comparison.
+This is not a Finance or Core reducer change. GD-P2-F/P2-L and
+OBS-PENSION-01 are unchanged; TELMU-P2-02 remains outside this burn.
+
+TELMU-P2-01's root cause is retained, not hidden: Finance aggregates with
+sequential `total += contribution`, while Core reconciles additive edges with
+`sum()`. Identical economic quantities can therefore retain a
+representation-level raw residual. The accepted remedy classifies that residual
+through the authorised descriptor tolerance; it does not eliminate floating
+point arithmetic. Python versions may expose different insignificant residual
+bits, but must retain the same tolerance-aware completeness classification.
+
 ## Evidence not used
 
 Employee contributions, employer contributions, tax relief, transfers,
@@ -53,6 +71,14 @@ fractional-person and OBS-PENSION-01 equivalence; contextual raw valuation and
 ownership-link evidence; conflict/missing/out-of-period/incommensurable
 distinctions; ownership and valuation `known_at` replay; terminal-id registry
 consistency; SubjectAuthority refusal; deterministic read-only execution.
+
+The numeric-reconciliation regressions exercise the production pension
+descriptor and composition path: `0.1 + 0.2 + 0.3` is complete within the
+authorised tolerance while retaining its raw residual; a £0.01 mismatch remains
+partial; exclusions still force partial; another value id remains exact; and FX,
+large and small pension values retain the same absolute `1e-6 GBP` boundary.
+Raw residual bits may vary across Python versions, but the tolerance-aware
+complete/partial classification is the acceptance contract.
 
 The terminal-id probe deliberately registers an explainer for the terminal
 identifier and confirms the existing resolver rejects its conflict with the

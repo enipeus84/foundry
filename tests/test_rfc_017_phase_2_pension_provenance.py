@@ -12,7 +12,14 @@ from foundry.core.entities import EntityProjection, declare_party, join_househol
 from foundry.core.metrics import MetricRequest
 from foundry.core.scope import Subject
 from foundry.core.subject_authority import CanonicalSubjectAuthority
-from foundry.core.value_provenance import ProvenanceNode, ProvenanceResolver, ValueProvenanceError, ValueReference
+from foundry.core.value_provenance import (
+    Contribution,
+    Exclusion,
+    ProvenanceNode,
+    ProvenanceResolver,
+    ValueProvenanceError,
+    ValueReference,
+)
 from foundry.eventlog import EventLog
 from foundry.finance import entities as fin
 from foundry.finance.entities import FinanceEntityProjection
@@ -87,6 +94,44 @@ def _attributed(result, account_id):
                 if item.role == "increases" and item.contributor.subject.id == account_id)
 
 
+def _production_resolver(log, tmp_path, monkeypatch, household, accounts):
+    assets = AssetRegistry(
+        log, entity_exists=lambda subject_id: subject_id in FinanceEntityProjection(log).accounts)
+    for account in accounts:
+        assets.register(AssetRegistration(account.id, "finance", household.id))
+    monkeypatch.setenv("FOUNDRY_DATA_PATH", str(tmp_path / "events.jsonl"))
+    return _build_console().provenance
+
+
+class _StaticExplainer:
+    def __init__(self, node):
+        self.node = node
+
+    def explainable_value_ids(self):
+        return frozenset({self.node.reference.value_id})
+
+    def explain(self, reference):
+        return self.node if reference == self.node.reference else None
+
+
+def _numeric_node(reference, quantity, attributed, *, exclusions=()):
+    child = ValueReference(reference.subject, "test.attributed", reference.as_of,
+                           reference.known_at)
+    return ProvenanceNode(
+        reference, "derived", "available", quantity, "GBP", "test-v1",
+        ("test-anchor",),
+        (Contribution("increases", attributed, child, False),),
+        exclusions, "Test numeric reconciliation")
+
+
+def _resolver_with_production_descriptors(production_resolver, node):
+    resolver = ProvenanceResolver(
+        tuple(production_resolver._descriptors.values()),
+        authority=production_resolver._authority)
+    resolver.register(_StaticExplainer(node))
+    return resolver
+
+
 def test_household_and_fractional_person_attribution_match_metric(tmp_path, monkeypatch):
     log, household, first, second, assumption = _world(tmp_path, monkeypatch)
     pension, first_link = _account(log, first, share=50)
@@ -130,6 +175,86 @@ def test_explicit_full_person_attribution_matches_metric(tmp_path, monkeypatch):
         _reference(Subject("party", first.id)), max_depth=0)
     assert result.quantity == _metric(log, Subject("party", first.id), assumption).value == 100_000.0
     assert _attributed(result, pension.id).quantity == 100_000.0
+
+
+def test_production_pension_descriptor_reconciles_representation_noise_and_retains_residual(
+        tmp_path, monkeypatch):
+    log, household, first, _, assumption = _world(tmp_path, monkeypatch)
+    accounts = [_account(log, first, value=value, share=100)[0]
+                for value in (0.1, 0.2, 0.3)]
+    resolver = _production_resolver(log, tmp_path, monkeypatch, household, accounts)
+    result = resolver.explain(_reference(Subject("party", household.id)), max_depth=0)
+    attributed = sum(item.quantity for item in result.contributions
+                     if item.role == "increases")
+
+    assert resolver._descriptors[PENSION_WEALTH].tolerance == 1e-6
+    assert _metric(log, Subject("party", household.id), assumption).value == result.quantity
+    assert result.quantity == 0.6000000000000001
+    assert attributed == 0.6
+    assert result.residual == result.quantity - attributed
+    assert result.residual != 0.0
+    assert abs(result.residual) <= 1e-6
+    assert result.completeness == "complete"
+
+
+def test_pension_descriptor_does_not_absorb_a_penny_discrepancy(tmp_path, monkeypatch):
+    log, household, first, _, _ = _world(tmp_path, monkeypatch)
+    account, _ = _account(log, first, share=100)
+    production_resolver = _production_resolver(
+        log, tmp_path, monkeypatch, household, [account])
+    reference = _reference(Subject("party", household.id))
+    result = _resolver_with_production_descriptors(
+        production_resolver, _numeric_node(reference, 100.0, 99.99)).explain(reference, max_depth=0)
+
+    assert result.residual > production_resolver._descriptors[PENSION_WEALTH].tolerance
+    assert result.completeness == "partial"
+
+
+def test_pension_tolerance_does_not_override_exclusions(tmp_path, monkeypatch):
+    log, household, first, _, _ = _world(tmp_path, monkeypatch)
+    account, _ = _account(log, first, share=100)
+    production_resolver = _production_resolver(
+        log, tmp_path, monkeypatch, household, [account])
+    reference = _reference(Subject("party", household.id))
+    result = _resolver_with_production_descriptors(
+        production_resolver, _numeric_node(
+            reference, 0.6000000000000001, 0.6,
+            exclusions=(Exclusion(Subject("resource", account.id), "conflicting"),),
+        )).explain(reference, max_depth=0)
+
+    assert abs(result.residual) <= production_resolver._descriptors[PENSION_WEALTH].tolerance
+    assert result.completeness == "partial"
+
+
+def test_pension_descriptor_isolated_from_other_value_ids(tmp_path, monkeypatch):
+    log, household, first, _, _ = _world(tmp_path, monkeypatch)
+    account, _ = _account(log, first, share=100)
+    production_resolver = _production_resolver(
+        log, tmp_path, monkeypatch, household, [account])
+    reference = ValueReference(Subject("party", household.id), "test.exact_value", AS_OF, 10_000.0)
+    result = _resolver_with_production_descriptors(
+        production_resolver, _numeric_node(reference, 0.3, 0.1 + 0.2)).explain(reference, max_depth=0)
+
+    assert "test.exact_value" not in production_resolver._descriptors
+    assert result.residual != 0.0
+    assert result.completeness == "partial"
+
+
+def test_pension_tolerance_is_absolute_for_fx_large_and_small_values(tmp_path, monkeypatch):
+    log, household, first, _, assumption = _world(tmp_path, monkeypatch)
+    fx_account, _ = _account(log, first, value=0.1, currency="USD", share=100)
+    large_account, _ = _account(log, first, value=3_000_000.1, share=100)
+    small_account, _ = _account(log, first, value=0.0000005, share=100)
+    fin.declare_exchange_rate(log, "USD/GBP", 0.9, AS_OF)
+    resolver = _production_resolver(
+        log, tmp_path, monkeypatch, household,
+        [fx_account, large_account, small_account])
+    result = resolver.explain(_reference(Subject("party", household.id)), max_depth=0)
+
+    assert resolver._descriptors[PENSION_WEALTH].tolerance == 1e-6
+    assert result.quantity == _metric(log, Subject("party", household.id), assumption).value
+    assert abs(result.residual) <= 1e-6
+    assert result.completeness == "complete"
 
 
 def test_missing_conflicting_out_of_period_and_incommensurable_are_distinct(tmp_path, monkeypatch):
