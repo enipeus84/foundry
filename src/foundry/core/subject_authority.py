@@ -65,6 +65,22 @@ class CanonicalSubjectAuthority:
         return cls(MappingProxyType(party_households), MappingProxyType(resource_households))
 
     def household_for(self, subject: Subject) -> str | None:
+        """Return authority only for canonical Core Subject forms.
+
+        Core represents registered domain resources with the generic
+        ``Subject("resource", id)`` form.  Treating every non-party kind as a
+        resource would turn a malformed or unknown identity into an alias for
+        a registered resource id, so unrecognised forms deliberately have no
+        authority.
+        """
+        if (not isinstance(subject, Subject)
+                or not isinstance(subject.kind, str)
+                or not subject.kind.strip()
+                or not isinstance(subject.id, str)
+                or not subject.id.strip()):
+            return None
         if subject.kind == "party":
             return self._party_households.get(subject.id)
-        return self._resource_households.get(subject.id)
+        if subject.kind == "resource":
+            return self._resource_households.get(subject.id)
+        return None

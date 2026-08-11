@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -70,6 +71,17 @@ def resolver_for(nodes, authority=AUTHORITY):
     return resolver, explainer
 
 
+def canonical_authority():
+    return CanonicalSubjectAuthority.from_canonical_state(
+        parties={"household-a": SimpleNamespace(
+            party_type="household", status="active", memberships=())},
+        asset_registrations={
+            "account-a": SimpleNamespace(household_id="household-a"),
+            "asset-a": SimpleNamespace(household_id="household-a"),
+        },
+    )
+
+
 def test_canonical_subject_authority_uses_only_core_projection_read_views(tmp_path):
     log = EventLog(tmp_path / "events.jsonl")
     household_a, household_b, person = (
@@ -89,6 +101,89 @@ def test_canonical_subject_authority_uses_only_core_projection_read_views(tmp_pa
     ambiguous = CanonicalSubjectAuthority.from_canonical_state(
         asset_registrations=assets.registrations, parties=EntityProjection(log).parties)
     assert ambiguous.household_for(Subject("party", person.id)) is None
+
+
+@pytest.mark.parametrize("subject", [
+    Subject("", "account-a"),
+    Subject(" ", "account-a"),
+    Subject(7, "account-a"),
+    Subject(None, "account-a"),
+    Subject("unknown-kind", "account-a"),
+    Subject("resource", ""),
+    Subject("resource", " "),
+    Subject("resource", 7),
+])
+def test_canonical_subject_authority_refuses_malformed_or_unknown_identity(subject):
+    authority = canonical_authority()
+    assert authority.household_for(Subject("resource", "account-a")) == "household-a"
+    assert authority.household_for(subject) is None
+
+
+@pytest.mark.parametrize("role", ["increases", "decreases", "contextual"])
+def test_malformed_subject_refuses_at_root_and_unexpanded_contribution(role):
+    authority = canonical_authority()
+    malformed = Subject("unknown-kind", "account-a")
+    root = ref("root")
+    child = ref("child", subject=malformed)
+    quantity = None if role == "contextual" else 1
+    resolver, _ = resolver_for({"root": node(
+        root, contributions=(Contribution(role, quantity, child, False),))}, authority)
+    with pytest.raises(ValueProvenanceError, match="authorising household"):
+        resolver.explain(root, max_depth=0)
+
+    malformed_root = ref("root", subject=malformed)
+    resolver, _ = resolver_for({"root": node(malformed_root)}, authority)
+    with pytest.raises(ValueProvenanceError, match="unambiguous household authority"):
+        resolver.explain(malformed_root, max_depth=0)
+
+
+def test_malformed_subject_refuses_at_depth_bound_nested_and_exclusion():
+    authority = canonical_authority()
+    malformed = Subject("unknown-kind", "account-a")
+    root = ref("root")
+    bad_child = ref("child", subject=malformed)
+
+    depth_bound, _ = resolver_for({
+        "root": node(root, contributions=(Contribution("contextual", None, bad_child, True),)),
+        "child": node(bad_child),
+    }, authority)
+    with pytest.raises(ValueProvenanceError, match="authorising household"):
+        depth_bound.explain(root, max_depth=0)
+
+    middle = ref("middle", subject=ASSET)
+    nested, _ = resolver_for({
+        "root": node(root, contributions=(Contribution("contextual", None, middle, True),)),
+        "middle": node(middle, contributions=(
+            Contribution("contextual", None, bad_child, False),)),
+    }, authority)
+    with pytest.raises(ValueProvenanceError, match="authorising household"):
+        nested.explain(root, max_depth=2)
+
+    excluded, _ = resolver_for({"root": node(
+        root, exclusions=(Exclusion(malformed, "unobserved"),))}, authority)
+    with pytest.raises(ValueProvenanceError, match="authorising household"):
+        excluded.explain(root, max_depth=0)
+
+
+def test_malformed_subject_cannot_inherit_a_cached_valid_resource_node():
+    authority = canonical_authority()
+    root = ref("root")
+    left = ref("left")
+    right = ref("right")
+    valid = ref("shared", subject=ACCOUNT)
+    malformed = ref("shared", subject=Subject("unknown-kind", "account-a"))
+    resolver, explainer = resolver_for({
+        "root": node(root, quantity=2, contributions=(
+            Contribution("increases", 1, left, True),
+            Contribution("increases", 1, right, True),
+        )),
+        "left": node(left, contributions=(Contribution("contextual", None, valid, True),)),
+        "right": node(right, contributions=(Contribution("contextual", None, malformed, True),)),
+        "shared": lambda reference: node(reference, kind="observed"),
+    }, authority)
+    with pytest.raises(ValueProvenanceError, match="authorising household"):
+        resolver.explain(root, max_depth=2)
+    assert explainer.calls == [root, left, valid, right]
 
 
 def test_same_subject_and_cross_resource_same_household_traversal_are_allowed():
