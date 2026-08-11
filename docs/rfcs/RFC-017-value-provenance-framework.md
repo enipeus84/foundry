@@ -1823,6 +1823,32 @@ RFC-017's boundary, as `OBS-PENSION-01`
 `SubjectAuthority`. No Finance explainer. No Phase 2 implementation
 authority — it remains **NONE**.
 
+> **Governor ruling addendum — GD-P2-G through GD-P2-I, 2026-08-11.** The
+> preceding rulings are retained unchanged. RFC-017 already provides a
+> per-`value_id` descriptor tolerance (§4.5, §6.2), Core-derived residual and
+> completeness, exact comparison without a declaration, and exclusions that
+> force `partial`. Therefore the following are **Phase 2 acceptance
+> clarifications, not a normative RFC contract amendment**:
+>
+> | # | Decision | Ruling |
+> |---|---|---|
+> | **GD-P2-G** | Representation-level root/contribution disagreement may use the existing descriptor-declared absolute tolerance. It affects only Core's balanced/completeness classification; observed value, contribution quantities, literal residual and exclusions are unchanged | **Accepted.** No global epsilon; without a descriptor, exact comparison remains binding |
+> | **GD-P2-H** | Register `ExplanationDescriptor("finance.pension_wealth", "GBP", tolerance=1e-6)` | **Accepted.** `0.000001 GBP`, scoped only to `finance.pension_wealth` |
+> | **GD-P2-I** | The historical P2-B attribution-edge wording above is retained; its exact-equality root-reconciliation framing is superseded by P2-B Numeric Fidelity below | **Accepted.** GD-P2-F and replacement P2-L remain unchanged |
+>
+> **Replacement P2-B — Numeric fidelity.** The explainer **MUST** reproduce
+> the canonical economic quantities used by `finance.pension_wealth`. Core
+> reconciliation **MUST** fall within the value's authorised numeric tolerance
+> where explicitly declared by its `ExplanationDescriptor`; otherwise it
+> remains exact. This does not permit Finance to round, alter or independently
+> recalculate attributed quantities.
+>
+> A literal representation-noise residual is retained even when completeness
+> is `complete`; a £0.01 discrepancy exceeds the pension tolerance and remains
+> `partial`. No Finance reducer, Core reducer, Core implementation, consumer,
+> or TELMU-P2-02 behaviour is changed. Ruling record:
+> [`../reviews/RFC-017-GD-P2-ruling.md`](../reviews/RFC-017-GD-P2-ruling.md).
+
 ---
 
 ## 15. Watch items and technical debt

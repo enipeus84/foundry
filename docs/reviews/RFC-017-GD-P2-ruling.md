@@ -388,3 +388,89 @@ Phase 2 implementation authority: NONE
 
 No implementation is performed by this addendum. No production code is
 changed.
+
+---
+
+## Addendum — GD-P2-G through GD-P2-I, 2026-08-11: numeric reconciliation
+
+**Recorded beside the prior rulings, which are retained unmodified.** TELMU
+found that `finance.pension_wealth` can produce a sequential binary-float
+total that differs from Core's reconciliation of the same economic
+contributions. EECOM's finding was checked against the repository: the
+descriptor seam already provides a value-specific absolute tolerance; Core,
+not Finance, computes residual and completeness; absent a descriptor the
+comparison is exact; exclusions force `partial`; and the literal residual is
+retained. No new Core mechanism is required.
+
+### GD-P2-G — descriptor-declared numeric reconciliation: **ACCEPTED**
+
+Representation-level disagreement between an observed value and its additive
+provenance **MAY** be reconciled only through the existing
+`ExplanationDescriptor` absolute tolerance. The declaration is per
+`value_id`; it changes only Core's balanced/completeness classification. It
+does not alter the observed value, any contribution quantity, or the literal
+residual, and it never overrides an exclusion. Without a declared tolerance,
+reconciliation remains exact. This is neither a Core-global epsilon nor a new
+Core mechanism.
+
+### GD-P2-H — `finance.pension_wealth` tolerance: **ACCEPTED**
+
+The Phase 2 composition may register exactly:
+
+```python
+ExplanationDescriptor("finance.pension_wealth", "GBP", tolerance=1e-6)
+```
+
+This is an absolute tolerance of `0.000001 GBP`, scoped only to
+`finance.pension_wealth`. It is not a default or a general GBP tolerance.
+
+### GD-P2-I — P2-B numeric fidelity: **ACCEPTED**
+
+The prior P2-B wording is retained above as the historical attribution-edge
+decision. Its exact-equality framing is superseded only for root
+reconciliation by the following replacement; the non-expandable attributed
+edge and its raw-valuation and ownership contextual siblings are unchanged.
+
+> **P2-B — Numeric fidelity.** The explainer **MUST** reproduce the same
+> canonical economic quantities used by `finance.pension_wealth`. Core
+> reconciliation **MUST** fall within the value's authorised numeric tolerance
+> where one is explicitly declared by its `ExplanationDescriptor`. Without a
+> declared tolerance, reconciliation remains exact.
+
+GD-P2-F and replacement P2-L remain binding: Finance remains the attribution
+oracle. Tolerance reconciles the root against those already-authorised
+quantities; it does not authorise Finance to round, alter, or independently
+recalculate them.
+
+### Binding discriminator and contract classification
+
+For clean `0.1`, `0.2`, `0.3` pension accounts, an observed root of
+`0.6000000000000001` and Core-attributed total `0.6` yield a literal residual
+of approximately `1.11e-16`; it is `complete` under GD-P2-H when no exclusion
+exists. A £100.00 root with £99.99 attributed remains `partial`: `0.01 GBP`
+exceeds the authorised tolerance. A balanced arithmetic result with any
+exclusion remains `partial`.
+
+RFC-017 §4.5 and §6.2 already define this mechanism and its ownership. This
+addendum is therefore a Governor ruling and Phase 2 acceptance clarification,
+not a normative RFC-017 contract amendment. The RFC decision register records
+it under RFC-100 §9.2; its existing contract text is not rewritten.
+
+### Addendum disposition
+
+```text
+GD-P2-G:                       ACCEPTED
+GD-P2-H:                       ACCEPTED — finance.pension_wealth only, 1e-6 GBP
+GD-P2-I:                       ACCEPTED — P2-B numeric fidelity clarified
+GD-P2-F / P2-L:                UNCHANGED
+Finance reducer changed:       NO
+Core reducer changed:          NO
+Core implementation changed:   NO
+RFC-017 contract amendment:    NO
+TELMU-P2-01:                   ARCHITECTURALLY CLOSED
+TELMU-P2-02:                   UNCHANGED
+Phase 2 BOOSTER authority:     READY — bounded descriptor composition and validation only
+```
+
+No implementation is performed by this addendum. No production code is
+changed. No consumer or merge is authorised.
