@@ -53,7 +53,7 @@ Phases 1–4; Phases 5–10 remain outstanding and are separate burn candidates.
 |---|---|---|---|---|---|---|
 | RFC-012 | Telemetry Operations Console | **Complete — product remediation merged 2026-08-05** | [`RFC-012-telemetry-operations-console.md`](RFC-012-telemetry-operations-console.md) (Revision 2, after Governor amendments A1–A6) | [PR #30 comment](https://github.com/enipeus84/foundry/pull/30#issuecomment-5159867761) — SAFE: GO, two advisory findings, no remediation required | [`rfc-012-architecture-post-flight-report.md`](../rfc-012-architecture-post-flight-report.md) | [#30](https://github.com/enipeus84/foundry/pull/30) (architecture); [#35](https://github.com/enipeus84/foundry/pull/35) (product remediation) |
 | RFC-013 | Operations Capture Contracts | **Implementation ready for SAFE review** | — | — | [`rfc-013-implementation-report.md`](../rfc-013-implementation-report.md) | — |
-| RFC-016 | Mission Target Framework | **Complete — merged 2026-08-06**. Frozen Phases 1–2 shipped; later phases retain their stated Governor gates | [`RFC-016-mission-target-framework.md`](RFC-016-mission-target-framework.md) | [`rfc-016-implementation-report.md`](../rfc-016-implementation-report.md) | SAFE review [`RFC-016-safe-review.md`](../reviews/RFC-016-safe-review.md); SAFE confirmation [`RFC-016-safe-confirmation.md`](../reviews/RFC-016-safe-confirmation.md); freeze record [`RFC-016-architecture-freeze-record.md`](../reviews/RFC-016-architecture-freeze-record.md); technical debt [`rfc-016-technical-debt.md`](../rfc-016-technical-debt.md) | [#44](https://github.com/enipeus84/foundry/pull/44) |
+| RFC-016 | Mission Target Framework | **Phases 1–2 complete — merged 2026-08-06.** **Phase 3 (Mission Target Management) architecture frozen 2026-08-11 — engineering not yet authorised.** Phases 4–5 retain their stated Governor gates | [`RFC-016-mission-target-framework.md`](RFC-016-mission-target-framework.md) | [`rfc-016-implementation-report.md`](../rfc-016-implementation-report.md) | SAFE review [`RFC-016-safe-review.md`](../reviews/RFC-016-safe-review.md); SAFE confirmation [`RFC-016-safe-confirmation.md`](../reviews/RFC-016-safe-confirmation.md); freeze record [`RFC-016-architecture-freeze-record.md`](../reviews/RFC-016-architecture-freeze-record.md); **Phase 3 freeze record** [`RFC-016-phase-3-architecture-freeze-record.md`](../reviews/RFC-016-phase-3-architecture-freeze-record.md); technical debt [`rfc-016-technical-debt.md`](../rfc-016-technical-debt.md) | [#44](https://github.com/enipeus84/foundry/pull/44) |
 | RFC-017 | Value Provenance Framework | **Complete — Phase 1, OBS-017-A remediation and Phase 2 Pension Provenance merged 2026-08-11**; Phase 2 implementation merge `5664cfd`; no consumer surface delivered | [`RFC-017-value-provenance-framework.md`](RFC-017-value-provenance-framework.md) | [`rfc-017-phase-1-implementation-report.md`](../rfc-017-phase-1-implementation-report.md); [`rfc-017-phase-1-conformance-remediation-report.md`](../rfc-017-phase-1-conformance-remediation-report.md); [`rfc-017-phase-2-pension-provenance-implementation-report.md`](../rfc-017-phase-2-pension-provenance-implementation-report.md) | self-review [`RFC-017-architecture-self-review.md`](../reviews/RFC-017-architecture-self-review.md); freeze record [`RFC-017-architecture-freeze-record.md`](../reviews/RFC-017-architecture-freeze-record.md); SAFE review [`RFC-017-safe-review.md`](../reviews/RFC-017-safe-review.md); SAFE confirmation [`RFC-017-safe-confirmation.md`](../reviews/RFC-017-safe-confirmation.md); OBS-017-A investigation [`RFC-017-OBS-017-A-clarification.md`](../reviews/RFC-017-OBS-017-A-clarification.md); OBS-017-A ruling [`RFC-017-OBS-017-A-ruling.md`](../reviews/RFC-017-OBS-017-A-ruling.md); Pension Phase 2 rulings [`RFC-017-GD-P2-ruling.md`](../reviews/RFC-017-GD-P2-ruling.md); technical debt [`rfc-017-technical-debt.md`](../rfc-017-technical-debt.md) | [#45](https://github.com/enipeus84/foundry/pull/45), [#46](https://github.com/enipeus84/foundry/pull/46) |
 | RFC-015 | Capture Target Registry | **Architecture frozen 2026-08-05** (Governor freeze gate at `0ad18b3`); Phases 0–3 shipped, Phase 4 in implementation | [`RFC-015-capture-target-registry.md`](RFC-015-capture-target-registry.md) | — | self-review [`RFC-015-architecture-self-review.md`](../reviews/RFC-015-architecture-self-review.md); freeze record [`RFC-015-architecture-freeze-record.md`](../reviews/RFC-015-architecture-freeze-record.md); Phase 3 report [`rfc-015-phase-3-retired-telemetry-suppression-report.md`](../rfc-015-phase-3-retired-telemetry-suppression-report.md); Phase 4 report [`rfc-015-phase-4-retired-pending-proposal-lifecycle-report.md`](../rfc-015-phase-4-retired-pending-proposal-lifecycle-report.md) | — |
 
@@ -184,11 +184,32 @@ not be cited as one:
 | RFC-019 — Mission Assessment | **Already belongs to RFC-006**, merged, with four live providers |
 | RFC-020 — Flight Deck Intelligence | **Unnumbered.** Future Flight Deck intelligence takes a number when a burn is commissioned |
 
+> **Closed by ruling GD-A — 2026-08-11.** The conditional in the RFC-018 row was
+> tested and resolved. An architecture burn was commissioned for *Mission Target
+> Capture*; it **found no genuinely new architectural boundary**, and the
+> Governor ruled the work forward as **RFC-016 Phase 3 — Mission Target
+> Management**. **No RFC-018 is created**, and RFC-017 ruling GD-10 stands
+> unamended. The row above is retained verbatim as the record of the ruling as
+> originally made (RFC-100 §9.2).
+>
+> **The working term "Mission Target Capture" is retired** by ruling **GD-C**:
+> *capture* denotes participation in the RFC-011/013/015 acquisition
+> architecture, which that ruling expressly excludes. The subject is **Mission
+> Target Management**, its authorised surface is `/missions`, and its frozen
+> boundary is
+> [`RFC-016-phase-3-architecture-freeze-record.md`](../reviews/RFC-016-phase-3-architecture-freeze-record.md).
+
 **Mission instantiation is unclaimed.** Ruling **GD-11** confirmed that RFC-016
 governs Mission Targets attached to *existing* Missions and does not instantiate
 them. Since `declare_mission()` has no production caller, a deployed instance
 still has no Mission entities; the boundary that would create them has no RFC
 number, no architecture and no authorised burn.
+
+**Reaffirmed by ruling GD-E — 2026-08-11.** RFC-016 Phase 3 authorises no
+automatic or synthetic Mission instantiation. Where canonical state holds no
+Missions, the Mission Target Management surface correctly holds nothing
+manageable; Mission state may not be fabricated to populate it. Watch item
+**W4** keeps its owner-shaped hole, and programme sequencing is unchanged.
 
 ## Engineering governance
 
