@@ -4,8 +4,10 @@
 **SPACECRAFT:** Codex — GPT-5.6
 **MISSION:** RFC-017 Phase 1 — OBS-017-A Conformance Remediation
 
-**Status:** Ready for independent TELMU validation. This is a bounded Phase 1
-conformance and hardening remediation, not Phase 2 and not merge authority.
+**Status:** Closed for independent SAFE review at final remediation
+`00d45f4207c05c8e36f792c8fe1af0668fd40671`; SAFE returned **GO WITH
+ADVISORY**. This remains bounded Phase 1 conformance and hardening work, not
+Phase 2 and not merge authority.
 
 ## Authority and scope
 
@@ -67,7 +69,7 @@ Separate top-level calls do not share a cache. A stateful provider cannot emit a
 second answer for a repeated semantic reference within one tree. A cycle behind
 a cached base node remains unavailable.
 
-## Validation
+## Initial OBS-017-A validation
 
 | Surface | Result |
 |---|---|
@@ -77,5 +79,45 @@ a cached base node remains unavailable.
 | Full regression | **773 passed** |
 | Warnings | **1 pre-existing FastAPI deprecation** |
 | `git diff --check` | **clean** |
+
+This evidence applies to the initial OBS-017-A remediation tree published as
+`6f6838d8ac13f7f7e0e039e06ce8b03fd685e0b9`, before TELMU's malformed-Subject
+authority-alias finding. It is retained as chronology, not presented as final
+candidate evidence.
+
+## Final candidate chronology and validation
+
+1. OBS-017-A conformance remediation was first published as `6f6838d`.
+2. Independent TELMU validation found malformed `Subject` identities could
+   alias a registered resource authority through the shared id.
+3. BOOSTER remediated the alias in the canonical authority adapter and added
+   durable root, contributor, exclusion, depth-bound, nested, and cache-path
+   regressions.
+4. TELMU re-validation returned **GO TO SAFE** for that exact remediation tree.
+5. The exact TELMU-validated tree was published unchanged as
+   `00d45f4207c05c8e36f792c8fe1af0668fd40671`.
+6. Independent SAFE reviewed `00d45f4` and returned **GO WITH ADVISORY**.
+
+TELMU's final-candidate evidence, recorded against `00d45f4`, was:
+
+| Surface | Result |
+|---|---|
+| RFC-017 focused | **79 passed** |
+| Relevant Core | **104 passed** |
+| Docs governance | **4 passed** |
+| Full regression | **786 passed** |
+| Warnings | **1 pre-existing FastAPI deprecation** |
+| `git diff --check` | **clean** |
+
+SAFE's independent evidence remains distinct: **79** focused tests, **110**
+Core tests, **4** docs-governance tests, and **784 passed with two environmental
+`test_demo_data.py` failures** under its root-permission environment. SAFE
+determined those failures were unrelated to `00d45f4`; its run retained the one
+pre-existing warning and a clean `git diff --check`.
+
+SAFE's final verdict was **GO WITH ADVISORY**: **0 Critical**, **0 High**,
+**1 Medium advisory**, **2 Low**, and **1 Observation**. The stale-report
+LOW-2 is closed by this dated addendum. SAFE-017-01, SAFE-017-02, SAFE-017-03,
+R1, R2, R3, R4, and Loop 2 remain closed; OBS-017-A is architecturally closed.
 
 Phase 2 authority remains **NONE**.

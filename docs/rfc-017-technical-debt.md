@@ -84,6 +84,26 @@ sufficient on its own.
 > per distinct reference; any broader performance envelope remains future Core
 > work and must be reassessed before a materially branching consumer.
 
+> **SAFE advisory closeout — 2026-08-11, reviewed implementation `00d45f4`.**
+> **SAFE-017-04 is CLOSED for repeated provider/explainer-resolution
+> amplification.** Per-resolution memoisation reduces repeated semantic
+> references to one `explainer.explain()` call per `ValueReference`; it does
+> **not** bound total resolver traversal. SAFE measured a legal repeated graph
+> with fan-out **3**, depth **12**, and **13** distinct values: it made **13**
+> `explainer.explain()` calls but **797,161** `ProvenanceResolver._resolve()`
+> calls, because cached subtrees are still recursively revisited along each
+> path. Authority verification is also performed on those revisits and adds
+> measurable overhead.
+>
+> **SAFE-017-04B — cached-subtree traversal amplification. ACCEPTED PHASE 1
+> DEBT.** Repeated semantic references avoid repeated provider computation,
+> but total traversal can remain path-amplified. No production consumer exists,
+> no security boundary is bypassed, and no current performance envelope is
+> promised. The remedy is code-only and must be reconsidered before a consumer
+> may select materially deep provenance traversal. Wide graphs of genuinely
+> distinct `ValueReference`s remain linear in distinct work; that observation
+> does not close this repeated cached-subtree traversal debt.
+
 ## Accepted Observations
 
 **OBS-017-A — coordinate rule contradicts the RFC's worked examples.**
