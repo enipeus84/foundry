@@ -70,6 +70,7 @@ from foundry.core.mission_console import (
     NextBurnView,
 )
 from foundry.core.scope import Subject
+from foundry.core.value_provenance import ProvenanceResolver
 from foundry.eventlog import EventLog
 
 router = APIRouter()
@@ -95,6 +96,7 @@ class Console:
     entities: EntityProjection
     evidence: EvidenceIndex
     canon: Canon
+    provenance: ProvenanceResolver | None = None
 
 
 # The four opening-screen KPIs (RFC-004: exactly four). Metric

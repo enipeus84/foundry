@@ -185,6 +185,16 @@ class PensionEvidenceProjection:
         self.invalid_records: list[InvalidPensionEvidence] = []
         self.rebuild()
 
+    @classmethod
+    def empty(cls, log: EventLog) -> "PensionEvidenceProjection":
+        """Create an empty projection for caller-managed historical replay."""
+        projection = cls.__new__(cls)
+        projection.log = log
+        projection.records = {}
+        projection.invalid_event_ids = []
+        projection.invalid_records = []
+        return projection
+
     def rebuild(self) -> None:
         self.records = {}
         self.invalid_event_ids = []

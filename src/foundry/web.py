@@ -58,10 +58,13 @@ from foundry import __version__
 from foundry import webauth
 from foundry.acquisition_web import router as acquisition_router
 from foundry.canon import Canon
+from foundry.core.acquisition import AssetRegistry
 from foundry.core.entities import EntityProjection
 from foundry.core.evidence import EvidenceIndex
 from foundry.core.metrics import MetricRegistry
 from foundry.core.mission_assessment import MissionAssessmentRegistry
+from foundry.core.subject_authority import CanonicalSubjectAuthority
+from foundry.core.value_provenance import ProvenanceResolver
 from foundry.demo_data import ensure_demo_data
 from foundry.eventlog import EventLog
 from foundry.finance.entities import FinanceEntityProjection
@@ -74,6 +77,7 @@ from foundry.finance.missions import register_finance_mission_definitions
 from foundry.finance.pension_assessment import PensionIndependenceAssessor
 from foundry.finance.pension_evidence import PensionEvidenceProjection
 from foundry.finance.pension_metrics import FinancePensionMetricProvider
+from foundry.finance.pension_provenance import FinancePensionExplainer
 from foundry.finance.resilience_assessment import FinancialResilienceAssessor
 from foundry.finance.resilience_evidence import (
     ResilienceEvidenceProjection,
@@ -191,6 +195,12 @@ def _build_console() -> Console:
         finance_entities, core_entities, resilience_evidence))
     registry.register(FinancePensionMetricProvider(
         finance_entities, core_entities, pension_evidence))
+    assets = AssetRegistry(
+        log, entity_exists=lambda subject_id: subject_id in finance_entities.accounts)
+    authority = CanonicalSubjectAuthority.from_canonical_state(
+        asset_registrations=assets.registrations, parties=core_entities.parties)
+    provenance = ProvenanceResolver(authority=authority)
+    provenance.register(FinancePensionExplainer(log))
     assessments = MissionAssessmentRegistry()
     register_finance_mission_definitions(assessments)
     assessments.register(FinancialResilienceAssessor(
@@ -204,7 +214,8 @@ def _build_console() -> Console:
         MortgageEvidenceProjection(log)))
     return Console(log=log, registry=registry, entities=core_entities,
                    assessments=assessments,
-                   evidence=EvidenceIndex(log), canon=Canon(log))
+                   evidence=EvidenceIndex(log), canon=Canon(log),
+                   provenance=provenance)
 
 
 app.state.console_factory = _build_console
