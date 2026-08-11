@@ -73,9 +73,9 @@ a cached base node remains unavailable.
 |---|---|
 | OBS-017-A plus RFC-017 focused | **66 passed** |
 | Relevant Core | **104 passed** |
-| Docs governance | pending final documentation validation |
+| Docs governance | **4 passed** |
 | Full regression | **773 passed** |
 | Warnings | **1 pre-existing FastAPI deprecation** |
-| `git diff --check` | pending final documentation validation |
+| `git diff --check` | **clean** |
 
 Phase 2 authority remains **NONE**.
