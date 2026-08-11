@@ -318,6 +318,48 @@ policy-number field, annual-allowance rules, tax calculation, decumulation
 model, regulated-advice workflow, multi-user object authorisation or operator
 quarantine surface exists.
 
+## Mission Target Management
+
+**Objective.** Allow the authenticated operator to declare, replace and
+withdraw a household Mission Target without giving the browser authority over
+household scope, Mission semantics, lifecycle lineage or canonical event
+shape.
+
+**Current implementation.** Six routes under `/missions` require the existing
+signed session and configured-email equality. Each POST accepts only
+`application/x-www-form-urlencoded`, rejects multi-valued and unexpected
+fields, and uses one of three non-transferable CSRF purposes for review,
+declaration and withdrawal. Household, Mission metric, unit, dimension,
+direction, horizon kind, approval-time `effective_from` and `supersedes` are
+derived from current canonical state. Review writes nothing. Approval reloads
+the projections and compares the current in-force predecessor with the plain
+review-time assertion; mismatch refuses and requires a fresh review. That
+assertion is compared only: it is absent from event payloads and cannot select
+the predecessor. Mission status is rechecked at every write. Cross-household,
+unknown, conflicted and inactive state refuses without disclosure or append.
+Only `core.mission_target.declared` and `core.mission_target.closed` can be
+written. The optional `basis` is escaped, bounded to 500 Unicode characters,
+never interpreted, and disclosed as permanent append-only history before
+approval.
+
+**Evidence.** `src/foundry/mission_targets_web.py`,
+`src/foundry/finance/mission_targets.py`, `src/foundry/web.py`, and the named
+authority, CSRF, field-forgery, hostile-log, staleness, empty-world and replay
+cases in `tests/test_rfc_016_phase_3_mission_target_management.py`.
+
+**Maturity.** Candidate for TELMU and SAFE; not merged. The control set is
+Beta-shaped for the current single configured operator and single-writer log,
+but no maturity promotion occurs before independent review.
+
+**Missing or future control.** Foundry still has no multi-member
+authorisation model. Household selection remains the platform-wide
+last-declared-active-household rule. The staleness assertion is plain rather
+than separately signed because it grants no authority and can only match
+server-derived truth or cause refusal; SAFE target S2 must challenge that
+choice. The active-Mission check is a surface mitigation only;
+`DEBT-016-P3-01` must be resolved before the first production consumer of
+`in_force` Mission Target state.
+
 ## Operational logging
 
 **Objective.** Support diagnosis without copying household content,

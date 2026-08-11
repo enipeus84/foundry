@@ -18,30 +18,26 @@ Mortgage Freedom — now have live assessment providers.** RFC-010 delivered
 the Mission Console that presents them, migrating all four missions to one
 shared model and renderer, and RFC-011 added the Telemetry Acquisition
 platform layer with a merged Phase 1–4 reference implementation.
-**RFC-100 (Flight Operations Manual, Revision 2 with Amendment 1) now governs
-how every subsequent RFC is engineered**, and **RFC-012 (Telemetry Operations
-Console) has merged as frozen architecture only — no implementation exists
-and none is authorised**, gated behind the outstanding Release Closeout.
-Authentication, review-gate process,
-and CI are in place but scoped to a single named user and two of six
-planned gates. Documentation was substantially reorganized in the
-immediately preceding change (docs index, RFC index, versioned Design
-Constitution) and the process gap it surfaced — RFC-005 shipping without
-a CHANGELOG entry or version bump, first tracked as
-[issue #13](https://github.com/enipeus84/foundry/issues/13) — has since
-recurred for RFC-010 and RFC-011 and remains open. Overall: an
-architecturally disciplined, single-user beta with a production-grade
-substrate and a documentation practice that is now current but still
-incomplete in places.
+**RFC-100 (Flight Operations Manual, Revision 2 with Amendment 1) governs how
+every subsequent RFC is engineered.** RFC-012 product remediation, RFC-013
+Capture Contracts, RFC-015 Capture Target Registry, RFC-016 Phases 1–2 and
+RFC-017 Value Provenance have since shipped. RFC-016 Phase 3 Mission Target
+Management is now a bounded implementation candidate from frozen authority
+`b7957d6`: an authorised operator can declare, replace and withdraw a Mission
+Target under `/missions`, subject to TELMU and SAFE review before any merge.
+Authentication, review-gate process and CI remain scoped to a single named
+user and two of six planned gates. Overall: an architecturally disciplined,
+single-user beta with a production-grade substrate and an unmerged strategic-
+intent management candidate.
 
 ---
 
 ## Current Release
 
 - **Current version:** `1.8.0` ([`pyproject.toml`](pyproject.toml)) — bumped by the Release Closeout burn, which also added the missing CHANGELOG entries for RFC-010, RFC-011, RFC-100 and RFC-012. RFC-005's absent release note is acknowledged retroactively rather than reconstructed ([issue #13](https://github.com/enipeus84/foundry/issues/13)). No git tag was cut; tagging has been dormant since `v1.5-flight-deck` and resuming it is a separate Governor decision
-- **Latest merged RFC:** RFC-012 — Telemetry Operations Console, **architecture only, frozen 2026-08-02** ([PR #30](https://github.com/enipeus84/foundry/pull/30), merged 2026-08-02); see [`docs/rfc-012-architecture-post-flight-report.md`](docs/rfc-012-architecture-post-flight-report.md). Latest merged *implementation* remains RFC-011 ([PR #27](https://github.com/enipeus84/foundry/pull/27), merged 2026-08-01)
+- **Latest merged RFC:** RFC-017 — Value Provenance Framework, completed through Pension Phase 2 on 2026-08-11. RFC-016 Phase 3 is an implementation candidate only and is not merged
 - **Governance:** RFC-100 — Flight Operations Manual, Revision 2 merged ([PR #28](https://github.com/enipeus84/foundry/pull/28)) with Amendment 1, Mission Declaration ([PR #29](https://github.com/enipeus84/foundry/pull/29)), both 2026-08-02 ([`docs/rfcs/RFC-100-flight-operations-manual.md`](docs/rfcs/RFC-100-flight-operations-manual.md))
-- **Next burn:** Release Closeout for RFC-005 / RFC-010 / RFC-011 / RFC-100 — scheduled under RFC-012 ruling G6 and **required before any RFC-012 implementation merge**. Not yet issued; RFC-012 implementation is not authorised
+- **Next gate:** TELMU functional validation and SAFE adversarial review of the RFC-016 Phase 3 candidate; merge remains a separate Governor act
 - **Latest release/tag:** `v1.5-flight-deck` (git tag) — no tag exists for RFC-004.2 or later; see [`docs/rfcs/index.md`](docs/rfcs/index.md)
 
 ---
@@ -53,7 +49,8 @@ incomplete in places.
 | **Core** | Stable substrate concepts since RFC-001; Party/Employer/Mission, Decision lifecycle, Metric Provider, Flight Deck and Mission Assessment contracts | Production substrate / Beta assessment contract | RFC-006 extends Core's public mission-assessment contracts without changing the event substrate — see [`docs/architecture.md`](docs/architecture.md) |
 | **Finance** | 8 registered metrics (net worth, liquidity runway, cash flow, asset allocation, employer concentration, debt ratio, cash available, accessible assets) | Beta | Full Financial Projection engine (§16), tax calculation, and AI-assisted analysis remain explicitly out of scope — see [`docs/rfc-002-implementation-report.md`](docs/rfc-002-implementation-report.md) |
 | **Mission Assessment** | Definition discovery, direction-aware milestones, closed trajectory/margin/confidence vocabularies, per-instrument applicability, telemetry display regions and isolated provider dispatch; **all four Finance missions have live providers** | Beta | Financial Resilience (RFC-008), Financial Independence (RFC-005), Pension Independence (RFC-009) and Mortgage Freedom (RFC-007) are all live; Children remains outside the fixed hierarchy. Console information architecture was delivered by RFC-010 — see [`docs/rfc-006-mission-assessment-framework.md`](docs/rfc-006-mission-assessment-framework.md) |
-| **Flight Deck** | Full homepage + generic authenticated `/missions/{slug}` route | Production (surface) | No authored `/missions` index or event-inspector page yet — see [`docs/design/design-constitution.md`](docs/design/design-constitution.md), [`docs/rfc-004-visual-review.md`](docs/rfc-004-visual-review.md) |
+| **Flight Deck** | Full homepage + generic authenticated `/missions/{slug}` route | Production (surface) | The RFC-016 Phase 3 candidate adds a separate `/missions` management index without changing Flight Deck assessment behavior |
+| **Mission Targets** | Phases 1–2 shipped; Phase 3 operator lifecycle candidate | Candidate | Declare, immutable supersession and withdrawal are reachable under `/missions`; assessment consumption remains unauthorised and `DEBT-016-P3-01` remains unresolved |
 | **Authentication** | Google sign-in via Supabase; stateless HMAC-signed cookies; fails closed | Beta | Single allowed email only — no multi-user, roles, or household sharing — see [`README.md` § Authentication](README.md#authentication) |
 | **Event sourcing** | Append-only, hash-chained JSONL; sole source of truth | Production | Truncation blindness and single-writer assumption are documented, accepted limitations |
 | **Projection engine** | Canon and every domain projection are pure, rebuildable folds | Production (pattern) / Prototype (retrieval) | Retrieval is word-overlap scoring, explicitly a placeholder; semantic/embedding index is roadmap-only |
@@ -64,12 +61,10 @@ incomplete in places.
 
 - **RFC process:** 11 major RFCs plus sub-RFCs (003.3, 004.1, 004.2, 004A, 004B) shipped via branch-per-RFC + PR; engineering governance itself is now an RFC ([RFC-100](docs/rfcs/RFC-100-flight-operations-manual.md), frozen, documentation burn in flight). Depth is inconsistent — RFC-001/003/003.3 have no dedicated implementation report (see [`docs/rfcs/index.md`](docs/rfcs/index.md)).
 - **Documentation:** reorganized into a cross-referenced tree (see [Documentation Status](#documentation-status)).
-- **Testing:** RFC-009 reports 592 passing in the declared `.[dev,web]`
-  environment (RFC-008 finished at 529; RFC-007 at 453). **Deterministic
-  fixture clocks are now mandatory:** RFC-009's first post-merge `main` run
-  failed on a wall-clock-dependent fixture and was repaired by
-  [PR #23](https://github.com/enipeus84/foundry/pull/23). RFC-010 encodes this
-  as a standing testing requirement.
+- **Testing:** The RFC-016 Phase 3 frozen baseline is 802 passing with one
+  pre-existing FastAPI/TestClient deprecation warning. Deterministic fixture
+  clocks remain mandatory; the candidate adds named lifecycle, staleness,
+  authority, malformed-input, hostile-log and zero-write rendering cases.
 - **Architecture Gate:** implemented (`adversarial-architect`); active.
 - **Security Gate:** implemented (`security-reviewer`); active.
 - **CI/CD:** GitHub Actions ([`.github/workflows/test.yml`](.github/workflows/test.yml)) runs the full suite on every push to `main` and every PR, across Python 3.10–3.13. Deployment to Render (`render.yaml`) is manual, not automated CD.
@@ -122,27 +117,14 @@ Highest-priority items from the RFC technical-debt registers and
 
 ---
 
-## Next Recommended RFC
+## Next Recommended Gate
 
-**RFC-011 Phase 5 — Governor review gate on the acquisition pipeline.** The
-governed architecture is
-[`docs/rfcs/RFC-011-asset-telemetry-acquisition-framework.md`](docs/rfcs/RFC-011-asset-telemetry-acquisition-framework.md)
-(Revision 2, frozen 2026-07-31), with its adversarial self-review at
-[`docs/reviews/RFC-011-architecture-self-review.md`](docs/reviews/RFC-011-architecture-self-review.md)
-and the merged reference implementation recorded in
-[`docs/rfc-011-phase-1-implementation-report.md`](docs/rfc-011-phase-1-implementation-report.md).
-Phase 5 is the frozen sequence's mandatory Governor gate: no further
-acquisition channel is authorised until it passes. Implementation must not
-change a frozen contract without a new Governor ruling.
-
-Outstanding alongside it: **Release Closeout for RFC-005, RFC-010 and
-RFC-011**, none of which has a CHANGELOG entry or version bump, and the
-in-flight RFC-100 documentation burn ([PR #28](https://github.com/enipeus84/foundry/pull/28)).
-
-All four Finance missions have live assessment providers and all render through
-the Mission Console, so no further mission implementation is outstanding.
-Children, connectors and optimisation still require a maintainer decision and
-none is authorised as an implicit next Burn.
+**TELMU and SAFE review of RFC-016 Phase 3.** The candidate must be challenged
+against the frozen six-route boundary, especially stale-review refusal,
+purpose-separated CSRF, household/Mission authority, untrusted hidden fields,
+event payload construction, the acquisition import boundary and protected-file
+identity. No Phase 4 assessment adoption, Mission instantiation or merge is
+authorised by this candidate.
 
 ---
 
@@ -193,10 +175,8 @@ comes next.
 
 ## Last Updated
 
-- **Date:** 2026-08-02
-- **Branch:** `rfc-100-flight-operations-manual`
-- **Merged RFC head:** `99c63ac` (RFC-011 merged via PR #27)
-- **Updated by:** the RFC-100 SAFE remediation burn, closing SAFE finding S3,
-  which found this document materially stale (it still named RFC-009 as the
-  latest merged RFC and RFC-010 as unimplemented). Only project-state facts
-  were corrected; historical material is unchanged.
+- **Date:** 2026-08-11
+- **Branch:** `rfc-016-phase-3-mission-target-management`
+- **Frozen authority:** `b7957d63524e49bedcf60273ff5634ebaf8861e3`
+- **Updated by:** BOOSTER implementation candidate; TELMU / SAFE and Governor
+  merge authority remain outstanding.

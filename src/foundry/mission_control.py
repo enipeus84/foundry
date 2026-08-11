@@ -69,6 +69,7 @@ from foundry.core.mission_console import (
     MissionHeroView as ConsoleMissionHeroView,
     NextBurnView,
 )
+from foundry.core.mission_targets import MissionTargetProjection
 from foundry.core.scope import Subject
 from foundry.core.value_provenance import ProvenanceResolver
 from foundry.eventlog import EventLog
@@ -97,6 +98,7 @@ class Console:
     evidence: EvidenceIndex
     canon: Canon
     provenance: ProvenanceResolver | None = None
+    mission_targets: MissionTargetProjection | None = None
 
 
 # The four opening-screen KPIs (RFC-004: exactly four). Metric
@@ -2414,13 +2416,6 @@ def decisions_page(request: Request):
     return _placeholder(request, "/decisions", "Decisions",
                         "The Decision → Execution → Outcome → Review loop "
                         "(000 §12) gets its surface once decisions flow through it.")
-
-
-@router.get("/missions", response_class=HTMLResponse)
-def missions_page(request: Request):
-    return _placeholder(request, "/missions", "Missions",
-                        "Mission declaration and target management. The home page "
-                        "evaluates the current Mission read-only until then.")
 
 
 @router.get("/settings", response_class=HTMLResponse)

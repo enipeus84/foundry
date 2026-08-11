@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 from foundry import __version__  # noqa: E402
 from foundry import webauth  # noqa: E402
 from foundry.mission_control import _test_count  # noqa: E402
+from foundry.core.mission_targets import MissionTargetProjection  # noqa: E402
 from foundry.web import app  # noqa: E402
 
 
@@ -55,6 +56,32 @@ def test_home_renders_mission_control_even_on_an_empty_log():
     assert "FLIGHT PLAN" in html
     assert "NO ACTIVE MISSION" in html
     assert "HASH CHAIN OK" in html  # the system-health footer is always present
+
+
+def test_composition_root_registers_mission_target_management():
+    console = app.state.console_factory()
+    assert isinstance(console.mission_targets, MissionTargetProjection)
+
+    def route_paths(routes):
+        paths = set()
+        for route in routes:
+            if hasattr(route, "path"):
+                paths.add(route.path)
+            if hasattr(route, "routes"):
+                paths.update(route_paths(route.routes))
+            if hasattr(route, "original_router"):
+                paths.update(route_paths(route.original_router.routes))
+        return paths
+
+    paths = route_paths(app.routes)
+    assert {
+        "/missions",
+        "/missions/targets/new",
+        "/missions/targets/review",
+        "/missions/targets/declare",
+        "/missions/targets/{target_id}/withdraw",
+        "/missions/targets/withdraw",
+    } <= paths
 
 
 def test_home_reports_real_test_count():
