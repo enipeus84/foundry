@@ -1786,6 +1786,37 @@ ruling. Formal ruling record:
 | **GD-P2-C** | A stable, deliberately unregistered leaf `value_id` may identify an attribution-weighted terminal edge | **Accepted.** The §6.2 registry consistency rule (`expandable = false` with a *registered* explainer is invalid) is unchanged and still governs |
 | **GD-P2-D** | Binding acceptance requirement: DB/pot-conflict → `conflicting`; missing valuation → `unobserved` | **Accepted** as a binding Phase 2 acceptance criterion, not a new architectural rule |
 | **GD-P2-E** | Binding acceptance requirement: `known_at`-filtered replay for any Phase 2 pension explainer must include ownership-link (`finance.account.linked`) events, not only valuation/declaration events | **Accepted** as a binding Phase 2 acceptance criterion. Does not amend RFC-011 or any event semantics |
+| **GD-P2-F** | RFC-017 provenance explains the existing canonical `finance.pension_wealth` calculation; it does not alter pension ownership selection or weighting to satisfy a provenance expectation. **Supersedes** the prior zero-weight-specific framing of acceptance criterion P2-L | **Accepted, 2026-08-11.** See replacement P2-L below and [`../reviews/RFC-017-GD-P2-ruling.md`](../reviews/RFC-017-GD-P2-ruling.md) |
+
+**Replacement P2-L (supersedes the prior zero-weight-specific criterion):**
+
+```text
+P2-L
+
+The provenance explanation MUST faithfully reproduce the ownership
+attribution actually applied by finance.pension_wealth for the requested
+Subject.
+
+The explanation MUST expose the canonical ownership evidence relevant to
+that attribution.
+
+Provenance MUST NOT change, correct, infer, or reinterpret the metric's
+weighting semantics.
+
+Where the existing metric genuinely computes an attributed value of zero,
+provenance MUST represent zero honestly. Where the existing metric computes
+a full or fractional value, provenance MUST represent that exact result.
+```
+
+This is a binding Phase 2 acceptance criterion, not a change to any Phase 1
+Core shape — `GD-P2-B`'s attribution architecture (non-expandable attributed
+edge; raw valuation and ownership evidence as contextual siblings) is
+unchanged; the attributed additive quantity it carries is simply whatever
+`finance.pension_wealth` actually computes for the requested `Subject`, never
+a provenance-side reinterpretation of it. A related Finance-domain
+observation about person-scoped weighting is recorded separately, outside
+RFC-017's boundary, as `OBS-PENSION-01`
+([`../rfc-009-technical-debt.md`](../rfc-009-technical-debt.md)).
 
 **What these rulings do not authorise.** No change to `ValueReference`,
 `Contribution`, `ProvenanceNode`, the resolver, the explainer registry, or

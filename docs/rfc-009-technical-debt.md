@@ -76,6 +76,38 @@ No deferred item is represented as implemented.
   Scenarios. They are not advice, acceptance, scheduling, execution, product
   ranking, transfer analysis or consolidation guidance.
 
+## RFC-017 Phase 2 pre-implementation observation
+
+**OBS-PENSION-01 — person-scoped weighting filters ownership links before
+computing shares.** Recorded 2026-08-11, during RFC-017 Pension Phase 2
+pre-implementation validation (BOOSTER, ruling
+[`reviews/RFC-017-GD-P2-ruling.md`](reviews/RFC-017-GD-P2-ruling.md)).
+
+`FinancePensionMetricProvider._pension_accounts` calls
+`FinanceAggregationService.owned_entities(person_ids, ...)`
+(`pension_metrics.py:521-530`, `aggregation.py:64-81`), which — for a
+`party:person` scope, where `person_ids` is the single requested person —
+returns only that person's own `OwnershipLink`s; co-owners' links are
+filtered out before `_weight` ever runs. `_weight` then calls
+`FinanceAggregationService.shares` (`pension_metrics.py:532-535`,
+`aggregation.py:83-96`) over that already-filtered, single-person link list.
+If the surviving link carries no explicit `share`, `shares`'s implicit-split
+rule (`remaining = 1.0 - sum(explicit); each = remaining / len(implicit)`)
+divides the *unclaimed remainder among the links present in the filtered
+list* — one link, one implicit owner as far as this calculation can see — and
+returns `1.0`, even where the account's full canonical ownership state
+records other owners or shares invisible to this particular query.
+
+**Disposition: OUTSIDE RFC-017 PHASE 2.** No Finance metric modification is
+authorised by RFC-017 or by this observation. RFC-017 provenance explains
+whatever `finance.pension_wealth` actually computes (GD-P2-F) — it does not
+correct, infer, or reinterpret pension weighting semantics. This observation
+does **not** classify the current metric as incorrect; whether
+`owned_entities`/`shares` should see full account ownership state before
+filtering to the requested scope is a Finance/RFC-009 calculation-semantics
+question requiring its own dedicated architecture investigation, separate
+from and after RFC-017 Phase 2, if the Governor chooses to open one.
+
 ## Closed during PR #22 SAFE remediation
 
 - Private Pension coupling to `FinanceMetricProvider` was removed.

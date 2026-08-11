@@ -276,3 +276,115 @@ Phase 2 implementation authority: NONE
 
 No implementation is performed by this ruling. No production code is
 changed. No merge is authorised by this document.
+
+---
+
+## Addendum — GD-P2-F, 2026-08-11: zero-weight acceptance conflict
+
+**Recorded beside the original ruling above, which is retained unmodified.**
+BOOSTER returned `RETURN TO GOVERNOR` during Phase 2 pre-implementation
+validation: the acceptance-test framing then attached to P2-L (a person-scope
+account at zero ownership weight must show `attributed contribution = £0`,
+`raw account value = £100,000`) assumed a specific numeric outcome from
+`finance.pension_wealth` that the metric does not necessarily produce.
+
+**Finding, verified by trace, not accepted on report alone.**
+`FinancePensionMetricProvider._pension_accounts` calls
+`FinanceAggregationService.owned_entities(person_ids, ...)`
+(`pension_metrics.py:521-530`) — for a `party:person` scope, `person_ids` is
+the single requested person, so `owned_entities` (`aggregation.py:64-81`)
+returns only *that person's own* `OwnershipLink`s; a co-owner's link is
+filtered out before weighting runs at all. `_weight`
+(`pension_metrics.py:532-535`) then calls
+`FinanceAggregationService.shares` (`aggregation.py:83-96`) over that
+already-filtered, single-link list. Where the surviving link carries no
+explicit `share`, the implicit-split rule divides the unclaimed remainder
+among the links *present in the filtered list* — one link, one implicit
+owner, as far as this call can see — and returns `1.0`. **The tested
+zero-weight case can therefore compute `weight = 1.0` and
+`attributed contribution = £100,000`, not the `£0` the prior acceptance
+framing assumed**, depending on how ownership is declared. Changing that
+outcome would mean changing `owned_entities`/`shares`' filtering order — a
+Finance/RFC-009 pension-calculation semantics change, which RFC-017 does not
+authorise and this burn does not undertake.
+
+### GD-P2-F — provenance follows existing weighting semantics: **ACCEPTED**
+
+RFC-017 provenance **MUST** explain the existing canonical
+`finance.pension_wealth` calculation. It **MUST NOT** alter pension
+ownership selection or weighting — in `owned_entities`, `shares`, `_weight`,
+or anywhere else in Finance's calculation path — to satisfy a provenance
+expectation. **Supersedes** the prior zero-weight-specific framing of
+acceptance criterion P2-L.
+
+### Replacement P2-L
+
+```text
+P2-L
+
+The provenance explanation MUST faithfully reproduce the ownership
+attribution actually applied by finance.pension_wealth for the requested
+Subject.
+
+The explanation MUST expose the canonical ownership evidence relevant to
+that attribution.
+
+Provenance MUST NOT change, correct, infer, or reinterpret the metric's
+weighting semantics.
+```
+
+Where the existing metric genuinely computes an attributed value of zero,
+provenance **MUST** represent zero honestly. Where the existing metric
+computes a full or fractional value, provenance **MUST** represent that
+exact result. **The metric is the numerical oracle** — the acceptance
+matrix's expected quantities are defined as direct equivalence
+(`provenance attributed account quantity == quantity attributed by existing
+finance.pension_wealth logic`) for household scope, person scope, joint
+ownership, implicit ownership, explicit fractional ownership, and a genuine
+zero-weight case if one is representable under current semantics — not as a
+value chosen independently of what the metric computes.
+
+**GD-P2-B is unchanged.** The non-expandable attributed additive edge, with
+raw valuation and ownership/weighting evidence as contextual siblings,
+remains the attribution architecture; this addendum only binds what number
+the attributed edge's `quantity` must equal — whatever
+`finance.pension_wealth` actually returns, never a value provenance derives
+independently.
+
+### OBS-PENSION-01 — recorded outside RFC-017
+
+The person-scoped filter-before-weight behaviour identified above is
+recorded as a Finance/RFC-009 observation, not an RFC-017 defect:
+[`../rfc-009-technical-debt.md`](../rfc-009-technical-debt.md) ("RFC-017
+Phase 2 pre-implementation observation"). **Disposition: OUTSIDE RFC-017
+PHASE 2.** No Finance metric modification is authorised by this ruling or by
+the observation itself. The current metric is **not** classified as
+incorrect by this ruling — only as a behaviour RFC-017 provenance must
+report faithfully rather than second-guess. Whether `owned_entities`/`shares`
+should see full account ownership state before filtering to a requested
+scope is left to a dedicated Finance architecture investigation, separate
+from and after RFC-017 Phase 2, at the Governor's discretion.
+
+### Contract impact — unchanged from the original ruling
+
+No change to `ValueReference`, `Contribution`, `ProvenanceNode`,
+`ProvenanceResolver`, the explainer registry, `SubjectAuthority`,
+`MetricResult`, or RFC-006. No change to `FinanceAggregationService`,
+`owned_entities`, or `shares` — this addendum explicitly forbids that
+change, it does not defer it. The only authorised Core code change remains
+the one already recorded above: `EXCLUSION_REASON += conflicting`.
+
+### Addendum disposition
+
+```text
+GD-P2-F:                       RECORDED
+P2-L:                          SUPERSEDED
+Replacement P2-L:              RECORDED
+OBS-PENSION-01:                RECORDED
+Pension metric change authorised: NO
+RFC-017 Core change:           NONE beyond already-authorised conflicting vocabulary
+Phase 2 implementation authority: NONE
+```
+
+No implementation is performed by this addendum. No production code is
+changed.
