@@ -1,14 +1,14 @@
 # RFC-017 — Value Provenance Framework
 
-**Status:** **ARCHITECTURE FROZEN — Phase 1 GO; Phase 1 implementation
-REMEDIATION REQUIRED.** Governor rulings **GD-1** through **GD-10** are
-recorded (2026-08-06); GD-8 and GD-9 remain explicitly deferred and **confer no
-implementation authority**. The formal freeze record is
+**Status:** **COMPLETE — Phase 1, the Phase 1 OBS-017-A remediation, and Phase 2
+Pension Provenance are merged.** Phase 2 merged to `main` on 2026-08-11 through
+merge commit `5664cfd`. Governor rulings **GD-1** through **GD-10**, **GD-A1**
+through **GD-A7**, and **GD-P2-A** through **GD-P2-I** remain the durable
+authority. GD-8 and GD-9 remain explicitly deferred and confer no authority.
+No Mission Assessment, Flight Deck or UI provenance consumer was delivered;
+consumer adoption remains subsequent governed work outside this RFC closeout.
+The formal freeze record is
 [`../reviews/RFC-017-architecture-freeze-record.md`](../reviews/RFC-017-architecture-freeze-record.md).
-Implementation authority is granted for **Phase 1 only** — the Core Value
-Provenance Framework, against acceptance criteria **P1-A through P1-H** (§11.1).
-Phases 2 and 3 remain architecturally described and require subsequent Governor
-authority; Phase 4 and later retain their stated gates.
 **Post-freeze amendment (2026-08-10):** Governor rulings **GD-A1** through
 **GD-A7** resolve **OBS-017-A** — see §9.1 (new) and §14.1 (new). The merged
 Phase 1 implementation (`82f7310`) enforced a stricter rule than the frozen
@@ -20,7 +20,8 @@ rulings applied by a governance burn, Effort **LOW**; OBS-017-A amendment
 applied by a governance burn, Effort **MEDIUM**.
 **Author:** EECOM (architecture Flight Controller role, Claude).
 **Date:** 2026-08-06. **Amended:** 2026-08-06 (Governor rulings GD-1–GD-10);
-2026-08-10 (Governor rulings GD-A1–GD-A7, OBS-017-A).
+2026-08-10 (Governor rulings GD-A1–GD-A7, OBS-017-A); 2026-08-11 (Governor
+rulings GD-P2-A–GD-P2-I and Phase 2 closeout).
 **Frozen:** 2026-08-06 (Governor freeze gate, head `b8cc0ed`).
 **Number:** **settled — RFC-017** by Governor ruling GD-1 (2026-08-06,
 **R1 approved**). *Asset Detail & Provenance Investigation* is re-earmarked as

@@ -1,6 +1,7 @@
 # RFC-017 Phase 2 — Pension Provenance Implementation Report
 
-**Status:** Candidate for TELMU validation. **Authority:** Governor amendment
+**Status:** Complete — merged to `main` on 2026-08-11 through merge commit
+`5664cfd20f6eac76e0cb7b368af82922f5812ebe`. **Authority:** Governor amendment
 `6b35850eba8ecd3654143699f7ca186e5571ccd8` (GD-P2-A through GD-P2-I).
 
 ## Delivered boundary
@@ -116,10 +117,26 @@ nor decides whether Finance's filter-before-weight behaviour is desirable.
 No contribution, growth, tax-relief, transfer, withdrawal or fee provenance is
 provided by this phase.
 
-SAFE-P2-02 remains a governance/history concern: the final reviewed candidate
-must include the Governor authority in its ancestry, but this remediation does
-not perform that history operation. SAFE-P2-03: GOVERNANCE WORDING CORRECTED.
-The expandable-child comparator remains advisory debt for any future
-expandable use of this value id; no Core change is authorised. TELMU-P2-02
-remains non-blocking debt; the resolver's max-depth terminal-registry behaviour
-is unchanged.
+SAFE-P2-01 is closed. SAFE-P2-02 is closed: the Governor authority and the
+SAFE-reviewed candidate both reached `main` through normal merge topology.
+SAFE-P2-03: GOVERNANCE WORDING CORRECTED, ADVISORY RETAINED. The
+expandable-child comparator remains advisory debt for any future expandable
+use of this value id; no Core change is authorised. TELMU-P2-02 remains
+non-blocking debt; the resolver's max-depth terminal-registry behaviour is
+unchanged. Existing accepted LOW observations remain retained.
+
+## RFC-017 closeout
+
+RFC-017 Phase 1 is merged. Its OBS-017-A conformance remediation is merged.
+Phase 2 Pension Provenance is merged. RFC-017 is complete.
+
+Phase 2 delivers `finance.pension_wealth` provenance with account-level
+attributed contributions; valuation and ownership context; `conflicting` and
+`unobserved` exclusions; `known_at`-aware replay; mission-selected assumption
+context; canonical household authority binding; and the pension-only `1e-6 GBP`
+reconciliation tolerance. It adds no new persistence or event contract and
+changes no pension metric semantics.
+
+No Mission Assessment, Flight Deck or UI provenance consumer is implemented.
+RFC-017 supplies the provenance substrate and its first Finance explainer;
+consumption belongs to subsequent governed work.
