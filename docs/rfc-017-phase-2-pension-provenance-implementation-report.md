@@ -54,12 +54,15 @@ metric has filtered out a co-owner's link.
 
 GD-P2-G/H/I add descriptor-scoped numeric reconciliation. Composition registers
 `ExplanationDescriptor("finance.pension_wealth", "GBP", tolerance=1e-6)`.
-The tolerance affects only Core's completeness classification for this value;
-it does not change the metric root, per-account attributed quantities,
-exclusions, or the literal residual. Thus representation-level float drift may
-be `complete` while its non-zero residual remains disclosed. A £0.01 mismatch
-remains `partial`, and values without this descriptor retain exact comparison.
-This is not a Finance or Core reducer change. GD-P2-F/P2-L and
+The tolerance affects Core's root completeness reconciliation and
+expandable additive-child quantity agreement for this value. It does not
+change the metric root, per-account attributed quantities, exclusions, or the
+literal residual. Phase 2 pension attribution edges are non-expandable, so the
+widened expandable-child comparator is not reachable in this consumer. Thus
+representation-level float drift may be `complete` while its non-zero residual
+remains disclosed. A £0.01 mismatch remains `partial`, and values without this
+descriptor retain exact comparison. This is not a Finance or Core reducer
+change. GD-P2-F/P2-L and
 OBS-PENSION-01 are unchanged; TELMU-P2-02 remains outside this burn.
 
 TELMU-P2-01's root cause is retained, not hidden: Finance aggregates with
@@ -115,8 +118,8 @@ provided by this phase.
 
 SAFE-P2-02 remains a governance/history concern: the final reviewed candidate
 must include the Governor authority in its ancestry, but this remediation does
-not perform that history operation. SAFE-P2-03 remains governed wording debt:
-the pension descriptor tolerance also applies to expandable-child agreement
-for this value id, although Phase 2 pension attribution edges are terminal.
-No Core change is authorised. TELMU-P2-02 remains non-blocking debt; the
-resolver's max-depth terminal-registry behaviour is unchanged.
+not perform that history operation. SAFE-P2-03: GOVERNANCE WORDING CORRECTED.
+The expandable-child comparator remains advisory debt for any future
+expandable use of this value id; no Core change is authorised. TELMU-P2-02
+remains non-blocking debt; the resolver's max-depth terminal-registry behaviour
+is unchanged.
