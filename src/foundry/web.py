@@ -58,10 +58,13 @@ from foundry import __version__
 from foundry import webauth
 from foundry.acquisition_web import router as acquisition_router
 from foundry.canon import Canon
+from foundry.core.acquisition import AssetRegistration, AssetRegistry
 from foundry.core.entities import EntityProjection
 from foundry.core.evidence import EvidenceIndex
 from foundry.core.metrics import MetricRegistry
 from foundry.core.mission_assessment import MissionAssessmentRegistry
+from foundry.core.subject_authority import CanonicalSubjectAuthority
+from foundry.core.value_provenance import ExplanationDescriptor, ProvenanceResolver
 from foundry.demo_data import ensure_demo_data
 from foundry.eventlog import EventLog
 from foundry.finance.entities import FinanceEntityProjection
@@ -72,8 +75,14 @@ from foundry.finance.mortgage_assessment import MortgageFreedomAssessor
 from foundry.finance.mortgage_evidence import MortgageEvidenceProjection
 from foundry.finance.missions import register_finance_mission_definitions
 from foundry.finance.pension_assessment import PensionIndependenceAssessor
+from foundry.finance.pension_assessment import (
+    POLICY_ID as PENSION_POLICY_ID,
+    TARGET_METRIC as PENSION_TARGET_METRIC,
+)
 from foundry.finance.pension_evidence import PensionEvidenceProjection
 from foundry.finance.pension_metrics import FinancePensionMetricProvider
+from foundry.finance.pension_provenance import FinancePensionExplainer
+from foundry.finance import vocab as finance_vocab
 from foundry.finance.resilience_assessment import FinancialResilienceAssessor
 from foundry.finance.resilience_evidence import (
     ResilienceEvidenceProjection,
@@ -90,6 +99,59 @@ app = FastAPI(title="Foundry", version=__version__, docs_url=None, redoc_url=Non
 app.mount("/static", StaticFiles(directory=Path(__file__).with_name("static")), name="static")
 
 DEFAULT_DATA_PATH = "foundry_data/events.jsonl"
+
+
+def _bind_pension_account_authority(
+    assets: AssetRegistry,
+    core: EntityProjection,
+    finance: FinanceEntityProjection,
+) -> None:
+    """Add read-only composition bindings for canonically owned pensions.
+
+    These are not AssetRegistry declarations: composition must not append a
+    new Core event merely to serve a provenance read.  A binding is admitted
+    only where an active pension account's Finance value-ownership link leads
+    to active Core person(s) in exactly one active household.  Ambiguity and
+    absent ownership deliberately leave the Subject unregistered, preserving
+    CanonicalSubjectAuthority's refusal behaviour.
+    """
+    active_households = {
+        party_id for party_id, party in core.parties.items()
+        if party.party_type == "household" and party.status == "active"
+    }
+    person_households = {}
+    for party_id, party in core.parties.items():
+        memberships = set(party.memberships) & active_households
+        if (party.party_type == "person" and party.status == "active"
+                and len(memberships) == 1):
+            person_households[party_id] = next(iter(memberships))
+    for account in finance.accounts.values():
+        if account.status != "active" or account.account_type != "pension":
+            continue
+        households = {
+            person_households[link.target]
+            for link in account.ownership
+            if (link.relation in finance_vocab.VALUE_OWNERSHIP_RELATIONS
+                and link.target in person_households)
+        }
+        if len(households) == 1:
+            assets.registrations.setdefault(
+                account.id,
+                AssetRegistration(account.id, "finance", next(iter(households))),
+            )
+
+
+def _pension_provenance_assumption_set_id(core: EntityProjection) -> str | None:
+    """Return the sole active Pension Independence mission's declared set."""
+    assumption_sets = {
+        mission.assumption_set_id
+        for mission in core.missions.values()
+        if (mission.status == "active"
+            and mission.assessment_policy_id == PENSION_POLICY_ID
+            and mission.target_metric == PENSION_TARGET_METRIC
+            and mission.assumption_set_id)
+    }
+    return next(iter(assumption_sets)) if len(assumption_sets) == 1 else None
 
 
 def _maybe_seed_demo_data() -> None:
@@ -191,6 +253,19 @@ def _build_console() -> Console:
         finance_entities, core_entities, resilience_evidence))
     registry.register(FinancePensionMetricProvider(
         finance_entities, core_entities, pension_evidence))
+    assets = AssetRegistry(
+        log, entity_exists=lambda subject_id: subject_id in finance_entities.accounts)
+    _bind_pension_account_authority(assets, core_entities, finance_entities)
+    authority = CanonicalSubjectAuthority.from_canonical_state(
+        asset_registrations=assets.registrations, parties=core_entities.parties)
+    provenance = ProvenanceResolver((
+        ExplanationDescriptor("finance.pension_wealth", "GBP", tolerance=1e-6),
+    ), authority=authority)
+    provenance.register(FinancePensionExplainer(
+        log,
+        assumption_set_id=_pension_provenance_assumption_set_id(core_entities),
+        allow_implicit_assumption_set=False,
+    ))
     assessments = MissionAssessmentRegistry()
     register_finance_mission_definitions(assessments)
     assessments.register(FinancialResilienceAssessor(
@@ -204,7 +279,8 @@ def _build_console() -> Console:
         MortgageEvidenceProjection(log)))
     return Console(log=log, registry=registry, entities=core_entities,
                    assessments=assessments,
-                   evidence=EvidenceIndex(log), canon=Canon(log))
+                   evidence=EvidenceIndex(log), canon=Canon(log),
+                   provenance=provenance)
 
 
 app.state.console_factory = _build_console

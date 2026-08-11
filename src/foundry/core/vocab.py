@@ -138,7 +138,8 @@ EXPLANATION_COMPLETENESS = ClosedVocabulary(
     "explanation_completeness", {"complete", "partial", "indivisible"})
 
 EXCLUSION_REASON = ClosedVocabulary(
-    "exclusion_reason", {"unobserved", "out_of_period", "incommensurable"})
+    "exclusion_reason", {"unobserved", "out_of_period", "incommensurable",
+                          "conflicting"})
 
 MISSION_TRAJECTORY = ClosedVocabulary(
     "mission_trajectory",

@@ -804,6 +804,39 @@ quantity zero, or an `Exclusion` — and an explainer that emits neither, while
 its own arithmetic considered the account, produces a residual it must then
 disclose. There is no third path in which the account simply vanishes.
 
+> **Amendment — Governor ruling GD-P2-A, 2026-08-11 (Pension Phase 2 blocker
+> clarification).** `EXCLUSION_REASON` gains a fourth closed value,
+> `conflicting`, added beside the original three, which are retained
+> unamended:
+>
+> ```text
+> EXCLUSION_REASON = ClosedVocabulary("exclusion_reason",
+>     {"unobserved", "out_of_period", "incommensurable", "conflicting"})
+> ```
+>
+> | Reason | Meaning | Repository instance |
+> |---|---|---|
+> | `conflicting` | the contributor is relevant, canonical evidence exists, but two or more canonical facts about it disagree and the domain cannot safely arbitrate between them | `pension_metrics.py:129-134` — an account carrying both DB entitlement evidence and pot-valuation evidence |
+>
+> **Normative boundary, binding.** `conflicting` **MUST** be used only when
+> the contributor is relevant, canonical evidence exists, two or more
+> canonical facts disagree, and the domain cannot safely arbitrate between
+> them. It **MUST NOT** be used where evidence is simply absent (`unobserved`),
+> outside the requested temporal window (`out_of_period`), or expressed in an
+> incompatible unit (`incommensurable`) — those three retain their original,
+> unamended meaning. No further exclusion values are authorised by this
+> amendment; a fifth requires its own Governor ruling. This closes the gap
+> identified against `pension_metrics.py:129-134` (§1.6, §7.2): that path
+> excludes an account for evidential contradiction, not absence, and none of
+> the original three reasons describe that condition without overloading it —
+> the option this framework's own alternatives register (§13) already refuses
+> for the same reason it refused folding `Exclusion` into `Contribution`.
+> Ruling record: [`../reviews/RFC-017-GD-P2-ruling.md`](../reviews/RFC-017-GD-P2-ruling.md).
+>
+> **What this amendment does not authorise.** No change to `Exclusion`'s
+> shape, to any other vocabulary, to the resolver, or to any other frozen
+> contract. No Finance explainer. No Phase 2 implementation authority.
+
 ### 4.5 Completeness — derived by the framework, never declared by the domain
 
 > **Questions 6 and 7.** This is the most important rule in the document.
@@ -880,6 +913,74 @@ Named so the omissions read as decisions, not oversights:
 | Contribution ordering or significance | presentation |
 | A "correction" or "dispute" edge | RFC-014 (*Governed Corrections*), reserved |
 | Domain contribution taxonomies (deposit, growth, interest, relief) | the explicit instruction of the brief, and the reason §7's examples carry their finance meaning entirely in `label` |
+
+### 4.7 Attribution-weighted contributions — Governor clarification GD-P2-B/C, 2026-08-11
+
+*(New subsection. Clarifies existing §4.3/§5.1 mechanics for the Pension
+Phase 2 blocker; no Core shape changes.)*
+
+A resource's **intrinsic observed value** (e.g. a pension account's raw pot
+valuation) and its **scope-attributed contribution** to a particular parent
+calculation (e.g. that account's value as attributed to one household
+member's fractional ownership) are not the same semantic value once the
+parent's scope weights the resource. Requiring an expanded additive child to
+report the parent's declared attributed quantity would force the resource's
+own node to lie about its intrinsic value; requiring it to report its
+intrinsic value would violate the additive-agreement rule (§5.1, "Loop 2")
+against the parent's declared attributed quantity. **Neither corruption is
+acceptable, and neither is necessary** — the existing contract already
+expresses this distinction without a new shape:
+
+```text
+Attributed additive edge (increases/decreases):
+    quantity    = the exact scope-attributed amount used by the parent
+                  calculation
+    expandable  = false        # a deliberate terminal calculation edge,
+                                # never an unimplemented child
+
+Contextual sibling — raw resource value:
+    role        = contextual   (quantity absent)
+    expandable  = true         # resolves independently to the resource's
+                                # own observed value, unweighted
+
+Contextual sibling — ownership / weighting fact:
+    role        = contextual   (quantity absent)
+    expandable  = true         # resolves to the observed share or weight
+```
+
+**Normative, binding:**
+
+- An attribution-weighted additive contribution **MUST** carry
+  `expandable = false`. It **MUST NOT** be expanded into a node whose
+  intrinsic quantity disagrees with the parent's declared attributed
+  quantity — this is not a relaxation of §5.1's additive-agreement rule, it
+  is avoidance of triggering it, by construction.
+- The resource's raw, attribution-independent value and its ownership or
+  weighting fact **MUST** be represented as separate `contextual`
+  contributions (`quantity = None`), never as the expansion of the attributed
+  edge itself.
+- Every contextual sibling **MUST** carry the resource's own `Subject`
+  (§9.1 VP-SCOPE-4 already permits a contributor's `Subject` to differ from
+  its parent's). A consumer **MAY** associate a contextual sibling with its
+  owning attributed edge by matching `Subject`, since both name the same
+  resource.
+- The non-expandable attributed edge's `ValueReference.value_id` **MAY** be a
+  stable, deliberately unregistered identifier — an intentional terminal
+  calculation edge, not an unimplemented one (§6.2's registry consistency
+  check, `expandable = false` paired with a registered explainer for the same
+  `value_id`, remains invalid and unchanged).
+- This clarification **MUST NOT** be read as adding attribution or
+  calculation-context fields to `ValueReference`, or as encoding attribution
+  into `Subject`. `Subject` continues to mean identity only (§9.1, OBS-017-A);
+  attribution is expressed entirely through which `Contribution`s a node
+  chooses to emit and how it sets `expandable`, both already-frozen fields.
+
+No field on `ValueReference`, `Contribution`, `ProvenanceNode`, or `Exclusion`
+changes. No resolver logic changes: `_verify_expanded_contribution` is
+already, structurally, only invoked for expanded, non-`contextual`
+contributions — this clarification changes no code path, only which shape a
+domain explainer chooses to emit. Ruling record:
+[`../reviews/RFC-017-GD-P2-ruling.md`](../reviews/RFC-017-GD-P2-ruling.md).
 
 ---
 
@@ -1669,6 +1770,84 @@ replace only SAFE-017-02's `Subject` predicate with a Core-verified one.
 
 **No other RFC is amended.** RFC-011 and RFC-015 are read for evidence
 (`AssetRegistry`, `runtime_bootstrap.py`), not changed.
+
+### 14.2 Post-freeze amendment — Pension Phase 2 blocker clarification, 2026-08-11
+
+**Both disposed.** Raised by EECOM's bounded pre-implementation contract
+validation of the first proposed Phase 2 explainer (`finance.pension_wealth`)
+and BOOSTER's `RETURN TO GOVERNOR` finding against it — evidence, not itself a
+ruling. Formal ruling record:
+[`../reviews/RFC-017-GD-P2-ruling.md`](../reviews/RFC-017-GD-P2-ruling.md).
+
+| # | Decision | Ruling |
+|---|---|---|
+| **GD-P2-A** | Add `conflicting` to `EXCLUSION_REASON` (§4.4) | **Accepted.** Normative amendment, additive only; original three values unamended |
+| **GD-P2-B** | Attribution-weighted additive contributions use `expandable = false` with the attributed quantity, plus contextual siblings for raw value and weighting (§4.7) | **Accepted.** Clarification of existing §4.3/§5.1 mechanics; no shape change |
+| **GD-P2-C** | A stable, deliberately unregistered leaf `value_id` may identify an attribution-weighted terminal edge | **Accepted.** The §6.2 registry consistency rule (`expandable = false` with a *registered* explainer is invalid) is unchanged and still governs |
+| **GD-P2-D** | Binding acceptance requirement: DB/pot-conflict → `conflicting`; missing valuation → `unobserved` | **Accepted** as a binding Phase 2 acceptance criterion, not a new architectural rule |
+| **GD-P2-E** | Binding acceptance requirement: `known_at`-filtered replay for any Phase 2 pension explainer must include ownership-link (`finance.account.linked`) events, not only valuation/declaration events | **Accepted** as a binding Phase 2 acceptance criterion. Does not amend RFC-011 or any event semantics |
+| **GD-P2-F** | RFC-017 provenance explains the existing canonical `finance.pension_wealth` calculation; it does not alter pension ownership selection or weighting to satisfy a provenance expectation. **Supersedes** the prior zero-weight-specific framing of acceptance criterion P2-L | **Accepted, 2026-08-11.** See replacement P2-L below and [`../reviews/RFC-017-GD-P2-ruling.md`](../reviews/RFC-017-GD-P2-ruling.md) |
+
+**Replacement P2-L (supersedes the prior zero-weight-specific criterion):**
+
+```text
+P2-L
+
+The provenance explanation MUST faithfully reproduce the ownership
+attribution actually applied by finance.pension_wealth for the requested
+Subject.
+
+The explanation MUST expose the canonical ownership evidence relevant to
+that attribution.
+
+Provenance MUST NOT change, correct, infer, or reinterpret the metric's
+weighting semantics.
+
+Where the existing metric genuinely computes an attributed value of zero,
+provenance MUST represent zero honestly. Where the existing metric computes
+a full or fractional value, provenance MUST represent that exact result.
+```
+
+This is a binding Phase 2 acceptance criterion, not a change to any Phase 1
+Core shape — `GD-P2-B`'s attribution architecture (non-expandable attributed
+edge; raw valuation and ownership evidence as contextual siblings) is
+unchanged; the attributed additive quantity it carries is simply whatever
+`finance.pension_wealth` actually computes for the requested `Subject`, never
+a provenance-side reinterpretation of it. A related Finance-domain
+observation about person-scoped weighting is recorded separately, outside
+RFC-017's boundary, as `OBS-PENSION-01`
+([`../rfc-009-technical-debt.md`](../rfc-009-technical-debt.md)).
+
+**What these rulings do not authorise.** No change to `ValueReference`,
+`Contribution`, `ProvenanceNode`, the resolver, the explainer registry, or
+`SubjectAuthority`. No Finance explainer. No Phase 2 implementation
+authority — it remains **NONE**.
+
+> **Governor ruling addendum — GD-P2-G through GD-P2-I, 2026-08-11.** The
+> preceding rulings are retained unchanged. RFC-017 already provides a
+> per-`value_id` descriptor tolerance (§4.5, §6.2), Core-derived residual and
+> completeness, exact comparison without a declaration, and exclusions that
+> force `partial`. Therefore the following are **Phase 2 acceptance
+> clarifications, not a normative RFC contract amendment**:
+>
+> | # | Decision | Ruling |
+> |---|---|---|
+> | **GD-P2-G** | Representation-level root/contribution disagreement may use the existing descriptor-declared absolute tolerance. It affects only Core's balanced/completeness classification; observed value, contribution quantities, literal residual and exclusions are unchanged | **Accepted.** No global epsilon; without a descriptor, exact comparison remains binding |
+> | **GD-P2-H** | Register `ExplanationDescriptor("finance.pension_wealth", "GBP", tolerance=1e-6)` | **Accepted.** `0.000001 GBP`, scoped only to `finance.pension_wealth` |
+> | **GD-P2-I** | The historical P2-B attribution-edge wording above is retained; its exact-equality root-reconciliation framing is superseded by P2-B Numeric Fidelity below | **Accepted.** GD-P2-F and replacement P2-L remain unchanged |
+>
+> **Replacement P2-B — Numeric fidelity.** The explainer **MUST** reproduce
+> the canonical economic quantities used by `finance.pension_wealth`. Core
+> reconciliation **MUST** fall within the value's authorised numeric tolerance
+> where explicitly declared by its `ExplanationDescriptor`; otherwise it
+> remains exact. This does not permit Finance to round, alter or independently
+> recalculate attributed quantities.
+>
+> A literal representation-noise residual is retained even when completeness
+> is `complete`; a £0.01 discrepancy exceeds the pension tolerance and remains
+> `partial`. No Finance reducer, Core reducer, Core implementation, consumer,
+> or TELMU-P2-02 behaviour is changed. Ruling record:
+> [`../reviews/RFC-017-GD-P2-ruling.md`](../reviews/RFC-017-GD-P2-ruling.md).
 
 ---
 
