@@ -159,12 +159,13 @@ def _capture_streams(path):
     return log
 
 
-def _submit_capture(client, contract_id, stream_id, *, amount="450000", valid_at="2023-11-14T22:13",
+def _submit_capture(client, contract_id, stream_id, *, amount="450000", currency="GBP",
+                    valid_at="2023-11-14T22:13",
                     evidence_reference=None):
     data = {
         "csrf": webauth.csrf_token(ALLOWED, webauth.load_config(), "rfc013-capture"),
         "contract_id": contract_id, "stream_id": stream_id,
-        "amount": amount, "currency": "GBP", "valid_at": valid_at,
+        "amount": amount, "currency": currency, "valid_at": valid_at,
     }
     if evidence_reference is not None:
         data["evidence_reference"] = evidence_reference
@@ -233,20 +234,37 @@ def test_operations_discovers_contracts_and_creates_an_inert_property_draft(envi
     assert sum(event["kind"] == "finance.valuation.declared" for event in log.events()) == 1
 
 
-def test_contract_capture_uses_editable_london_datetime_and_preserves_canonical_timestamp(
+def test_contract_capture_defaults_currency_and_uses_editable_london_datetime(
         environment, monkeypatch):
     _capture_streams(environment)
     monkeypatch.setattr("foundry.operations_web._london_datetime_input",
                         lambda: "2026-08-12T21:30")
     form = _client().get("/operations/capture?contract=pension-balance-update")
     assert form.status_code == 200
+    assert 'name="currency" type="text" value="GBP"' in form.text
     assert 'name="valid_at" type="datetime-local" value="2026-08-12T21:30"' in form.text
     assert "As at (Unix timestamp)" not in form.text
     assert _submit_capture(_client(), "pension-balance-update", "pension-value",
                            amount="12345", valid_at="2026-07-31T23:59",
                            evidence_reference="pension-statement-2026").status_code == 303
     proposal = next(iter(ProposalInbox(EventLog(environment / "events.jsonl")).proposals.values()))
+    assert proposal.observations[0]["unit"] == "GBP"
     assert proposal.observations[0]["valid_at"] == 1_785_538_740.0
+
+
+def test_contract_capture_preserves_an_overwritten_valid_currency_and_rejects_invalid_currency(
+        environment):
+    log = _capture_streams(environment)
+    client = _client()
+    assert _submit_capture(client, "pension-balance-update", "pension-value",
+                           amount="12345", currency="USD",
+                           evidence_reference="pension-statement-usd").status_code == 303
+    proposal = next(iter(ProposalInbox(log).proposals.values()))
+    assert proposal.observations[0]["unit"] == "USD"
+    invalid = _submit_capture(client, "pension-balance-update", "pension-value",
+                              currency="US", evidence_reference="invalid-currency")
+    assert invalid.status_code == 400
+    assert "currency must be a three-letter ISO code" in invalid.text
 
 
 def test_london_datetime_conversion_respects_gmt_and_bst():

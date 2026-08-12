@@ -338,6 +338,12 @@ def capture_form(request: Request):
                     f'<p class="hint">{html.escape(field.help_text)}</p>'
                 )
                 continue
+            if field.name == "currency":
+                rendered_fields.append(
+                    f'<label>{html.escape(field.label)}<input name="currency" type="text" value="GBP"{required_attribute}></label>'
+                    f'<p class="hint">{html.escape(field.help_text)}</p>'
+                )
+                continue
             rendered_fields.append(
                 f'<label>{html.escape(field.label)}<input name="{html.escape(field.name, quote=True)}" type="{html.escape(field.input_type, quote=True)}"{required_attribute}{step_attribute}></label>'
                 f'<p class="hint">{html.escape(field.help_text)}</p>'
