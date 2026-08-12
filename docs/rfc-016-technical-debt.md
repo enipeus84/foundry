@@ -29,8 +29,19 @@ Resolved entry here naming the resolving commit.
 **Implementation candidate — 2026-08-12.** The frozen replay contract is
 implemented on branch `rfc-016-dormancy-remediation-candidate`; see
 [`rfc-016-dormancy-remediation-implementation-report.md`](rfc-016-dormancy-remediation-implementation-report.md).
-The candidate awaits independent TELMU and SAFE review. **Status remains OPEN**
-until the review and governed completion conditions are met.
+The candidate's independent review evidence is published separately. **Status
+remains OPEN** until successful integration and every governed closure condition
+is met.
+
+**Freeze Amendment 1 — 2026-08-12.** The acceptance boundary is narrowed: this
+remediation guarantees dormancy semantics over **supported canonical Mission
+lifecycle history**, and a raw `core.mission.closed` whose payload entirely
+omits `entity_id` is outside it. That is a narrowing of an over-broad acceptance
+probe, not a weakening of the dormancy invariant; the §4.2 applicability
+contract is unchanged. See §16 of the freeze record. The underlying platform-wide
+behaviour is recorded separately as **`DEBT-CORE-REPLAY-01`**
+([`core-technical-debt.md`](core-technical-debt.md)) and is **non-blocking** for
+this debt.
 
 **DEBT-016-P3-02 — horizon derivation is surface-side, not canonical.**
 Finance now owns the deterministic mapping between the four locked Mission
