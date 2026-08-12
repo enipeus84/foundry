@@ -13,6 +13,19 @@ RFC gives `in_force` Mission Target state its first production assessment,
 decisioning, recommendation or Flight Deck consumer. The dependency travels
 with that first consumer; it is not tied solely to a phase number.
 
+**Status: OPEN — remediation architecture FROZEN 2026-08-12.** Governor rulings
+**GD-1** through **GD-6** and the frozen implementation boundary are recorded in
+[`reviews/RFC-016-dormancy-remediation-architecture-freeze-record.md`](reviews/RFC-016-dormancy-remediation-architecture-freeze-record.md).
+The frozen contract derives each Mission's **earliest valid applicable**
+`core.mission.closed` timestamp inside `MissionTargetProjection` and excludes a
+target from `in_force` at or after it, while preserving every answer for an
+`as_of` strictly before closure. **No new canonical event and no migration are
+authorised**, and the intended production blast radius is
+`src/foundry/core/mission_targets.py` alone. That freeze grants no
+implementation, test-implementation or BOOSTER authority. This debt is **closed
+only** on the evidence in §10 of the freeze record, which requires a dated
+Resolved entry here naming the resolving commit.
+
 **DEBT-016-P3-02 — horizon derivation is surface-side, not canonical.**
 Finance now owns the deterministic mapping between the four locked Mission
 metrics and `none` / `by_date` / `derived`. It constrains the Phase 3 writer;

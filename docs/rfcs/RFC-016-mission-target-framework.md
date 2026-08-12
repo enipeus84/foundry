@@ -1,11 +1,14 @@
 # RFC-016 — Mission Target Framework
 
-**Status:** **ARCHITECTURE FROZEN — Phase 1 and Phase 2 GO** (shipped);
-**Phase 3 IMPLEMENTATION CANDIDATE — TELMU / SAFE REVIEW REQUIRED**
-(2026-08-11; merge not authorised). Governor rulings **GD-1** through **GD-11** are recorded
-(2026-08-06); Phase 3 rulings **GD-A** through **GD-J** are recorded
+**Status:** **Phases 1, 2 and 3 COMPLETE** — Phase 3 Mission Target Management
+merged 2026-08-12 (`e64ab2d`), closeout `9b30601`.
+**`DEBT-016-P3-01` dormancy remediation: ARCHITECTURE FROZEN 2026-08-12 —
+implementation not authorised.** Governor rulings **GD-1** through **GD-11** are
+recorded (2026-08-06); Phase 3 rulings **GD-A** through **GD-J** are recorded
 (2026-08-11) in
-[`../reviews/RFC-016-phase-3-architecture-freeze-record.md`](../reviews/RFC-016-phase-3-architecture-freeze-record.md).
+[`../reviews/RFC-016-phase-3-architecture-freeze-record.md`](../reviews/RFC-016-phase-3-architecture-freeze-record.md);
+dormancy-remediation rulings **GD-1** through **GD-6** are recorded (2026-08-12)
+in [`../reviews/RFC-016-dormancy-remediation-architecture-freeze-record.md`](../reviews/RFC-016-dormancy-remediation-architecture-freeze-record.md).
 The formal Phase 1/2 freeze record
 is [`../reviews/RFC-016-architecture-freeze-record.md`](../reviews/RFC-016-architecture-freeze-record.md).
 **Burn:** Architecture Burn (RFC-100 §3), Effort **HIGH**; governance
@@ -729,6 +732,30 @@ target.state ⇔
 `abandoned` (`vocab.MISSION_STATUS`) takes its target out of current
 interpretation without touching the target's own record — the same
 "entity closure needs no new event" argument RFC-015 §4.2 made and won.
+
+> **Implementation status — `dormant` is specified here but not yet
+> implemented.** Phases 1–3 shipped `withdrawn`, `superseded` and `active`;
+> `in_force` does not yet exclude a target whose Mission has closed, which is
+> recorded as **`DEBT-016-P3-01`** and mitigated at the Phase 3 operator surface
+> only. The remediation architecture was **frozen 2026-08-12** — see
+> [`../reviews/RFC-016-dormancy-remediation-architecture-freeze-record.md`](../reviews/RFC-016-dormancy-remediation-architecture-freeze-record.md).
+>
+> Two clarifications from that freeze bind any implementation and are recorded
+> here rather than by editing the text above (RFC-100 §9.2):
+>
+> - **Dormancy is temporal, not a status check.** Because §7.3 makes `in_force`
+>   an as-of query, dormancy is evaluated against the Mission's **earliest valid
+>   applicable `core.mission.closed` timestamp**. A target remains resolvable for
+>   any `as_of` strictly before that moment; closure never rewrites pre-closure
+>   history.
+> - **The closure event, not `Mission.status`, is the authority.**
+>   `MISSION_STATUS` is extensible and a later malformed or duplicate Mission
+>   declaration can make projected status appear active again, so the phrase
+>   "its mission's status is not `active`" above must be read as "a valid
+>   applicable canonical closure exists at or before `as_of`".
+>
+> The remediation introduces **no new canonical event** and requires **no
+> migration**. Implementation authority is not granted by the freeze.
 
 ### 7.2 Lineage rules
 
