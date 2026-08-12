@@ -24,7 +24,8 @@ Capture Contracts, RFC-015 Capture Target Registry, RFC-016 Phases 1–2 and
 RFC-017 Value Provenance have since shipped. RFC-016 Phase 3 Mission Target
 Management is now a bounded implementation candidate from frozen authority
 `b7957d6`: an authorised operator can declare, replace and withdraw a Mission
-Target under `/missions`, subject to TELMU and SAFE review before any merge.
+Target under `/missions`. TELMU and SAFE have completed independent review with
+non-blocking observations; merge remains a separate Governor act.
 Authentication, review-gate process and CI remain scoped to a single named
 user and two of six planned gates. Overall: an architecturally disciplined,
 single-user beta with a production-grade substrate and an unmerged strategic-
@@ -37,7 +38,7 @@ intent management candidate.
 - **Current version:** `1.8.0` ([`pyproject.toml`](pyproject.toml)) — bumped by the Release Closeout burn, which also added the missing CHANGELOG entries for RFC-010, RFC-011, RFC-100 and RFC-012. RFC-005's absent release note is acknowledged retroactively rather than reconstructed ([issue #13](https://github.com/enipeus84/foundry/issues/13)). No git tag was cut; tagging has been dormant since `v1.5-flight-deck` and resuming it is a separate Governor decision
 - **Latest merged RFC:** RFC-017 — Value Provenance Framework, completed through Pension Phase 2 on 2026-08-11. RFC-016 Phase 3 is an implementation candidate only and is not merged
 - **Governance:** RFC-100 — Flight Operations Manual, Revision 2 merged ([PR #28](https://github.com/enipeus84/foundry/pull/28)) with Amendment 1, Mission Declaration ([PR #29](https://github.com/enipeus84/foundry/pull/29)), both 2026-08-02 ([`docs/rfcs/RFC-100-flight-operations-manual.md`](docs/rfcs/RFC-100-flight-operations-manual.md))
-- **Next gate:** TELMU functional validation and SAFE adversarial review of the RFC-016 Phase 3 candidate; merge remains a separate Governor act
+- **Next gate:** governed PR and Governor Merge Review for the RFC-016 Phase 3 candidate; TELMU and SAFE are complete with non-blocking observations, and merge remains a separate Governor act
 - **Latest release/tag:** `v1.5-flight-deck` (git tag) — no tag exists for RFC-004.2 or later; see [`docs/rfcs/index.md`](docs/rfcs/index.md)
 
 ---
@@ -119,12 +120,11 @@ Highest-priority items from the RFC technical-debt registers and
 
 ## Next Recommended Gate
 
-**TELMU and SAFE review of RFC-016 Phase 3.** The candidate must be challenged
-against the frozen six-route boundary, especially stale-review refusal,
-purpose-separated CSRF, household/Mission authority, untrusted hidden fields,
-event payload construction, the acquisition import boundary and protected-file
-identity. No Phase 4 assessment adoption, Mission instantiation or merge is
-authorised by this candidate.
+**Governed PR and Governor Merge Review for RFC-016 Phase 3.** The exact
+implementation candidate has completed TELMU and SAFE review with non-blocking
+observations. The remaining work is publication of the governed PR and Governor
+merge review. No Phase 4 assessment adoption, Mission instantiation or merge is
+authorised by the candidate alone.
 
 ---
 
@@ -178,5 +178,6 @@ comes next.
 - **Date:** 2026-08-11
 - **Branch:** `rfc-016-phase-3-mission-target-management`
 - **Frozen authority:** `b7957d63524e49bedcf60273ff5634ebaf8861e3`
-- **Updated by:** BOOSTER implementation candidate; TELMU / SAFE and Governor
-  merge authority remain outstanding.
+- **Updated by:** governance-completion publication. Implementation candidate,
+  TELMU and SAFE are complete; Phase 3 remains unmerged and awaits governed PR
+  and Governor merge authority.
