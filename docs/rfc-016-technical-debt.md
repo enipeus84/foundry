@@ -26,6 +26,16 @@ implementation, test-implementation or BOOSTER authority. This debt is **closed
 only** on the evidence in §10 of the freeze record, which requires a dated
 Resolved entry here naming the resolving commit.
 
+**Freeze Amendment 1 — 2026-08-12.** The acceptance boundary is narrowed: this
+remediation guarantees dormancy semantics over **supported canonical Mission
+lifecycle history**, and a raw `core.mission.closed` whose payload entirely
+omits `entity_id` is outside it. That is a narrowing of an over-broad acceptance
+probe, not a weakening of the dormancy invariant; the §4.2 applicability
+contract is unchanged. See §16 of the freeze record. The underlying platform-wide
+behaviour is recorded separately as **`DEBT-CORE-REPLAY-01`**
+([`core-technical-debt.md`](core-technical-debt.md)) and is **non-blocking** for
+this debt.
+
 **DEBT-016-P3-02 — horizon derivation is surface-side, not canonical.**
 Finance now owns the deterministic mapping between the four locked Mission
 metrics and `none` / `by_date` / `derived`. It constrains the Phase 3 writer;

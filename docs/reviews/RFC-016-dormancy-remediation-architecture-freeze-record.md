@@ -258,6 +258,11 @@ Focused tests must cover at minimum:
 12. malformed or unrelated Mission history cannot make another Mission's target
     dormant.
 
+> **Target 12 is narrowed by Amendment 1 (2026-08-12) — see §16.** "Malformed"
+> means malformed **within the supported canonical event-shape boundary**. This
+> remediation is not required to recover from raw events missing structurally
+> required writer-grammar keys. Targets 1–11 are unchanged.
+
 TELMU must explicitly prove that **fixing present-state actionability does not
 destroy historical replay semantics** — items 4 and 2 together are the
 anti-rewriting proof, and a run that satisfies 1–3 but not 4 is a failed
@@ -274,7 +279,7 @@ baseline plus the new focused cases.
 | **S-D1** | Confirm the change is **restrictive only** (I-14): no input previously refused is now accepted, and no target can be added to `in_force`. |
 | **S-D2** | Confirm malformed log content cannot resurrect target actionability. |
 | **S-D3** | Confirm a closure for Mission A cannot affect Mission B. |
-| **S-D4** | Confirm malformed closure references (absent, empty, non-string or unknown `entity_id`; closure preceding declaration) fail safely and never raise. |
+| **S-D4** | Confirm malformed closure references (absent, empty, non-string or unknown `entity_id`; closure preceding declaration) fail safely and never raise. **Amended by Amendment 1 (2026-08-12) — the `absent` case is removed; see §16.** |
 | **S-D5** | Confirm no new browser or client authority is introduced, and Phase 3's authority model — household/subject authority, the three CSRF purposes, the staleness assertion, exact-field-set discipline — is untouched. |
 | **S-D6** | Confirm the remediation broadens no accepted canonical event kind. |
 | **S-D7** | Confirm no new persistence, mutation or write path appears; this remains a read-side projection correction. |
@@ -316,6 +321,73 @@ authorise Mission Assessment.**
 | Mission Assessment | **NOT AUTHORISED** |
 | RFC-017 remediation / `DEBT-017-CI-01` | **NOT AUTHORISED** |
 | `DEBT-016-P3-01` | **OPEN** |
+
+---
+
+## 16. Amendment 1 — acceptance-boundary narrowing *(Governor ruling, 2026-08-12)*
+
+**Ruling: AMEND FREEZE — CANDIDATE REMAINS VALID.** No BOOSTER remediation is
+required and no production boundary expansion is authorised.
+
+The original freeze above is **preserved in full**; nothing in §1–§15 is
+rewritten or replaced. This amendment narrows one over-broad acceptance probe
+and nothing else (RFC-100 §9.2).
+
+### 16.1 What the remediation guarantees
+
+> The RFC-016 dormancy remediation guarantees correct replay and dormancy
+> semantics over **supported canonical Mission lifecycle history** — the event
+> history produced by authorised Foundry writers and contracts.
+
+### 16.2 What is outside the acceptance boundary
+
+> A raw `core.mission.closed` event whose payload **entirely omits** the
+> structurally required `entity_id` key is **outside the acceptance boundary**
+> of this remediation.
+
+**This is a narrowing of an over-broad acceptance probe. It is not a weakening
+of the core dormancy invariant.**
+
+### 16.3 Basis in repository evidence
+
+| Path | Finding |
+|---|---|
+| `grammar.close` — the sole production writer of `core.mission.closed` | Constructs a payload containing `entity_id` **unconditionally**; `achieve_mission` and `abandon_mission` delegate to it |
+| Any other production writer of that kind | **None exists** |
+| Operations technical capture | **Refuses** `core.mission.closed` — outside the approved Finance manual contract |
+| CLI | No supported raw-event append command |
+| Direct low-level `EventLog.append` | **Can** manufacture such an event while retaining a valid hash chain. This is outside the supported writer grammar, is not introduced by this remediation, and is recorded as `DEBT-CORE-REPLAY-01` |
+
+The same direct payload-indexing assumption exists across multiple Core and
+Finance projection paths, so the behaviour is **platform-wide, not
+Mission-specific**.
+
+### 16.4 The applicability contract is unchanged
+
+§4.2 stands exactly as frozen. An applicable closure remains one where the event
+kind is exactly `core.mission.closed`, `entity_id` is **present and a non-empty
+string**, and the Mission was already declared earlier in canonical log order.
+The closure `status` payload does not determine applicability, and the earliest
+valid applicable closure remains terminal for target actionability.
+
+### 16.5 Amended acceptance targets
+
+**SAFE S-D4** — remove **only** the requirement to tolerate a raw closure event
+whose payload key `entity_id` is entirely absent. Continue to require
+adversarial handling of: empty identifier; non-string identifier; unknown
+Mission; pre-declaration closure; wrong event kind; duplicate closure history;
+hostile Mission redeclaration. **No other SAFE target is weakened.**
+
+**TELMU target 12** — narrowed to the supported canonical event-shape boundary
+(§11). **Targets 1–11 are unchanged.**
+
+### 16.6 Candidate and review status
+
+Candidate `b6b224d99d2135b3c3846dbbf5b4cda225b682e0` is **unchanged and review
+valid**. All prior TELMU evidence gathered against that exact SHA — including
+the hostile Mission redeclaration property — **remains valid**. TELMU
+continuation is authorised against that SHA; a complete restart of independent
+review is not required. `DEBT-016-P3-01` remains **OPEN**.
 
 ---
 
