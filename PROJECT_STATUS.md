@@ -36,9 +36,9 @@ intent management candidate.
 ## Current Release
 
 - **Current version:** `1.8.0` ([`pyproject.toml`](pyproject.toml)) — bumped by the Release Closeout burn, which also added the missing CHANGELOG entries for RFC-010, RFC-011, RFC-100 and RFC-012. RFC-005's absent release note is acknowledged retroactively rather than reconstructed ([issue #13](https://github.com/enipeus84/foundry/issues/13)). No git tag was cut; tagging has been dormant since `v1.5-flight-deck` and resuming it is a separate Governor decision
-- **Latest merged RFC:** RFC-017 — Value Provenance Framework, completed through Pension Phase 2 on 2026-08-11. RFC-016 Phase 3 is an implementation candidate only and is not merged
+- **Latest merged RFC:** RFC-016 Phase 3 — Mission Target Management, merged via [PR #47](https://github.com/enipeus84/foundry/pull/47) on 2026-08-12 (`e64ab2d`). RFC-017 — Value Provenance Framework remains completed through Pension Phase 2 on 2026-08-11
 - **Governance:** RFC-100 — Flight Operations Manual, Revision 2 merged ([PR #28](https://github.com/enipeus84/foundry/pull/28)) with Amendment 1, Mission Declaration ([PR #29](https://github.com/enipeus84/foundry/pull/29)), both 2026-08-02 ([`docs/rfcs/RFC-100-flight-operations-manual.md`](docs/rfcs/RFC-100-flight-operations-manual.md))
-- **Next gate:** Governor Merge Authority for RFC-016 Phase 3 [PR #47](https://github.com/enipeus84/foundry/pull/47); TELMU and SAFE are complete with non-blocking observations, and the exact inherited RFC-017 strict-floating-point CI failure is accepted for this release as separate debt regardless of its supported Python runtime manifestation; merge remains a separate Governor act
+- **Next gate:** no RFC-016 Phase 3 successor authority is implied by completion. `DEBT-017-CI-01` remains separate RFC-017/Test Engineering work; Phase 4–5 and any Mission Assessment consumer retain their stated Governor gates
 - **Latest release/tag:** `v1.5-flight-deck` (git tag) — no tag exists for RFC-004.2 or later; see [`docs/rfcs/index.md`](docs/rfcs/index.md)
 
 ---
@@ -120,13 +120,14 @@ Highest-priority items from the RFC technical-debt registers and
 
 ## Next Recommended Gate
 
-**Governor Merge Authority for RFC-016 Phase 3 [PR #47](https://github.com/enipeus84/foundry/pull/47).** The exact implementation candidate has completed
-TELMU and SAFE review with non-blocking observations. Governor pre-merge ruling
-GD-P3-M1A through GD-P3-M1E accept the exact inherited RFC-017
-strict-floating-point assertion failure by signature and provenance, rather
-than Python version, and record separate remediation ownership. No Phase 4
-assessment adoption, Mission instantiation or merge is authorised by the
-candidate alone.
+**RFC-016 Phase 3 Mission Target Management is complete.** [PR #47](https://github.com/enipeus84/foundry/pull/47) merged at `e64ab2d` after TELMU and SAFE
+review of candidate `b81517e`. The first post-merge workflow
+[`31583111123`](https://github.com/enipeus84/foundry/actions/runs/31583111123)
+failed only on the governed inherited `DEBT-017-CI-01` strict-float assertion
+under Python 3.10 and 3.11; Governor granted a narrow FR-016 completion
+exception. See the Phase 3 post-flight report. No Phase 4 assessment adoption,
+Mission instantiation, consumer, or successor authority follows from this
+completion.
 
 ---
 
@@ -177,9 +178,9 @@ comes next.
 
 ## Last Updated
 
-- **Date:** 2026-08-11
-- **Branch:** `rfc-016-phase-3-mission-target-management`
+- **Date:** 2026-08-12
+- **Branch:** `main`
 - **Frozen authority:** `b7957d63524e49bedcf60273ff5634ebaf8861e3`
-- **Updated by:** governance-completion publication and Governor pre-merge
-  ruling. Implementation candidate `b81517e`, TELMU and SAFE are complete;
-  Phase 3 remains unmerged and awaits Governor Merge Authority on PR #47.
+- **Updated by:** RFC-016 Phase 3 post-flight closeout. Merge `e64ab2d`
+  contains reviewed candidate `b81517e`; retained debt and SAFE observations
+  remain open as recorded in the post-flight report.

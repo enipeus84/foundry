@@ -2,8 +2,9 @@
 
 ## [Unreleased] — RFC-016 Phase 3 Mission Target Management
 
-Implementation candidate only; TELMU and SAFE review are required and merge is
-not authorised.
+Completed 2026-08-12 via [PR #47](https://github.com/enipeus84/foundry/pull/47),
+merge `e64ab2d`. TELMU and SAFE reviewed candidate `b81517e`; no version bump
+or tag is authorised by this post-flight closeout.
 
 ### Added
 
@@ -30,6 +31,10 @@ not authorised.
 - The canonical event set remains exactly `core.mission_target.declared` and
   `core.mission_target.closed`; `src/foundry/core/mission_targets.py` remains
   byte-identical to frozen authority `b7957d6`.
+- `DEBT-016-P3-01`, `DEBT-016-P3-02`, RFC-016 W7, `DEBT-017-CI-01`, and SAFE
+  OBS-P3-01 through OBS-P3-03 remain open as governed; the first post-merge
+  workflow was not green, but its two exact `DEBT-017-CI-01` manifestations
+  were accepted by an explicit, narrow FR-016 Governor exception.
 
 ## [v1.8.0-telemetry-operations] — 2026-08-02
 
