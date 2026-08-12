@@ -38,7 +38,7 @@ intent management candidate.
 - **Current version:** `1.8.0` ([`pyproject.toml`](pyproject.toml)) — bumped by the Release Closeout burn, which also added the missing CHANGELOG entries for RFC-010, RFC-011, RFC-100 and RFC-012. RFC-005's absent release note is acknowledged retroactively rather than reconstructed ([issue #13](https://github.com/enipeus84/foundry/issues/13)). No git tag was cut; tagging has been dormant since `v1.5-flight-deck` and resuming it is a separate Governor decision
 - **Latest merged RFC:** RFC-017 — Value Provenance Framework, completed through Pension Phase 2 on 2026-08-11. RFC-016 Phase 3 is an implementation candidate only and is not merged
 - **Governance:** RFC-100 — Flight Operations Manual, Revision 2 merged ([PR #28](https://github.com/enipeus84/foundry/pull/28)) with Amendment 1, Mission Declaration ([PR #29](https://github.com/enipeus84/foundry/pull/29)), both 2026-08-02 ([`docs/rfcs/RFC-100-flight-operations-manual.md`](docs/rfcs/RFC-100-flight-operations-manual.md))
-- **Next gate:** governed PR and Governor Merge Review for the RFC-016 Phase 3 candidate; TELMU and SAFE are complete with non-blocking observations, and merge remains a separate Governor act
+- **Next gate:** Governor Merge Authority for RFC-016 Phase 3 [PR #47](https://github.com/enipeus84/foundry/pull/47); TELMU and SAFE are complete with non-blocking observations, the inherited RFC-017 Python 3.11 instability is accepted for this release as separate debt, and merge remains a separate Governor act
 - **Latest release/tag:** `v1.5-flight-deck` (git tag) — no tag exists for RFC-004.2 or later; see [`docs/rfcs/index.md`](docs/rfcs/index.md)
 
 ---
@@ -120,11 +120,12 @@ Highest-priority items from the RFC technical-debt registers and
 
 ## Next Recommended Gate
 
-**Governed PR and Governor Merge Review for RFC-016 Phase 3.** The exact
-implementation candidate has completed TELMU and SAFE review with non-blocking
-observations. The remaining work is publication of the governed PR and Governor
-merge review. No Phase 4 assessment adoption, Mission instantiation or merge is
-authorised by the candidate alone.
+**Governor Merge Authority for RFC-016 Phase 3 [PR #47](https://github.com/enipeus84/foundry/pull/47).** The exact implementation candidate has completed
+TELMU and SAFE review with non-blocking observations. Governor pre-merge ruling
+GD-P3-M1 accepts the inherited RFC-017 Python 3.11 floating-point assertion
+instability for this release and records separate remediation ownership. No
+Phase 4 assessment adoption, Mission instantiation or merge is authorised by
+the candidate alone.
 
 ---
 
@@ -178,6 +179,6 @@ comes next.
 - **Date:** 2026-08-11
 - **Branch:** `rfc-016-phase-3-mission-target-management`
 - **Frozen authority:** `b7957d63524e49bedcf60273ff5634ebaf8861e3`
-- **Updated by:** governance-completion publication. Implementation candidate,
-  TELMU and SAFE are complete; Phase 3 remains unmerged and awaits governed PR
-  and Governor merge authority.
+- **Updated by:** governance-completion publication and Governor pre-merge
+  ruling. Implementation candidate `b81517e`, TELMU and SAFE are complete;
+  Phase 3 remains unmerged and awaits Governor Merge Authority on PR #47.
