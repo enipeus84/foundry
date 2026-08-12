@@ -214,7 +214,9 @@ def provenance(request: Request, proposal_id: str):
         return error
     proposal, _ = scoped
     canonical = next((event for event in console.log.events()
-                      if event["payload"].get("provenance", {}).get("proposal_id") == proposal.id), None)
+                      if isinstance(event["payload"], dict)
+                      and isinstance(event["payload"].get("provenance"), dict)
+                      and event["payload"]["provenance"].get("proposal_id") == proposal.id), None)
     if canonical is None:
         return HTMLResponse("Provenance unavailable", status_code=404)
     try:

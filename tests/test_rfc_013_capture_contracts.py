@@ -222,10 +222,14 @@ def test_operations_discovers_contracts_and_creates_an_inert_property_draft(envi
     proposal = next(iter(ProposalInbox(log).proposals.values()))
     assert proposal.draft_events[0]["kind"] == "finance.valuation.declared"
     assert proposal.state == "pending"
+    # The production log contains a legacy list payload. Provenance lookup
+    # must skip it rather than crashing after a valid valuation is confirmed.
+    log.append("legacy.provenance.txt", [])
     confirmed = client.post(f"/acquisition/proposals/{proposal.id}/confirm", data={
         "csrf": webauth.csrf_token(ALLOWED, webauth.load_config(), "rfc011-confirmation"),
     })
     assert confirmed.status_code == 303
+    assert client.get(confirmed.headers["location"]).status_code == 200
     assert any(event["kind"] == "finance.valuation.declared" for event in log.events())
     duplicate = _submit_capture(client, "property-valuation-update", "property-value",
                                 evidence_reference="valuer-report-2026")
