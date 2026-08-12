@@ -16,6 +16,7 @@ import os
 import time
 from pathlib import Path
 from urllib.parse import parse_qs
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -38,6 +39,7 @@ from foundry.operations_console import OperationsConsoleModel
 router = APIRouter()
 _PURPOSE = "rfc012-capture"
 _CONTRACT_PURPOSE = "rfc013-capture"
+_LONDON = ZoneInfo("Europe/London")
 
 
 def _email(request: Request) -> str | None:
@@ -167,6 +169,22 @@ def _human_date(value: str) -> float:
         return datetime.combine(date.fromisoformat(value), datetime.min.time(), timezone.utc).timestamp()
     except ValueError as exc:
         raise ValueError("Please enter a valid date.") from exc
+
+
+def _london_datetime_input(now: datetime | None = None) -> str:
+    """Format a London-local instant for a native datetime-local control."""
+    return (now or datetime.now(_LONDON)).astimezone(_LONDON).strftime("%Y-%m-%dT%H:%M")
+
+
+def _london_timestamp(value: str) -> float:
+    """Interpret a browser datetime-local value as Europe/London wall time."""
+    try:
+        parsed = datetime.fromisoformat(value)
+        if parsed.tzinfo is not None:
+            raise ValueError
+        return parsed.replace(tzinfo=_LONDON).timestamp()
+    except ValueError as exc:
+        raise ValueError("Please enter a valid date and time.") from exc
 
 
 def _operations_styles() -> str:
@@ -314,6 +332,12 @@ def capture_form(request: Request):
         for field in contract.schema:
             required_attribute = " required" if field.required else ""
             step_attribute = ' step="any"' if field.input_type == "number" else ""
+            if field.name == "valid_at":
+                rendered_fields.append(
+                    f'<label>{html.escape(field.label)}<input name="valid_at" type="datetime-local" value="{_london_datetime_input()}"{required_attribute}></label>'
+                    f'<p class="hint">{html.escape(field.help_text)}</p>'
+                )
+                continue
             rendered_fields.append(
                 f'<label>{html.escape(field.label)}<input name="{html.escape(field.name, quote=True)}" type="{html.escape(field.input_type, quote=True)}"{required_attribute}{step_attribute}></label>'
                 f'<p class="hint">{html.escape(field.help_text)}</p>'
@@ -440,6 +464,8 @@ async def capture(request: Request):
                 return HTMLResponse("Not found", status_code=404)
             stream = target.stream
             capture_values = {name: fields.get(name, "") for name in contract_fields}
+            if "valid_at" in capture_values:
+                capture_values["valid_at"] = str(_london_timestamp(capture_values["valid_at"]))
             normalised = contract.normalise(capture_values)
             capture_id = contract.capture_id(normalised, stream_id=stream.id, subject_id=stream.subject_id)
             fact = contract.canonical_mapper.map(normalised, subject_id=stream.subject_id,

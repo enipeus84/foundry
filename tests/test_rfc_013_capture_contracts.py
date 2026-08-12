@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from itertools import count
 
 import pytest
@@ -28,6 +29,7 @@ from foundry.finance import entities as finance  # noqa: E402
 from foundry.finance.entities import FinanceEntityProjection  # noqa: E402
 from foundry.finance.metrics import FinanceMetricProvider  # noqa: E402
 from foundry.web import app  # noqa: E402
+from foundry.operations_web import _london_datetime_input, _london_timestamp  # noqa: E402
 
 
 ALLOWED = "cparkerbrads@gmail.com"
@@ -157,7 +159,7 @@ def _capture_streams(path):
     return log
 
 
-def _submit_capture(client, contract_id, stream_id, *, amount="450000", valid_at="1700000000",
+def _submit_capture(client, contract_id, stream_id, *, amount="450000", valid_at="2023-11-14T22:13",
                     evidence_reference=None):
     data = {
         "csrf": webauth.csrf_token(ALLOWED, webauth.load_config(), "rfc013-capture"),
@@ -195,7 +197,7 @@ def test_changed_capture_values_dates_and_evidence_references_create_distinct_pr
             "evidence_reference": "valuer-report-2026"}
     assert _submit_capture(client, **base).status_code == 303
     assert _submit_capture(client, **base, amount="451000").status_code == 303
-    assert _submit_capture(client, **base, valid_at="1700000001").status_code == 303
+    assert _submit_capture(client, **base, valid_at="2023-11-14T22:14").status_code == 303
     assert _submit_capture(client, **{**base, "evidence_reference": "valuer-report-reissue"}).status_code == 303
     assert len(ProposalInbox(log).proposals) == 4
 
@@ -229,6 +231,31 @@ def test_operations_discovers_contracts_and_creates_an_inert_property_draft(envi
     assert duplicate.status_code == 303
     assert len(ProposalInbox(log).proposals) == 1
     assert sum(event["kind"] == "finance.valuation.declared" for event in log.events()) == 1
+
+
+def test_contract_capture_uses_editable_london_datetime_and_preserves_canonical_timestamp(
+        environment, monkeypatch):
+    _capture_streams(environment)
+    monkeypatch.setattr("foundry.operations_web._london_datetime_input",
+                        lambda: "2026-08-12T21:30")
+    form = _client().get("/operations/capture?contract=pension-balance-update")
+    assert form.status_code == 200
+    assert 'name="valid_at" type="datetime-local" value="2026-08-12T21:30"' in form.text
+    assert "As at (Unix timestamp)" not in form.text
+    assert _submit_capture(_client(), "pension-balance-update", "pension-value",
+                           amount="12345", valid_at="2026-07-31T23:59",
+                           evidence_reference="pension-statement-2026").status_code == 303
+    proposal = next(iter(ProposalInbox(EventLog(environment / "events.jsonl")).proposals.values()))
+    assert proposal.observations[0]["valid_at"] == 1_785_538_740.0
+
+
+def test_london_datetime_conversion_respects_gmt_and_bst():
+    assert _london_datetime_input(
+        datetime(2026, 1, 12, 21, 30, tzinfo=timezone.utc)) == "2026-01-12T21:30"
+    assert _london_datetime_input(
+        datetime(2026, 8, 12, 20, 30, tzinfo=timezone.utc)) == "2026-08-12T21:30"
+    assert _london_timestamp("2026-01-12T21:30") == 1_768_253_400.0
+    assert _london_timestamp("2026-08-12T21:30") == 1_786_566_600.0
 
 
 def test_operations_reports_capture_as_unconfigured_only_without_contracts_or_guided_workflows(
