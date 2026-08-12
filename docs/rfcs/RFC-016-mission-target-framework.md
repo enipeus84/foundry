@@ -2,8 +2,10 @@
 
 **Status:** **Phases 1, 2 and 3 COMPLETE** — Phase 3 Mission Target Management
 merged 2026-08-12 (`e64ab2d`), closeout `9b30601`.
-**`DEBT-016-P3-01` dormancy remediation: ARCHITECTURE FROZEN 2026-08-12 —
-implementation not authorised.** Governor rulings **GD-1** through **GD-11** are
+**`DEBT-016-P3-01` dormancy remediation: COMPLETE — merged 2026-08-12 via PR
+#48, merge `1a93407`; post-merge closeout is recorded in
+[`../reviews/RFC-016-dormancy-remediation-post-merge-closeout.md`](../reviews/RFC-016-dormancy-remediation-post-merge-closeout.md).**
+Governor rulings **GD-1** through **GD-11** are
 recorded (2026-08-06); Phase 3 rulings **GD-A** through **GD-J** are recorded
 (2026-08-11) in
 [`../reviews/RFC-016-phase-3-architecture-freeze-record.md`](../reviews/RFC-016-phase-3-architecture-freeze-record.md);
@@ -733,12 +735,13 @@ target.state ⇔
 interpretation without touching the target's own record — the same
 "entity closure needs no new event" argument RFC-015 §4.2 made and won.
 
-> **Implementation status — `dormant` is specified here but not yet
-> implemented.** Phases 1–3 shipped `withdrawn`, `superseded` and `active`;
-> `in_force` does not yet exclude a target whose Mission has closed, which is
-> recorded as **`DEBT-016-P3-01`** and mitigated at the Phase 3 operator surface
-> only. The remediation architecture was **frozen 2026-08-12** — see
-> [`../reviews/RFC-016-dormancy-remediation-architecture-freeze-record.md`](../reviews/RFC-016-dormancy-remediation-architecture-freeze-record.md).
+> **Implementation status — resolved 2026-08-12.** PR #48 merge `1a93407`
+> implemented projection-level temporal dormancy: `in_force(as_of)` excludes a
+> target at or after its Mission's earliest valid applicable canonical closure,
+> while preserving correct answers strictly before closure. `DEBT-016-P3-01` is
+> closed by the dated entry in
+> [`../rfc-016-technical-debt.md`](../rfc-016-technical-debt.md); no new
+> canonical event or migration was introduced.
 >
 > Two clarifications from that freeze bind any implementation and are recorded
 > here rather than by editing the text above (RFC-100 §9.2):
@@ -754,8 +757,9 @@ interpretation without touching the target's own record — the same
 >   "its mission's status is not `active`" above must be read as "a valid
 >   applicable canonical closure exists at or before `as_of`".
 >
-> The remediation introduces **no new canonical event** and requires **no
-> migration**. Implementation authority is not granted by the freeze.
+> The remediation introduced **no new canonical event** and required **no
+> migration**. Its independent TELMU/SAFE evidence and post-merge closeout are
+> recorded under `docs/reviews/`.
 
 ### 7.2 Lineage rules
 

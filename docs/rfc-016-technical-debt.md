@@ -48,6 +48,19 @@ behaviour is recorded separately as **`DEBT-CORE-REPLAY-01`**
 ([`core-technical-debt.md`](core-technical-debt.md)) and is **non-blocking** for
 this debt.
 
+**Resolved — 2026-08-12.** Resolving integration commit
+`1a9340789c14eefa4138c1cc69665feee96507b5` merged reviewed candidate
+`b6b224d99d2135b3c3846dbbf5b4cda225b682e0` through PR #48. Post-merge
+validation recorded in
+[`reviews/RFC-016-dormancy-remediation-post-merge-closeout.md`](reviews/RFC-016-dormancy-remediation-post-merge-closeout.md)
+confirms that `in_force(as_of)` is non-actionable at or after each Mission's
+earliest valid applicable canonical closure, historical answers strictly before
+closure remain correct, hostile redeclaration cannot resurrect actionability,
+deterministic replay and Mission isolation hold, and no new canonical event or
+migration was introduced. Full regression passed: **877 passed, 1 pre-existing
+FastAPI/TestClient warning**. TELMU and SAFE independently verified the exact
+reviewed candidate. **DEBT-016-P3-01: CLOSED.**
+
 **DEBT-016-P3-02 — horizon derivation is surface-side, not canonical.**
 Finance now owns the deterministic mapping between the four locked Mission
 metrics and `none` / `by_date` / `derived`. It constrains the Phase 3 writer;
