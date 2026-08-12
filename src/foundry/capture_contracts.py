@@ -213,7 +213,7 @@ def capture_contract_registry() -> CaptureContractRegistry:
 _MONEY_SCHEMA = (
     CaptureField("amount", "Balance or valuation", "number", help_text="A non-negative amount."),
     CaptureField("currency", "Currency", "text", help_text="Three-letter ISO currency code."),
-    CaptureField("valid_at", "As at (Unix timestamp)", "number", help_text="When this value was true."),
+    CaptureField("valid_at", "As at", "number", help_text="When this value was true."),
     CaptureField("evidence_reference", "Evidence reference", "text", required=False,
                  help_text="Statement, valuation report, or other source reference."),
 )
@@ -222,7 +222,7 @@ _CASH_SCHEMA = (
     CaptureField("amount", "Stated cash balance", "number",
                  help_text="Recorded for reconciliation only; it does not update Finance projections."),
     CaptureField("currency", "Currency", "text", help_text="Three-letter ISO currency code."),
-    CaptureField("valid_at", "As at (Unix timestamp)", "number", help_text="When this value was stated."),
+    CaptureField("valid_at", "As at", "number", help_text="When this value was stated."),
     CaptureField("evidence_reference", "Evidence reference", "text", required=False,
                  help_text="Statement or other source reference."),
 )
