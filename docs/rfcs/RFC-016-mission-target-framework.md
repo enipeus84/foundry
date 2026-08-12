@@ -1,7 +1,12 @@
 # RFC-016 — Mission Target Framework
 
-**Status:** **ARCHITECTURE FROZEN — Phase 1 and Phase 2 GO.** Governor rulings
-**GD-1** through **GD-11** are recorded (2026-08-06). The formal freeze record
+**Status:** **ARCHITECTURE FROZEN — Phase 1 and Phase 2 GO** (shipped);
+**Phase 3 IMPLEMENTATION CANDIDATE — TELMU / SAFE REVIEW REQUIRED**
+(2026-08-11; merge not authorised). Governor rulings **GD-1** through **GD-11** are recorded
+(2026-08-06); Phase 3 rulings **GD-A** through **GD-J** are recorded
+(2026-08-11) in
+[`../reviews/RFC-016-phase-3-architecture-freeze-record.md`](../reviews/RFC-016-phase-3-architecture-freeze-record.md).
+The formal Phase 1/2 freeze record
 is [`../reviews/RFC-016-architecture-freeze-record.md`](../reviews/RFC-016-architecture-freeze-record.md).
 **Burn:** Architecture Burn (RFC-100 §3), Effort **HIGH**; governance
 amendments applied by the Phase 1A burn, Effort **STANDARD**.
@@ -22,6 +27,53 @@ this RFC supplies *intent*. The two meet only inside a domain assessor.
 **Self-review:** [`../reviews/RFC-016-architecture-self-review.md`](../reviews/RFC-016-architecture-self-review.md)
 **Architecture report:** [`../rfc-016-architecture-report.md`](../rfc-016-architecture-report.md)
 **Freeze record:** [`../reviews/RFC-016-architecture-freeze-record.md`](../reviews/RFC-016-architecture-freeze-record.md)
+**Phase 3 freeze record:** [`../reviews/RFC-016-phase-3-architecture-freeze-record.md`](../reviews/RFC-016-phase-3-architecture-freeze-record.md)
+
+---
+
+> ### Phase 3 authority — **Mission Target Management**, frozen 2026-08-11
+>
+> The Governor has **frozen the architecture for Phase 3** and recorded rulings
+> **GD-A** through **GD-J** plus ten signature findings in
+> [`../reviews/RFC-016-phase-3-architecture-freeze-record.md`](../reviews/RFC-016-phase-3-architecture-freeze-record.md).
+> **Implementation authority was granted by the subsequent Governor mission
+> issued from frozen authority `b7957d6`.** BOOSTER has produced a bounded
+> candidate for TELMU and SAFE review. Merge remains unauthorised.
+>
+> **Nothing in RFC-016's frozen Phase 1/2 contracts changes.** No canonical
+> event, vocabulary, invariant, acceptance criterion or earlier ruling is
+> affected — Phase 3 is a consumer/operator surface over the contract this
+> document already froze (**GD-I**: no new canonical event; **I-14**:
+> `core/mission_targets.py` remains byte-identical).
+>
+> Four points bear on the text below and are recorded here rather than by
+> editing it:
+>
+> - **GD-A** — the work commissioned under the working term *RFC-018 — Mission
+>   Target Capture* **is this RFC's Phase 3**. No RFC-018 is created; RFC-017
+>   ruling GD-10 is respected. The word *Capture* is **retired** for this
+>   subject, because it denotes participation in the RFC-011/013/015
+>   acquisition architecture, which **GD-C** expressly excludes.
+> - **GD-C** — the authorised surface is `/missions`. `/operations/capture` is
+>   not extended, and RFC-013 / RFC-015 contracts are not distorted to represent
+>   Missions as telemetry streams, assets or Finance manual-capture subjects.
+> - **GD-D** — §7.1's derived `dormant` state is **specified here but
+>   unimplemented**. Phase 3 mitigates it at the operator surface only and
+>   records `DEBT-016-P3-01`. A target declared against a Mission later closed
+>   remains `in_force` for any future consumer; that debt **must be resolved
+>   before any later phase or RFC gives `in_force` Mission Target state its
+>   first production assessment, decisioning, recommendation or Flight Deck
+>   consumer.**
+> - **GD-E** — **GD-11 stands.** Phase 3 instantiates no Mission and fabricates
+>   no Mission state. With no Missions in canonical state the surface correctly
+>   contains nothing manageable, and watch item **W4** keeps its owner-shaped
+>   hole.
+>
+> §11's phase table, §12's scope exclusions and §16 are retained **unchanged**
+> as written at the 2026-08-06 freeze (RFC-100 §9.2). Where §11 Phase 3 reads
+> "Declaration surface", the frozen Phase 3 boundary additionally requires
+> **supersession and withdrawal to be reachable by the operator** (**GD-H**) —
+> the surface-layer application of §11.1's binding sequencing rule.
 
 ---
 
@@ -856,13 +908,14 @@ Answered in full per FR-006 and
   contains no domain vocabulary.
 - **Deferred work.** Member-level authorisation (T6 residual, unchanged);
   per-domain enforcement that a provider consults its target (watch item **W1**,
-  §4.1); the declaration surface itself (Phase 3, unimplemented and recorded as
-  such). Nothing here is described as implemented.
+  §4.1). The Phase 3 declaration surface is now an implementation candidate;
+  no Phase 4 consumer or assessor adoption is implemented.
 
-`security-assurance.md` and `threat-model.md` require **no change from this
-burn**: no documented control is modified and no trust boundary moves. Phase 3,
-which adds the declaration route, must update the assurance register in the same
-change.
+The architecture burn required no assurance-register change because it moved no
+runtime boundary. The Phase 3 candidate adds an authenticated write surface and
+updates `security-assurance.md` in the same change. The threat-model boundary is
+unchanged: it uses the existing authenticated operator, append-only event log
+and single-household authority residual.
 
 ---
 
@@ -907,13 +960,13 @@ change.
 The sequence below is Governor-approved. Each phase re-enters the lifecycle as
 its own burn (RFC-100 §4.1); the freeze authorises Phase 1 and Phase 2 only.
 
-| Phase | Content | Rationale |
-|---|---|---|
-| **1** | Core contract: `MissionTarget`, `TargetQuantity`, the two vocabularies, the two events, the projection, as-of resolution, **supersession and withdrawal**, conflict detection. Mock domain only | the foundation; nothing real is declared |
-| **2** | Domain descriptor seam: Finance `MetricDescriptor`s for the four mission metrics; admissibility. No assessor changes | proves the seam without touching a frozen policy |
-| **3** | Declaration surface: authenticated, household-scoped, closed-set inputs, CSRF with **its own purpose string**. Targets only — **it declares no Mission** (GD-11, §0.6), so its mission list is exactly the Missions that already exist | first real targets exist only here |
-| **4** | Per-mission adoption, one mission at a time, **each behind its own governed amendment** to that mission's RFC. Financial Independence first, then a mandatory Governor gate | changes frozen assessor validation; may not be done wholesale |
-| **5** | Deprecate `Mission.target_*` and the legacy scalar path | requires RFC-006's four stated removal conditions to be met |
+| Phase | Status | Content | Rationale |
+|---|---|---|---|
+| **1** | Shipped | Core contract: `MissionTarget`, `TargetQuantity`, the two vocabularies, the two events, the projection, as-of resolution, **supersession and withdrawal**, conflict detection. Mock domain only | the foundation; nothing real is declared |
+| **2** | Shipped | Domain descriptor seam: Finance `MetricDescriptor`s for the four mission metrics; admissibility. No assessor changes | proves the seam without touching a frozen policy |
+| **3** | Candidate — TELMU / SAFE pending | Declaration surface: authenticated, household-scoped, closed-set inputs, CSRF with **its own purpose string**. Targets only — **it declares no Mission** (GD-11, §0.6), so its mission list is exactly the Missions that already exist | first real targets exist only here |
+| **4** | Unauthorised | Per-mission adoption, one mission at a time, **each behind its own governed amendment** to that mission's RFC. Financial Independence first, then a mandatory Governor gate | changes frozen assessor validation; may not be done wholesale |
+| **5** | Unauthorised | Deprecate `Mission.target_*` and the legacy scalar path | requires RFC-006's four stated removal conditions to be met |
 
 ### 11.1 Binding sequencing rule — supersession precedes declaration
 
@@ -1049,6 +1102,6 @@ Stated plainly so the document is not read as more than it is:
   `desired_annual_spending` once targets exist (GD-8).
 - It does not add a multi-member authorisation model; T6 remains a residual
   risk.
-- It does not authorise Phase 3 or later. The Governor freeze authorises only
-  the Phase 1 Core contract and Phase 2 domain descriptor seam; later phases
-  retain their stated governed gates.
+- The architecture freeze itself did not authorise Phase 3. A subsequent
+  Governor mission authorised the bounded Phase 3 candidate now awaiting TELMU
+  and SAFE. Phases 4 and 5 retain their stated governed gates.

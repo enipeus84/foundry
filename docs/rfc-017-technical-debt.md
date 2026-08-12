@@ -8,6 +8,30 @@ OBS-017-A — see the dated blocks below and
 
 ## Accepted Technical Debt
 
+**DEBT-017-CI-01 — strict floating-point assertion instability.**
+
+The RFC-017 Pension Phase 2 provenance test
+`test_production_pension_descriptor_reconciles_representation_noise_and_retains_residual`
+intermittently compares `0.6000000000000001` with `0.6` using strict equality.
+The identical failure was independently reproduced on the
+canonical baseline `b35328e3b8e5df5106cfa7abb68e89a0177f4726` and on the
+initial CI run for RFC-016 Phase 3 candidate
+`b81517e74adcd3e116a52ef0b7f6c3fc235f8350`; a fresh retry of that immutable
+candidate passed, as did Python 3.10, 3.12 and 3.13.
+
+**Owner:** RFC-017 / Core Architecture and Test Engineering. **Future
+disposition:** investigate and remediate in a separately authorised RFC-017
+testing or provenance burn; do not alter RFC-016 Phase 3, its candidate, or
+`DEBT-016-P3-01`, `DEBT-016-P3-02` or RFC-016 W7.
+
+> **Governor disposition — GD-P3-M1, amended by GD-P3-M1A through GD-P3-M1E,
+> 2026-08-12.** Accepted for RFC-016 Phase 3 by exact failure signature and
+> provenance, not Python version. For PR #47 only, an otherwise clean matrix
+> may contain this exact inherited red; any other red check remains blocking.
+> This is neither an indefinite acceptance nor authority to change production
+> or tests in RFC-016. Formal ruling record:
+> [`reviews/RFC-016-phase-3-governor-pre-merge-ruling.md`](reviews/RFC-016-phase-3-governor-pre-merge-ruling.md).
+
 **SAFE-017-04 — recursive width amplification. Recorded against watch item W4.**
 
 W4 records that "recursive expansion multiplies an already-uncached

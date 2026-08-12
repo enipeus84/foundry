@@ -13,5 +13,16 @@ class FinanceTargetMetricResolver:
         "finance.mortgage_balance": MetricDescriptor("finance.mortgage_balance", "currency", "GBP", "lower_is_better"),
     }
 
+    _HORIZON_KINDS = {
+        "finance.liquidity_runway": "none",
+        "finance.accessible_assets": "by_date",
+        "finance.pension_wealth": "derived",
+        "finance.mortgage_balance": "by_date",
+    }
+
     def describe(self, metric_id: str) -> MetricDescriptor | None:
         return self._DESCRIPTORS.get(metric_id)
+
+    def horizon_kind(self, metric_id: str) -> str | None:
+        """Return the RFC-016 horizon semantics for a locked Finance metric."""
+        return self._HORIZON_KINDS.get(metric_id)

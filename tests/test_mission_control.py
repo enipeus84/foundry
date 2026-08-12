@@ -102,6 +102,16 @@ def test_mission_control_imports_only_core_interfaces():
             assert module.startswith(allowed_foundry), module
 
 
+def test_missions_index_is_owned_by_the_dedicated_management_module():
+    import inspect
+
+    import foundry.mission_control as mc
+    import foundry.mission_targets_web as mtw
+
+    assert '@router.get("/missions"' not in inspect.getsource(mc)
+    assert '@router.get("/missions"' in inspect.getsource(mtw)
+
+
 def test_composition_root_not_mission_control_wires_finance():
     """The one sanctioned meeting point: web.py registers the Finance
     provider; the console handed to Mission Control already contains a

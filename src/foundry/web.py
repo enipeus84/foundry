@@ -63,6 +63,7 @@ from foundry.core.entities import EntityProjection
 from foundry.core.evidence import EvidenceIndex
 from foundry.core.metrics import MetricRegistry
 from foundry.core.mission_assessment import MissionAssessmentRegistry
+from foundry.core.mission_targets import MissionTargetProjection
 from foundry.core.subject_authority import CanonicalSubjectAuthority
 from foundry.core.value_provenance import ExplanationDescriptor, ProvenanceResolver
 from foundry.demo_data import ensure_demo_data
@@ -71,6 +72,7 @@ from foundry.finance.entities import FinanceEntityProjection
 from foundry.finance.runtime_bootstrap import bootstrap_finance_capture_targets
 from foundry.finance.metrics import FinanceMetricProvider
 from foundry.finance.mission_assessment import FinancialIndependenceAssessor
+from foundry.finance.mission_targets import FinanceTargetMetricResolver
 from foundry.finance.mortgage_assessment import MortgageFreedomAssessor
 from foundry.finance.mortgage_evidence import MortgageEvidenceProjection
 from foundry.finance.missions import register_finance_mission_definitions
@@ -91,6 +93,7 @@ from foundry.finance.resilience_metrics import (
     FinanceResilienceMetricProvider,
 )
 from foundry.mission_control import Console, router as mission_control_router
+from foundry.mission_targets_web import router as mission_targets_router
 from foundry.operations_web import router as operations_router
 
 logger = logging.getLogger("foundry.web")
@@ -277,14 +280,17 @@ def _build_console() -> Console:
     assessments.register(MortgageFreedomAssessor(
         finance_entities, core_entities, registry,
         MortgageEvidenceProjection(log)))
+    mission_targets = MissionTargetProjection(
+        log, core_entities, assessments, FinanceTargetMetricResolver())
     return Console(log=log, registry=registry, entities=core_entities,
                    assessments=assessments,
                    evidence=EvidenceIndex(log), canon=Canon(log),
-                   provenance=provenance)
+                   provenance=provenance, mission_targets=mission_targets)
 
 
 app.state.console_factory = _build_console
 app.include_router(mission_control_router)
+app.include_router(mission_targets_router)
 app.include_router(acquisition_router)
 app.include_router(operations_router)
 

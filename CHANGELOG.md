@@ -1,5 +1,36 @@
 # Changelog
 
+## [Unreleased] — RFC-016 Phase 3 Mission Target Management
+
+Implementation candidate only; TELMU and SAFE review are required and merge is
+not authorised.
+
+### Added
+
+- An authenticated `/missions` operator surface for first Mission Target
+  declaration, replacement by immutable supersession, and withdrawal through
+  the existing RFC-016 canonical lifecycle.
+- Informational review followed by approval-time canonical-state reload,
+  independent predecessor derivation and stale-review refusal.
+- Finance-owned deterministic horizon semantics for the four locked Mission
+  metrics, without changing `MetricDescriptor` or the protected Core target
+  projection.
+- Purpose-separated CSRF for review, declaration and withdrawal; exact form
+  field sets; server-derived household, metric, unit, dimension, direction,
+  horizon, effective time and supersession lineage.
+- A TELMU matrix covering lifecycle, staleness, authority, hostile logs,
+  malformed input, replay and honest zero-write empty states.
+
+### Boundaries
+
+- No Mission, household, target, telemetry stream or asset is fabricated.
+- No assessment, progress calculation, provenance consumer, Flight Deck
+  change, acquisition path, tolerance input or backdated effective time is
+  included.
+- The canonical event set remains exactly `core.mission_target.declared` and
+  `core.mission_target.closed`; `src/foundry/core/mission_targets.py` remains
+  byte-identical to frozen authority `b7957d6`.
+
 ## [v1.8.0-telemetry-operations] — 2026-08-02
 
 Release Closeout for RFC-010, RFC-011, RFC-100 and RFC-012, executed under
