@@ -29,9 +29,14 @@ Resolved entry here naming the resolving commit.
 **Implementation candidate — 2026-08-12.** The frozen replay contract is
 implemented on branch `rfc-016-dormancy-remediation-candidate`; see
 [`rfc-016-dormancy-remediation-implementation-report.md`](rfc-016-dormancy-remediation-implementation-report.md).
-The candidate's independent review evidence is published separately. **Status
-remains OPEN** until successful integration and every governed closure condition
-is met.
+Independent TELMU and SAFE evidence binds to candidate
+`b6b224d99d2135b3c3846dbbf5b4cda225b682e0`; see
+[`reviews/RFC-016-dormancy-remediation-telmu-review.md`](reviews/RFC-016-dormancy-remediation-telmu-review.md),
+[`reviews/RFC-016-dormancy-remediation-safe-review.md`](reviews/RFC-016-dormancy-remediation-safe-review.md)
+and
+[`reviews/RFC-016-dormancy-remediation-safe-confirmation.md`](reviews/RFC-016-dormancy-remediation-safe-confirmation.md).
+**Status remains OPEN** until successful integration and every governed closure
+condition is met.
 
 **Freeze Amendment 1 — 2026-08-12.** The acceptance boundary is narrowed: this
 remediation guarantees dormancy semantics over **supported canonical Mission
