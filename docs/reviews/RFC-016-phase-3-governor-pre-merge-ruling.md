@@ -45,3 +45,25 @@ remains bound to `b81517e`, the PR remains mergeable, no blocking review thread
 exists, and the RFC index remains accurate. No Phase 4 adoption, Mission
 instantiation, candidate mutation, production change, test change or merge is
 authorised by this ruling.
+
+## Amendment — GD-P3-M1A through GD-P3-M1E, 2026-08-12
+
+GD-P3-M1 is amended: `DEBT-017-CI-01` is classified by its exact inherited
+failure signature and provenance, not by the Python runtime on which it
+manifests. The covered failure is only the RFC-017 strict floating-point
+attribution assertion reporting `0.6000000000000001` where `0.6` is expected.
+
+The Python 3.10 failure on PR #47 is accepted as that same inherited defect.
+For PR #47 only, a required job may be treated as a governance-accepted
+inherited red only when it contains this exact `DEBT-017-CI-01` signature, no
+additional test failure, unchanged RFC-017 test and relevant production code,
+and no production/test mutation after TELMU/SAFE review. Any other assertion,
+numeric discrepancy, or red check is outside this waiver and returns to the
+Governor.
+
+The former universal fresh-green requirement is superseded only to that narrow
+extent: a PR #47 matrix comprising green checks and one or more exact
+`DEBT-017-CI-01` manifestations may proceed to final Governor Merge Review.
+The debt remains separately owned by RFC-017 / Core Architecture and Test
+Engineering, must be remediated through an independently governed change, and
+must not be repaired opportunistically in RFC-016 Phase 3.
