@@ -26,6 +26,12 @@ implementation, test-implementation or BOOSTER authority. This debt is **closed
 only** on the evidence in §10 of the freeze record, which requires a dated
 Resolved entry here naming the resolving commit.
 
+**Implementation candidate — 2026-08-12.** The frozen replay contract is
+implemented on branch `rfc-016-dormancy-remediation-candidate`; see
+[`rfc-016-dormancy-remediation-implementation-report.md`](rfc-016-dormancy-remediation-implementation-report.md).
+The candidate awaits independent TELMU and SAFE review. **Status remains OPEN**
+until the review and governed completion conditions are met.
+
 **DEBT-016-P3-02 — horizon derivation is surface-side, not canonical.**
 Finance now owns the deterministic mapping between the four locked Mission
 metrics and `none` / `by_date` / `derived`. It constrains the Phase 3 writer;

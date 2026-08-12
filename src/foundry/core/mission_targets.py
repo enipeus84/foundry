@@ -106,11 +106,24 @@ class MissionTargetProjection:
         self.targets: dict[str, MissionTarget] = {}
         self.conflicts: dict[str, tuple[str, ...]] = {}
         self._invalid_target_ids: set[str] = set()
+        self._mission_closed_at: dict[str, float] = {}
         self.rebuild()
 
     def rebuild(self) -> None:
-        self.targets, self.conflicts, self._invalid_target_ids = {}, {}, set()
+        self.targets, self.conflicts, self._invalid_target_ids, self._mission_closed_at = {}, {}, set(), {}
+        declared_mission_ids: set[str] = set()
         for event in self.log.events():
+            kind = event["kind"]
+            payload = event["payload"]
+            if kind == "core.mission.declared":
+                mission_id = payload.get("entity_id")
+                if isinstance(mission_id, str) and mission_id:
+                    declared_mission_ids.add(mission_id)
+            elif kind == "core.mission.closed":
+                mission_id = payload.get("entity_id")
+                if (isinstance(mission_id, str) and mission_id in declared_mission_ids
+                        and mission_id not in self._mission_closed_at):
+                    self._mission_closed_at[mission_id] = event["ts"]
             if event["kind"].startswith(f"{PREFIX}.{TYPE}."):
                 self._apply(event)
         self._detect_conflicts()
@@ -334,6 +347,9 @@ class MissionTargetProjection:
 
     def in_force(self, mission_id: str, as_of: float) -> MissionTarget | None:
         _finite(as_of, "target as_of")
+        closed_at = self._mission_closed_at.get(mission_id)
+        if closed_at is not None and as_of >= closed_at:
+            return None
         if mission_id in self.conflicts:
             return None
         candidates = [target for target in self.targets.values()
