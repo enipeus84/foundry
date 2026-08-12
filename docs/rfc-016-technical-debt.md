@@ -13,6 +13,41 @@ RFC gives `in_force` Mission Target state its first production assessment,
 decisioning, recommendation or Flight Deck consumer. The dependency travels
 with that first consumer; it is not tied solely to a phase number.
 
+**Status: OPEN — remediation architecture FROZEN 2026-08-12.** Governor rulings
+**GD-1** through **GD-6** and the frozen implementation boundary are recorded in
+[`reviews/RFC-016-dormancy-remediation-architecture-freeze-record.md`](reviews/RFC-016-dormancy-remediation-architecture-freeze-record.md).
+The frozen contract derives each Mission's **earliest valid applicable**
+`core.mission.closed` timestamp inside `MissionTargetProjection` and excludes a
+target from `in_force` at or after it, while preserving every answer for an
+`as_of` strictly before closure. **No new canonical event and no migration are
+authorised**, and the intended production blast radius is
+`src/foundry/core/mission_targets.py` alone. That freeze grants no
+implementation, test-implementation or BOOSTER authority. This debt is **closed
+only** on the evidence in §10 of the freeze record, which requires a dated
+Resolved entry here naming the resolving commit.
+
+**Implementation candidate — 2026-08-12.** The frozen replay contract is
+implemented on branch `rfc-016-dormancy-remediation-candidate`; see
+[`rfc-016-dormancy-remediation-implementation-report.md`](rfc-016-dormancy-remediation-implementation-report.md).
+Independent TELMU and SAFE evidence binds to candidate
+`b6b224d99d2135b3c3846dbbf5b4cda225b682e0`; see
+[`reviews/RFC-016-dormancy-remediation-telmu-review.md`](reviews/RFC-016-dormancy-remediation-telmu-review.md),
+[`reviews/RFC-016-dormancy-remediation-safe-review.md`](reviews/RFC-016-dormancy-remediation-safe-review.md)
+and
+[`reviews/RFC-016-dormancy-remediation-safe-confirmation.md`](reviews/RFC-016-dormancy-remediation-safe-confirmation.md).
+**Status remains OPEN** until successful integration and every governed closure
+condition is met.
+
+**Freeze Amendment 1 — 2026-08-12.** The acceptance boundary is narrowed: this
+remediation guarantees dormancy semantics over **supported canonical Mission
+lifecycle history**, and a raw `core.mission.closed` whose payload entirely
+omits `entity_id` is outside it. That is a narrowing of an over-broad acceptance
+probe, not a weakening of the dormancy invariant; the §4.2 applicability
+contract is unchanged. See §16 of the freeze record. The underlying platform-wide
+behaviour is recorded separately as **`DEBT-CORE-REPLAY-01`**
+([`core-technical-debt.md`](core-technical-debt.md)) and is **non-blocking** for
+this debt.
+
 **DEBT-016-P3-02 — horizon derivation is surface-side, not canonical.**
 Finance now owns the deterministic mapping between the four locked Mission
 metrics and `none` / `by_date` / `derived`. It constrains the Phase 3 writer;
