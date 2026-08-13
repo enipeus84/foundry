@@ -61,10 +61,10 @@ docs/rfc-002-implementation-report.md:
   (`vocab.VALUE_OWNERSHIP_RELATIONS`) is a product judgement, not a 001
   requirement; `owes` alone counts as a liability, `guarantees` (liable
   only on default) deliberately does not.
-- Account "value" = its transaction ledger balance plus the market
-  value of Positions held within it; Asset/Obligation "value" = their
-  latest applicable Valuation, falling back to Obligation's own
-  declared `amount`.
+- Account/Asset/Obligation value uses its latest applicable Valuation.
+  An Account without one falls back to its transaction ledger balance
+  plus the market value of Positions held within it; an Obligation then
+  falls back to its own declared `amount`.
 - Transaction flows are attributed to an individual by their ownership
   `share` of the account (001 §9's individual-attribution rule applied
   to flows), so per-member cash flows sum to the household's total.
@@ -482,14 +482,23 @@ class FinanceMetricProvider:
         raise TypeError(f"no value rule for {type(entity)!r}")
 
     def _account_value(self, account: Account, as_of: float):
-        """Ledger balance (sum of transactions dated at or before
-        `as_of`) plus the market value of Positions held within it
-        (001 §17: a Position is "an investment holding *within* an
-        Account"). An empty account is a real £0 balance, anchored to
-        the account's own declaration event — distinct from an asset
-        with no valuation, whose worth is simply unknown. Position
-        currency is assumed to equal its Account's for V1 (documented
-        limitation, docs/rfc-002-implementation-report.md)."""
+        """Latest applicable explicit valuation, otherwise ledger plus positions.
+
+        A dated Account Valuation is a point-in-time assertion of the whole
+        account's worth, so it replaces rather than supplements its component
+        ledger/Position observations.  Without one, Accounts retain the V1
+        derived-value rule: ledger balance plus held Positions.
+        """
+        applicable = [
+            valuation for valuation in self.finance.valuations_of(account.id)
+            if valuation.as_of <= as_of
+        ]
+        if applicable:
+            latest = max(
+                enumerate(applicable),
+                key=lambda item: (item[1].as_of, item[0]),
+            )[1]
+            return latest.amount, latest.currency, list(latest.provenance), []
         refs = list(account.provenance)
         limitations = []
         ledger = 0.0

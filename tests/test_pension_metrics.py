@@ -24,6 +24,20 @@ from foundry.finance.pension_metrics import FinancePensionMetricProvider
 AS_OF = 1_800_000_000.0
 
 
+def _net_worth(log, scope, as_of=AS_OF):
+    return FinanceMetricProvider(
+        FinanceEntityProjection(log), EntityProjection(log)).calculate(
+            MetricRequest("finance.net_worth", scope, as_of))
+
+
+def _pension_wealth(log, scope, assumption_set_id, as_of=AS_OF):
+    return FinancePensionMetricProvider(
+        FinanceEntityProjection(log), EntityProjection(log),
+        PensionEvidenceProjection(log)).calculate(MetricRequest(
+            "finance.pension_wealth", scope, as_of,
+            assumption_set_id=assumption_set_id))
+
+
 def _record(log, subject_id, field, value, *, at=AS_OF, unit="GBP"):
     return record_pension_evidence(
         log,
@@ -160,6 +174,65 @@ def test_p1_p2_p7_keep_pots_rates_and_payments_disjoint(tmp_path):
     assert tax_year.evidence_references
     assert set(annual.evidence_references).isdisjoint(
         tax_year.evidence_references)
+
+
+def test_pension_account_valuation_is_the_same_net_worth_basis(tmp_path):
+    fixture = _fixture(tmp_path)
+    pension = fixture["accounts"][0]
+    member = fixture["members"][0]
+    fin.declare_valuation(fixture["log"], pension.id, 150_000.0, "GBP", AS_OF - 1)
+    scope = Subject("party", member.id)
+
+    wealth = _pension_wealth(
+        fixture["log"], scope, fixture["assumptions"].id)
+    net_worth = _net_worth(fixture["log"], scope)
+
+    assert wealth.value == net_worth.value == 150_000.0
+
+
+def test_later_pension_valuation_replaces_ledger_value_for_net_worth(tmp_path):
+    fixture = _fixture(tmp_path)
+    pension = fixture["accounts"][0]
+    member = fixture["members"][0]
+    fin.declare_transaction(
+        fixture["log"], pension.id, 10_000.0, "GBP", "pension_contribution", AS_OF - 5)
+    fin.declare_valuation(fixture["log"], pension.id, 150_000.0, "GBP", AS_OF - 1)
+    scope = Subject("party", member.id)
+
+    assert _pension_wealth(
+        fixture["log"], scope, fixture["assumptions"].id).value == 150_000.0
+    assert _net_worth(fixture["log"], scope).value == 150_000.0
+
+
+def test_pension_and_net_worth_share_valuation_as_of_and_ownership_rules(tmp_path):
+    fixture = _fixture(tmp_path)
+    pension = fixture["accounts"][0]
+    member = fixture["members"][0]
+    fin.declare_valuation(fixture["log"], pension.id, 150_000.0, "GBP", AS_OF - 1)
+
+    for scope, expected in ((Subject("party", member.id), 40_000.0),
+                            (Subject("party", fixture["household"].id), 62_000.0)):
+        as_of = AS_OF - 10
+        assert _pension_wealth(
+            fixture["log"], scope, fixture["assumptions"].id, as_of).value == expected
+        assert _net_worth(fixture["log"], scope, as_of).value == expected
+
+    assert _pension_wealth(
+        fixture["log"], Subject("party", member.id), fixture["assumptions"].id).value == 150_000.0
+    assert _net_worth(fixture["log"], Subject("party", member.id)).value == 150_000.0
+
+
+def test_pension_account_valuation_uses_existing_net_worth_fx_conversion(tmp_path):
+    fixture = _fixture(tmp_path)
+    pension = fixture["accounts"][0]
+    member = fixture["members"][0]
+    fin.declare_valuation(fixture["log"], pension.id, 100_000.0, "EUR", AS_OF - 1)
+    fin.declare_exchange_rate(fixture["log"], "EUR/GBP", .9, AS_OF - 1)
+    scope = Subject("party", member.id)
+
+    assert _pension_wealth(
+        fixture["log"], scope, fixture["assumptions"].id).value == 90_000.0
+    assert _net_worth(fixture["log"], scope).value == 90_000.0
 
 
 def test_w_star_is_inspectable_and_zero_when_secured_income_covers_need(
