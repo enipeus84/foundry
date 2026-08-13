@@ -32,6 +32,7 @@ from . import vocab
 from .aggregation import FinanceAggregationService
 from .entities import AssumptionSet, FinanceEntityProjection
 from .pension_evidence import PensionEvidenceProjection, RATE_FIELDS
+from .pension_projection import PensionProviderProjectionProjection
 
 
 POLICY_ID = "finance.pension_independence.v1"
@@ -214,11 +215,13 @@ class PensionIndependenceAssessor:
         core: EntityProjection,
         evidence: PensionEvidenceProjection,
         policy: PensionIndependencePolicy | None = None,
+        provider_projections: PensionProviderProjectionProjection | None = None,
     ):
         self.metrics = metrics
         self.finance = finance
         self.core = core
         self.evidence = evidence
+        self.provider_projections = provider_projections
         self.basis = FinanceAggregationService(finance, core)
         self.policy = policy or PensionIndependencePolicy()
 
@@ -442,6 +445,7 @@ class PensionIndependenceAssessor:
             assumption_set,
             request,
             factor_items,
+            members,
         )
         recommendations = self._recommendations(
             request,
@@ -996,6 +1000,7 @@ class PensionIndependenceAssessor:
         assumption_set,
         request,
         factor_items,
+        members,
     ):
         derived = lambda metric_id, value, unit, label, format_kind, qualifier, \
             region="drilldown", group="": self._derived_item(
@@ -1023,6 +1028,7 @@ class PensionIndependenceAssessor:
                 "OBSERVED POT TODAY",
                 display_region="essential",
             ),
+            *self._provider_projection_items(members, request, assumption_set),
             derived(
                 "finance.projected_pension_expected",
                 terminal.base,
@@ -1180,6 +1186,33 @@ class PensionIndependenceAssessor:
             else item
             for item in items
         )
+
+    def _provider_projection_items(self, members, request, assumption_set):
+        """Render provider illustrations without making them assessment inputs."""
+        if self.provider_projections is None:
+            return ()
+        items = []
+        for account_id in sorted(self._pension_account_ids({member.id for member in members})):
+            projection = self.provider_projections.latest(account_id, request.as_of)
+            if projection is None:
+                continue
+            target = (f"RETIREMENT AGE {projection.retirement_age:g}"
+                      if projection.retirement_age is not None else "STATED RETIREMENT DATE")
+            observed = datetime.fromtimestamp(projection.observed_at, timezone.utc).date().isoformat()
+            context = f"{projection.provider.upper()} · OBSERVED {observed} · {target}"
+            items.extend((
+                self._derived_item(
+                    "finance.provider_projected_fund_value_medium", projection.fund_medium,
+                    "GBP", request, "PROJECTED FUND VALUE", "currency",
+                    f"{context} · MEDIUM {projection.growth_medium_percent:g}% · LOW £{projection.fund_low:,.0f} / HIGH £{projection.fund_high:,.0f}",
+                    assumption_set, "essential"),
+                self._derived_item(
+                    "finance.provider_estimated_yearly_income_medium", projection.income_medium,
+                    "GBP", request, "ESTIMATED YEARLY INCOME", "currency",
+                    f"{context} · MEDIUM · LOW £{projection.income_low:,.0f} / HIGH £{projection.income_high:,.0f} · {projection.income_basis}",
+                    assumption_set, "essential"),
+            ))
+        return tuple(items)
 
     def _contribution_items(self, request, assumption_set, p7):
         person_ids = {

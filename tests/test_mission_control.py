@@ -684,6 +684,32 @@ def test_pension_independence_route_renders_approved_policy(tmp_path):
     assert 'class="mission-return" href="/#missions"' in response.text
 
 
+def test_pension_independence_labels_provider_projection_as_observation(tmp_path):
+    from foundry.demo_data import build
+    from foundry.finance.pension_projection import record_pension_provider_projection
+
+    log = EventLog(tmp_path / "events.jsonl")
+    household = build(log, as_of=MISSION_CONTROL_FIXTURE_AS_OF)
+    record_pension_provider_projection(
+        log, household.alex_pension_id, provider="Aviva",
+        observed_at=MISSION_CONTROL_FIXTURE_AS_OF, retirement_age=67,
+        fund_low=380_000, fund_medium=604_000, fund_high=1_100_000,
+        income_low=22_500, income_medium=43_800, income_high=96_600,
+        growth_low_percent=-.8, growth_medium_percent=2.2, growth_high_percent=5.1,
+        income_basis="Provider-stated income basis", source="Aviva statement",
+        lineage="household supplied statement")
+
+    response = client().get("/missions/pension-independence")
+
+    assert response.status_code == 200
+    assert "PROJECTED FUND VALUE" in response.text
+    assert "ESTIMATED YEARLY INCOME" in response.text
+    assert "£604,000" in response.text
+    assert "£43,800" in response.text
+    assert "AVIVA · OBSERVED 2026-07-27 · RETIREMENT AGE 67" in response.text
+    assert "LOW £380,000 / HIGH £1,100,000" in response.text
+
+
 def _render_shape_neutral_mission(
     monkeypatch,
     tmp_path,
