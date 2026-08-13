@@ -486,7 +486,7 @@ def test_equity_evidence_does_not_change_net_worth_or_its_valuation_basis(
     assert _telemetry_by_id(mortgage_result)[
         "finance.property_valuation"].result.value == 436_638.42
     assert any(
-        "Net Worth continues to use its separate Finance asset valuation"
+        "Net Worth retains its existing latest-applicable Finance valuation policy"
         in note for note in mortgage_result.limitations)
 
 
@@ -1085,6 +1085,77 @@ def test_scope_provenance_uses_selected_mortgage_not_later_invalid_one(
     assert set(member.history) <= set(result.input_references)
     assert set(assessor.core.parties[outsider.id].history).isdisjoint(
         result.input_references)
+
+
+def _canonical_property_valuation(log, property_id, value, effective_at, *,
+                                  basis="lender_valuation", source="NatWest", **changes):
+    payload = {
+        "entity_id": f"canonical-{value}-{effective_at}", "subject_id": property_id,
+        "amount": value, "currency": "GBP", "as_of": effective_at,
+        "valuation_basis": basis, "source": source,
+        "provenance": {"evidence_id": "evidence-1", "proposal_id": "proposal-1",
+                       "confirmed_by": "operator"},
+    }
+    payload.update(changes)
+    return log.append("finance.valuation.declared", payload)
+
+
+def test_canonical_secured_property_valuation_is_consumed_without_legacy_value(tmp_path):
+    log, _, mortgage, _, _, request = _fixture(
+        tmp_path / "events.jsonl", omit=("property_valuation",))
+    home_id = next(link.target for link in FinanceEntityProjection(log).obligations[mortgage.id].ownership
+                   if link.relation == "secures")
+    canonical = _canonical_property_valuation(log, home_id, 530_000.0, NOW - DAY)
+    assessor = MortgageFreedomAssessor(
+        FinanceEntityProjection(log), EntityProjection(log), _metric_registry(18.0),
+        MortgageEvidenceProjection(log))
+
+    result = assessor.assess(request)
+
+    assert _telemetry_by_id(result)["finance.property_valuation"].result.value == 530_000.0
+    assert _telemetry_by_id(result)["finance.mortgage_ltv"].result.evidence_references == (canonical["id"],)
+    assert "Lender valuation" in _telemetry_by_id(result)["finance.property_valuation"].qualifier
+
+
+def test_canonical_and_legacy_valuations_use_effective_date_then_log_order(tmp_path):
+    log, _, mortgage, _, _, request = _fixture(tmp_path / "events.jsonl")
+    home_id = next(link.target for link in FinanceEntityProjection(log).obligations[mortgage.id].ownership
+                   if link.relation == "secures")
+    later = _canonical_property_valuation(log, home_id, 500_000.0, NOW - DAY)
+    assessor = MortgageFreedomAssessor(FinanceEntityProjection(log), EntityProjection(log),
+                                       _metric_registry(18.0), MortgageEvidenceProjection(log))
+    assert _telemetry_by_id(assessor.assess(request))["finance.property_valuation"].result.value == 500_000.0
+
+    same_date = _canonical_property_valuation(log, home_id, 510_000.0, NOW - DAY)
+    assessor = MortgageFreedomAssessor(FinanceEntityProjection(log), EntityProjection(log),
+                                       _metric_registry(18.0), MortgageEvidenceProjection(log))
+    result = assessor.assess(request)
+    assert _telemetry_by_id(result)["finance.property_valuation"].result.value == 510_000.0
+    assert same_date["id"] in result.evidence_references
+    assert later["id"] not in _telemetry_by_id(result)["finance.property_valuation"].result.evidence_references
+
+
+@pytest.mark.parametrize("change", [
+    {"currency": "USD"}, {"amount": 0.0}, {"valuation_basis": "invented"},
+    {"source": ""}, {"provenance": {}},
+])
+def test_ineligible_canonical_valuation_does_not_replace_legacy_value(tmp_path, change):
+    log, _, mortgage, _, _, request = _fixture(tmp_path / "events.jsonl")
+    home_id = next(link.target for link in FinanceEntityProjection(log).obligations[mortgage.id].ownership
+                   if link.relation == "secures")
+    _canonical_property_valuation(log, home_id, 530_000.0, NOW - DAY, **change)
+    assessor = MortgageFreedomAssessor(FinanceEntityProjection(log), EntityProjection(log),
+                                       _metric_registry(18.0), MortgageEvidenceProjection(log))
+    assert _telemetry_by_id(assessor.assess(request))["finance.property_valuation"].result.value == 436_638.42
+
+
+def test_canonical_valuation_for_an_unsecured_property_is_not_eligible(tmp_path):
+    log, _, _, _, _, request = _fixture(tmp_path / "events.jsonl")
+    other = fin.declare_asset(log, "property", "GBP")
+    _canonical_property_valuation(log, other.id, 530_000.0, NOW - DAY)
+    assessor = MortgageFreedomAssessor(FinanceEntityProjection(log), EntityProjection(log),
+                                       _metric_registry(18.0), MortgageEvidenceProjection(log))
+    assert _telemetry_by_id(assessor.assess(request))["finance.property_valuation"].result.value == 436_638.42
 
 
 def test_member_scope_cannot_reuse_household_assessment(tmp_path):

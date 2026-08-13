@@ -344,6 +344,22 @@ def capture_form(request: Request):
                     f'<p class="hint">{html.escape(field.help_text)}</p>'
                 )
                 continue
+            if field.name == "valuation_basis":
+                rendered_fields.append(
+                    '<label>Valuation basis<select name="valuation_basis" required>'
+                    '<option value="owner_estimate">Owner estimate</option>'
+                    '<option value="purchase_price">Purchase price</option>'
+                    '<option value="index_estimate">Index/automated estimate</option>'
+                    '<option value="agent_appraisal">Agent appraisal</option>'
+                    '<option value="lender_valuation">Lender valuation</option>'
+                    '</select></label>'
+                    f'<p class="hint">{html.escape(field.help_text)}</p>')
+                continue
+            if field.name == "source":
+                rendered_fields.append(
+                    f'<label>{html.escape(field.label)}<input name="source" type="text" value="Household estimate" required></label>'
+                    f'<p class="hint">{html.escape(field.help_text)}</p>')
+                continue
             rendered_fields.append(
                 f'<label>{html.escape(field.label)}<input name="{html.escape(field.name, quote=True)}" type="{html.escape(field.input_type, quote=True)}"{required_attribute}{step_attribute}></label>'
                 f'<p class="hint">{html.escape(field.help_text)}</p>'

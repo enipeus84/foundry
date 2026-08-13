@@ -17,6 +17,7 @@ import re
 from typing import Any, Iterable, Mapping
 
 from foundry.core.acquisition import AcquisitionError
+from foundry.finance.entities import VALUATION_BASES
 
 
 MIN_VALID_AT = 0.0
@@ -39,6 +40,7 @@ class CaptureField:
     input_type: str
     required: bool = True
     help_text: str = ""
+    default: str = ""
 
 
 @dataclass(frozen=True)
@@ -142,7 +144,8 @@ class CaptureContract:
         unknown = set(values) - set(fields)
         if unknown:
             raise AcquisitionError("capture contains unsupported fields")
-        missing = [name for name, item in fields.items() if item.required and not values.get(name, "").strip()]
+        missing = [name for name, item in fields.items()
+                   if item.required and not values.get(name, item.default).strip()]
         if missing:
             raise AcquisitionError("capture is missing required fields: " + ", ".join(missing))
         normalised = self.validation.validate(values)
@@ -151,6 +154,14 @@ class CaptureContract:
             raise AcquisitionError("this capture requires an evidence reference")
         if "evidence_reference" in fields:
             normalised["evidence_reference"] = evidence_reference
+        for name in set(fields) - {self.validation.amount_field, self.validation.currency_field,
+                                   self.validation.valid_at_field, "evidence_reference"}:
+            value = str(values.get(name) or fields[name].default).strip()
+            if value:
+                normalised[name] = value
+        basis = normalised.get("valuation_basis")
+        if basis is not None and basis not in VALUATION_BASES:
+            raise AcquisitionError("valuation_basis is not recognised")
         return normalised
 
     def draft(self, values: Mapping[str, str], *, subject_id: str,
@@ -227,6 +238,13 @@ _CASH_SCHEMA = (
                  help_text="Statement or other source reference."),
 )
 
+_PROPERTY_VALUATION_SCHEMA = _MONEY_SCHEMA + (
+    CaptureField("valuation_basis", "Valuation basis", "text", required=False,
+                 help_text="What this valuation represents.", default="owner_estimate"),
+    CaptureField("source", "Source", "text", required=False,
+                 help_text="Who or what supplied the valuation.", default="Household estimate"),
+)
+
 
 register_capture_contract(CaptureContract(
     identifier="pension-balance-update", version="1", display_name="Pension Balance Update",
@@ -258,12 +276,13 @@ register_capture_contract(CaptureContract(
 register_capture_contract(CaptureContract(
     identifier="property-valuation-update", version="1", display_name="Property Valuation Update",
     description="Record a point-in-time valuation of an existing property asset.",
-    capabilities=("manual_capture", "finance_valuation", "review_required"), schema=_MONEY_SCHEMA,
+    capabilities=("manual_capture", "finance_valuation", "review_required"), schema=_PROPERTY_VALUATION_SCHEMA,
     validation=CaptureValidation(),
     review_template="Review property valuation for {subject_id}: {currency} {amount:,.2f} at {valid_at:.0f}.",
     evidence_policy=EvidencePolicy.REQUIRED,
     canonical_mapper=CanonicalMapper("finance.valuation.declared", "property_valuation", {
         "entity_id": "$capture_id", "subject_id": "$subject_id", "amount": "$amount",
-        "currency": "$currency", "as_of": "$valid_at",
+        "currency": "$currency", "as_of": "$valid_at", "valuation_basis": "$valuation_basis",
+        "source": "$source",
     }), stream_properties=("property_valuation",),
 ))

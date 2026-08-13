@@ -45,6 +45,10 @@ from . import vocab
 from ..errors import VocabularyError
 
 PREFIX = "finance"
+VALUATION_BASES = frozenset({
+    "purchase_price", "owner_estimate", "index_estimate",
+    "agent_appraisal", "lender_valuation",
+})
 
 
 # Finance owns the meaning of each supported adjustment key. Presentation
@@ -142,6 +146,8 @@ class Valuation:
     amount: float
     currency: str
     as_of: float
+    valuation_basis: str | None = None
+    source: str | None = None
     provenance: list[str] = field(default_factory=list)
     asserted_by: str = ""
     history: list[str] = field(default_factory=list)
@@ -402,18 +408,29 @@ def correct_transaction(log: EventLog, transaction_id: str, reason: str,
 # --------------------------------------------------------------- valuation
 
 def declare_valuation(log: EventLog, subject_id: str, amount: float, currency: str, as_of: float,
+                       valuation_basis: str | None = None, source: str | None = None,
                        actor: str = "user") -> Valuation:
     """A point-in-time worth assertion (001 §7) against any Finance
     entity id — most often an Account or Asset. Valuation has no
     `.updated`/`.closed`: a revised worth is a new Valuation event, not
     a mutation of the old one — the old assertion remains true of the
     moment it described."""
+    if valuation_basis is not None and valuation_basis not in VALUATION_BASES:
+        raise VocabularyError(f"{valuation_basis!r} is not a valid valuation_basis")
+    if source is not None and not source.strip():
+        raise ValueError("valuation source must be non-empty when provided")
     valuation_id = grammar.new_id()
-    e = grammar.declare(log, PREFIX, "valuation", valuation_id, {
+    attrs: dict[str, Any] = {
         "subject_id": subject_id, "amount": amount, "currency": currency, "as_of": as_of,
-    }, actor=actor)
+    }
+    if valuation_basis is not None:
+        attrs["valuation_basis"] = valuation_basis
+    if source is not None:
+        attrs["source"] = source.strip()
+    e = grammar.declare(log, PREFIX, "valuation", valuation_id, attrs, actor=actor)
     return Valuation(id=valuation_id, subject_id=subject_id, amount=amount, currency=currency,
-                      as_of=as_of, asserted_by=actor, provenance=[e["id"]], history=[e["id"]])
+                      as_of=as_of, valuation_basis=valuation_basis, source=source,
+                      asserted_by=actor, provenance=[e["id"]], history=[e["id"]])
 
 
 # ---------------------------------------------------------------- position
@@ -838,7 +855,9 @@ class FinanceEntityProjection:
         vid = p["entity_id"]
         self.valuations[vid] = Valuation(
             id=vid, subject_id=p["subject_id"], amount=p["amount"], currency=p["currency"],
-            as_of=p["as_of"], asserted_by=e["actor"], provenance=[e["id"]], history=[e["id"]],
+            as_of=p["as_of"], valuation_basis=p.get("valuation_basis"),
+            source=p.get("source"), asserted_by=e["actor"], provenance=[e["id"]],
+            history=[e["id"]],
         )
 
     def _apply_position(self, e: dict) -> None:
