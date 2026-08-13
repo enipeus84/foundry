@@ -59,6 +59,19 @@ def test_net_worth_household_union_and_individual_shares_reconcile(kernel):
     assert chris_result.value + fiona_result.value == household_result.value  # 001 §9, criterion 9
 
 
+def test_account_without_applicable_valuation_retains_ledger_value(kernel):
+    household, chris, _ = _household_of_two(kernel.log)
+    account = fin.declare_account(kernel.log, "checking", "GBP")
+    fin.link_ownership(kernel.log, "account", account.id, "owner", chris.id)
+    fin.declare_transaction(kernel.log, account.id, 1_000.0, "GBP", "income", NOW)
+    fin.declare_valuation(kernel.log, account.id, 5_000.0, "GBP", NOW + 1)
+
+    result = _registry(kernel.log).dispatch(MetricRequest(
+        "finance.net_worth", Subject("party", household.id), NOW))
+
+    assert result.value == 1_000.0
+
+
 def test_net_worth_joint_asset_counted_once_not_per_co_owner(kernel):
     """A jointly-owned resource must not be double-counted in the
     household total (001 §24, criterion 11)."""
