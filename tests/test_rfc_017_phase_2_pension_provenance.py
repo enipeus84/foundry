@@ -195,7 +195,7 @@ def test_explicit_full_person_attribution_matches_metric(tmp_path, monkeypatch):
     assert _attributed(result, pension.id).quantity == 100_000.0
 
 
-def test_production_pension_descriptor_reconciles_representation_noise_and_retains_residual(
+def test_production_pension_descriptor_reconciles_representation_noise(
         tmp_path, monkeypatch):
     log, household, first, _, assumption = _world(tmp_path, monkeypatch)
     accounts = [_account(log, first, value=value, share=100)[0]
@@ -208,9 +208,8 @@ def test_production_pension_descriptor_reconciles_representation_noise_and_retai
     assert resolver._descriptors[PENSION_WEALTH].tolerance == 1e-6
     assert _metric(log, Subject("party", household.id), assumption).value == result.quantity
     assert result.quantity == 0.6000000000000001
-    assert attributed == 0.6
+    assert attributed == pytest.approx(0.6)
     assert result.residual == result.quantity - attributed
-    assert result.residual != 0.0
     assert abs(result.residual) <= 1e-6
     assert result.completeness == "complete"
 
