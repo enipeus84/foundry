@@ -857,7 +857,7 @@ def test_rfc010_phase_2_route_goldens_are_pinned_for_all_four_missions(
         "pension-independence":
             "95c61d7ff6ff72f4cb4c5ac82a933ec92615a5a3c5563319141d2e08bf7d91ab",
         "mortgage-freedom":
-            "745197651e84e8eeb192024dbbe1d27e01816d952cb783fdba62802c90300ad2",
+            "da5c9e7dcace571f5beffeefccaf033247d2c279e64db3ac38e90b69c6876579",
     }
 
 

@@ -70,6 +70,20 @@ def _asset_registry(console) -> AssetRegistry:
     return finance_asset_registry(console.log)
 
 
+def _confirmed_return_path(console, proposal) -> str:
+    """Choose the operator's existing Mission destination after confirmation.
+
+    This remains a deliberately small presentation mapping.  The proposal's
+    declared telemetry stream already identifies the property-valuation
+    capture target; it is the current update surfaced by Mortgage Freedom.
+    All other confirmed captures retain the established provenance destination.
+    """
+    stream = TelemetryStreamRegistry(console.log).streams.get(proposal.stream_id)
+    if stream is not None and stream.property == "property_valuation":
+        return "/missions/mortgage-freedom"
+    return f"/acquisition/proposals/{quote(proposal.id, safe='')}/provenance"
+
+
 def _scoped_proposal(request: Request, proposal_id: str):
     email = _email(request)
     if email is None:
@@ -276,11 +290,13 @@ async def confirm(request: Request, proposal_id: str):
     gate, error = _gate(request, proposal_id, csrf)
     if error is not None:
         return error
+    console = _console(request)
+    proposal = ProposalInbox(console.log).proposals[proposal_id]
     try:
         gate.confirm(proposal_id, actor=_email(request) or "")
     except AcquisitionError as exc:
         return HTMLResponse("Confirmation refused: " + html.escape(str(exc)), status_code=409)
-    return RedirectResponse(f"/acquisition/proposals/{quote(proposal_id, safe='')}/provenance", status_code=303)
+    return RedirectResponse(_confirmed_return_path(console, proposal), status_code=303)
 
 
 @router.post("/acquisition/proposals/{proposal_id}/reject")

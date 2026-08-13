@@ -30,7 +30,7 @@ from foundry.core.mission_assessment import (
     TrajectoryPoint,
 )
 
-from .entities import AssumptionSet, FinanceEntityProjection
+from .entities import AssumptionSet, FinanceEntityProjection, VALUATION_BASES
 from .mortgage_evidence import MortgageEvidence, MortgageEvidenceProjection
 
 
@@ -272,12 +272,21 @@ class MortgageFreedomPolicy:
     unit_or_currency: str = "GBP"
 
 
+@dataclass(frozen=True)
+class PropertyValuationCandidate:
+    amount: float
+    effective_at: float
+    source: str
+    basis: str | None
+    event_id: str
+    legacy_record: MortgageEvidence | None = None
+
+
 class MortgageFreedomAssessor:
     """Finance provider for one household-scoped mortgage mission."""
 
     _REQUIRED_FIELDS = frozenset({
         "property_role",
-        "property_valuation",
         "lender",
         "original_advance",
         "mortgage_start",
@@ -349,7 +358,7 @@ class MortgageFreedomAssessor:
         except (TypeError, ValueError) as exc:
             return self._unavailable(request, str(exc))
 
-        obligation, scope_input_refs, reason = self._scoped_mortgage(
+        obligation, secured_property, scope_input_refs, reason = self._scoped_mortgage(
             request.scope.id)
         if obligation is None:
             return self._unavailable(request, reason)
@@ -376,11 +385,20 @@ class MortgageFreedomAssessor:
             return self._unavailable(
                 request, "required mortgage evidence has insufficient confidence")
 
+        valuation_candidate = self._property_valuation_candidate(
+            obligation.id, secured_property.id, request.as_of)
+        if valuation_candidate is None:
+            return self._unavailable(
+                request, "no eligible secured-property valuation was found")
+        if valuation_candidate.legacy_record is not None \
+                and valuation_candidate.legacy_record.confidence < .5:
+            return self._unavailable(
+                request, "required mortgage evidence has insufficient confidence")
+
         try:
             numeric = {
                 field: self._numeric(records[field], field)
                 for field in (
-                    "property_valuation",
                     "original_advance",
                     "mortgage_start",
                     "balance",
@@ -423,7 +441,7 @@ class MortgageFreedomAssessor:
 
         balance = numeric["balance"]
         original = numeric["original_advance"]
-        valuation = numeric["property_valuation"]
+        valuation = valuation_candidate.amount
         current_equity = valuation - balance
         principal_repaid = original - balance
         current_rate = numeric["interest_rate"]
@@ -431,6 +449,7 @@ class MortgageFreedomAssessor:
         fixed_expiry = numeric["fixed_rate_expiry"]
         mortgage_evidence_refs = tuple(sorted(
             record.event_id for record in evidence_records))
+        valuation_evidence_refs = (valuation_candidate.event_id,)
         mortgage_input_refs = tuple(sorted({
             *scope_input_refs, *mission.provenance, *mission.history,
         }))
@@ -513,7 +532,9 @@ class MortgageFreedomAssessor:
             + (f" · {purchase_date}." if purchase_date else ".")
             if purchase_price is not None else None)
         confidence = self._confidence(
-            request.as_of, records, inputs, overpayments)
+            request.as_of, records, inputs, overpayments,
+            valuation_effective_at=valuation_candidate.effective_at,
+            valuation_record=valuation_candidate.legacy_record)
         assessment_input_refs = tuple(sorted({
             *mortgage_input_refs,
             *(runway.input_references if runway_value is not None else ()),
@@ -525,6 +546,7 @@ class MortgageFreedomAssessor:
         }))
         assessment_evidence_refs = tuple(sorted({
             *recommendation_evidence_refs,
+            *valuation_evidence_refs,
             *(record.event_id for record in acquisition_records),
             *(record.event_id for record in valuation_basis_records),
         }))
@@ -544,17 +566,13 @@ class MortgageFreedomAssessor:
             recommendation_evidence_refs)
 
         valuation_status = (
-            "stale" if self._is_stale(
-                request.as_of, records["property_valuation"],
-                inputs.valuation_stale_after_days)
+            "stale" if request.as_of - valuation_candidate.effective_at > (
+                inputs.valuation_stale_after_days * DAY)
             else "available")
-        valuation_record = records["property_valuation"]
-        valuation_source = valuation_record.source
-        valuation_month = _month_year(valuation_record.effective_at)
-        if valuation_basis_record is not None:
-            valuation_basis = self._string(
-                valuation_basis_record, "valuation_basis"
-            ).replace("_", " ").capitalize()
+        valuation_source = valuation_candidate.source
+        valuation_month = _month_year(valuation_candidate.effective_at)
+        if valuation_candidate.basis is not None:
+            valuation_basis = valuation_candidate.basis.replace("_", " ").capitalize()
             valuation_reference = (
                 f"Estimated · {valuation_basis} · "
                 f"{valuation_source} · {valuation_month}"
@@ -585,10 +603,10 @@ class MortgageFreedomAssessor:
             acquisition_history["original_advance"])
         acquisition_cost_refs = evidence_refs(
             acquisition_history["acquisition_costs"])
-        valuation_refs = evidence_refs(
-            (valuation_record,), valuation_basis_records)
-        equity_refs = evidence_refs(
-            (valuation_record,), (records["balance"],))
+        valuation_refs = valuation_evidence_refs
+        equity_refs = tuple(sorted({
+            *valuation_evidence_refs, records["balance"].event_id,
+        }))
         purchase_qualifier = (
             f"PURCHASED {purchase_date.upper()}"
             + (
@@ -639,9 +657,8 @@ class MortgageFreedomAssessor:
                 "finance.property_valuation_movement", valuation_movement,
                 self.policy.unit_or_currency, request,
                 current_position_status, mortgage_input_refs,
-                evidence_refs(
-                    (valuation_record,),
-                    acquisition_history["purchase_price"]),
+                tuple(sorted({*valuation_evidence_refs, *evidence_refs(
+                    acquisition_history["purchase_price"])})),
                 assumption_refs)
             if valuation_movement is not None
             else self._unavailable_metric(
@@ -690,7 +707,7 @@ class MortgageFreedomAssessor:
             TelemetryItem(self._metric(
                 "finance.mortgage_ltv", ltv, None, request,
                 valuation_status, mortgage_input_refs,
-                mortgage_evidence_refs, assumption_refs),
+                valuation_evidence_refs, assumption_refs),
                 "CURRENT POSITION · CURRENT LTV", "percent",
                 valuation_reference),
             TelemetryItem(self._metric(
@@ -769,8 +786,8 @@ class MortgageFreedomAssessor:
         )
         limitations = [
             f"Primary residence dated valuation reference: "
-            f"£{valuation:,.2f} · {valuation_record.source} · "
-            f"{_month_year(valuation_record.effective_at)}; "
+            f"£{valuation:,.2f} · {valuation_source} · "
+            f"{valuation_month}; "
             f"mortgage held with {text['lender']}.",
             f"Mortgage contract: capital repayment, fixed "
             f"{current_rate * 100:.2f}% with a £{payment:,.2f} monthly "
@@ -793,9 +810,9 @@ class MortgageFreedomAssessor:
             "movement is current value minus purchase price. Interest is "
             "excluded, and monthly payment is never used to infer principal "
             "repayment.",
-            "Mortgage Freedom uses the dated mortgage valuation evidence "
-            "shown here. Net Worth continues to use its separate Finance "
-            "asset valuation, so the valuation bases can differ.",
+            "Mortgage Freedom selects eligible dated valuations of the "
+            "secured property. Net Worth retains its existing latest-applicable "
+            "Finance valuation policy.",
         ]
         if purchase_detail is not None:
             limitations.insert(1, purchase_detail)
@@ -979,10 +996,64 @@ class MortgageFreedomAssessor:
                 if member.id in relevant_party_ids:
                     scope_refs.update(member.provenance)
                     scope_refs.update(member.history)
-            return obligation, tuple(sorted(scope_refs)), ""
+            return obligation, asset, tuple(sorted(scope_refs)), ""
         if not candidates:
-            return None, (), "one active household mortgage was not found"
-        return None, (), "more than one active household mortgage was found"
+            return None, None, (), "one active household mortgage was not found"
+        return None, None, (), "more than one active household mortgage was found"
+
+    def _property_valuation_candidate(
+        self, obligation_id: str, property_id: str, as_of: float,
+    ) -> PropertyValuationCandidate | None:
+        """Select an eligible secured-property observation without rewriting history."""
+        event_order = {
+            event["id"]: index
+            for index, event in enumerate(self.finance.log.events())
+        }
+        candidates: list[PropertyValuationCandidate] = []
+        for valuation in self.finance.valuations_of(property_id):
+            event_id = valuation.provenance[0] if valuation.provenance else ""
+            event = self.finance.log.get(event_id) if event_id else None
+            provenance = event["payload"].get("provenance") if event else None
+            if not (
+                isinstance(valuation.amount, (int, float))
+                and not isinstance(valuation.amount, bool)
+                and math.isfinite(float(valuation.amount)) and valuation.amount > 0
+                and valuation.currency == self.policy.unit_or_currency
+                and isinstance(valuation.as_of, (int, float))
+                and not isinstance(valuation.as_of, bool)
+                and math.isfinite(float(valuation.as_of)) and valuation.as_of <= as_of
+                and valuation.valuation_basis in VALUATION_BASES
+                and isinstance(valuation.source, str) and valuation.source.strip()
+                and isinstance(provenance, dict)
+                and all(isinstance(provenance.get(key), str) and provenance[key]
+                        for key in ("evidence_id", "proposal_id", "confirmed_by"))
+            ):
+                continue
+            candidates.append(PropertyValuationCandidate(
+                float(valuation.amount), float(valuation.as_of), valuation.source.strip(),
+                valuation.valuation_basis, event_id))
+        for record in self.evidence.for_obligation(obligation_id, as_of):
+            if record.field != "property_valuation":
+                continue
+            if (not isinstance(record.value, (int, float)) or isinstance(record.value, bool)
+                    or not math.isfinite(float(record.value)) or record.value <= 0
+                    or record.unit_or_currency != self.policy.unit_or_currency):
+                continue
+            basis_record = self.evidence.latest(obligation_id, "valuation_basis", as_of)
+            basis = (
+                basis_record.value
+                if basis_record is not None and isinstance(basis_record.value, str)
+                else None
+            )
+            candidates.append(PropertyValuationCandidate(
+                float(record.value), record.effective_at, record.source, basis,
+                record.event_id, record))
+        if not candidates:
+            return None
+        return max(
+            candidates,
+            key=lambda item: (item.effective_at, event_order.get(item.event_id, -1)),
+        )
 
     @staticmethod
     def _numeric(record: MortgageEvidence | None, field: str) -> float:
@@ -1026,8 +1097,6 @@ class MortgageFreedomAssessor:
     @staticmethod
     def _validate_contract(numeric: dict[str, float],
                            text: dict[str, str]) -> None:
-        if numeric["property_valuation"] <= 0:
-            raise ValueError("Property valuation must be positive")
         if numeric["original_advance"] <= 0:
             raise ValueError("Original advance must be positive")
         if not 0 <= numeric["balance"] <= numeric["original_advance"]:
@@ -1058,7 +1127,6 @@ class MortgageFreedomAssessor:
         records: dict[str, MortgageEvidence | None]
     ) -> None:
         for field in (
-            "property_valuation",
             "original_advance",
             "balance",
             "monthly_payment",
@@ -1083,20 +1151,22 @@ class MortgageFreedomAssessor:
         records: dict[str, MortgageEvidence | None],
         inputs: MortgageProjectionInputs,
         contributing_evidence: tuple[MortgageEvidence, ...] = (),
+        *,
+        valuation_effective_at: float,
+        valuation_record: MortgageEvidence | None,
     ) -> MissionConfidence:
         stale = []
         if cls._is_stale(
                 as_of, records["balance"], inputs.balance_stale_after_days):
             stale.append("balance")
-        if cls._is_stale(
-                as_of, records["property_valuation"],
-                inputs.valuation_stale_after_days):
+        if as_of - valuation_effective_at > inputs.valuation_stale_after_days * DAY:
             stale.append("property valuation")
         minimum = min(
             (
                 *(record.confidence for record in records.values()
                   if record is not None),
                 *(record.confidence for record in contributing_evidence),
+                *((valuation_record.confidence,) if valuation_record is not None else ()),
             ))
         if minimum < .5:
             return MissionConfidence(

@@ -115,7 +115,8 @@ def test_required_evidence_and_canonical_mapping_are_contract_owned():
                           subject_id="property-1", capture_id="capture-1")
     assert fact["canonical_event"] == {"kind": "finance.valuation.declared", "payload": {
         "entity_id": "capture-1", "subject_id": "property-1", "amount": 450000.0,
-        "currency": "GBP", "as_of": 100.0,
+        "currency": "GBP", "as_of": 100.0, "valuation_basis": "owner_estimate",
+        "source": "Household estimate",
     }}
     cash = capture_contract_registry().get("cash-balance-update")
     assert cash is not None
@@ -229,7 +230,11 @@ def test_operations_discovers_contracts_and_creates_an_inert_property_draft(envi
         "csrf": webauth.csrf_token(ALLOWED, webauth.load_config(), "rfc011-confirmation"),
     })
     assert confirmed.status_code == 303
+    assert confirmed.headers["location"] == "/missions/mortgage-freedom"
     assert client.get(confirmed.headers["location"]).status_code == 200
+    provenance = client.get(f"/acquisition/proposals/{proposal.id}/provenance")
+    assert provenance.status_code == 200
+    assert "Confirmation provenance" in provenance.text
     assert any(event["kind"] == "finance.valuation.declared" for event in log.events())
     duplicate = _submit_capture(client, "property-valuation-update", "property-value",
                                 evidence_reference="valuer-report-2026")
