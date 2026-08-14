@@ -13,6 +13,7 @@ from datetime import date, datetime, timezone
 import html
 import json
 import os
+import secrets
 import time
 from pathlib import Path
 from urllib.parse import parse_qs
@@ -45,6 +46,9 @@ router = APIRouter()
 _PURPOSE = "rfc012-capture"
 _CONTRACT_PURPOSE = "rfc013-capture"
 _PROJECTION_PURPOSE = "pension-projection-capture"
+_PROJECTION_REVIEW_PURPOSE = "pension-projection-reviewed"
+_PROJECTION_REVIEW_TTL = 10 * 60
+_PROJECTION_REVIEW_CONSUMED = "operations.pension_projection_review.consumed"
 _LONDON = ZoneInfo("Europe/London")
 
 
@@ -204,6 +208,67 @@ def _projection_payload(fields: dict[str, str]) -> dict:
     if fields.get("retirement_at", "").strip():
         payload["retirement_at"] = _human_date(fields["retirement_at"])
     return payload
+
+
+def _canonical_projection_payload(record) -> dict:
+    """Serialize exactly the normalized object shown on the review page."""
+    payload = {
+        "account_id": record.account_id,
+        "provider": record.provider,
+        "observed_at": record.observed_at,
+        "fund_low": record.fund_low,
+        "fund_medium": record.fund_medium,
+        "fund_high": record.fund_high,
+        "income_low": record.income_low,
+        "income_medium": record.income_medium,
+        "income_high": record.income_high,
+        "growth_low_percent": record.growth_low_percent,
+        "growth_medium_percent": record.growth_medium_percent,
+        "growth_high_percent": record.growth_high_percent,
+        "income_basis": record.income_basis,
+        "source": record.source,
+        "lineage": record.lineage,
+    }
+    if record.retirement_age is not None:
+        payload["retirement_age"] = record.retirement_age
+    else:
+        payload["retirement_at"] = record.retirement_at
+    return payload
+
+
+def _projection_review_token(record, email: str, cfg) -> str:
+    return webauth.sign({
+        "email": email,
+        "purpose": _PROJECTION_REVIEW_PURPOSE,
+        "jti": secrets.token_urlsafe(24),
+        "projection": _canonical_projection_payload(record),
+        "exp": int(time.time()) + _PROJECTION_REVIEW_TTL,
+    }, cfg.session_secret)
+
+
+def _verified_projection_review(token: str, email: str, cfg):
+    signed = webauth.verify(token, cfg.session_secret)
+    if (not signed or signed.get("email") != email
+            or signed.get("purpose") != _PROJECTION_REVIEW_PURPOSE
+            or not isinstance(signed.get("jti"), str)
+            or not isinstance(signed.get("projection"), dict)):
+        raise PermissionError
+    return signed["jti"], _projection_from_payload(
+        signed["projection"], "review")
+
+
+def _consume_projection_review(log, token_id: str, email: str) -> None:
+    """Durably consume before append; interruption fails closed, never twice."""
+    if any(
+        event.get("kind") == _PROJECTION_REVIEW_CONSUMED
+        and event.get("payload", {}).get("token_id") == token_id
+        for event in log.events()
+    ):
+        raise PermissionError
+    log.append(_PROJECTION_REVIEW_CONSUMED, {
+        "token_id": token_id,
+        "purpose": _PROJECTION_REVIEW_PURPOSE,
+    }, actor=email)
 
 
 def _projection_summary(record, *, heading: str, action: str = "") -> str:
@@ -600,13 +665,14 @@ async def pension_projection_review(request: Request):
         return HTMLResponse("Not found", status_code=404)
     except (KeyError, TypeError, ValueError) as exc:
         return HTMLResponse("Capture refused: " + html.escape(str(exc)), status_code=400)
-    hidden = "".join(
-        f'<input type="hidden" name="{html.escape(name, quote=True)}" value="{html.escape(value, quote=True)}">'
-        for name, value in fields.items()
-    )
+    review_token = html.escape(_projection_review_token(
+        record, email, webauth.load_config()), quote=True)
+    csrf = html.escape(fields["csrf"], quote=True)
     action = f'''<section class="ops-panel"><h2>Confirm observation</h2>
 <p class="ops-empty">{html.escape(record.income_basis)} · {html.escape(record.source)} · {html.escape(record.lineage)}</p>
-<form method="post" action="/operations/pension-projection/confirm">{hidden}
+<form method="post" action="/operations/pension-projection/confirm">
+<input type="hidden" name="csrf" value="{csrf}">
+<input type="hidden" name="review_token" value="{review_token}">
 <button class="ops-submit" type="submit">CONFIRM AND RECORD →</button></form></section>'''
     return _page(console, "Review pension projection",
                  _operations_styles() + _projection_summary(
@@ -619,10 +685,24 @@ async def pension_projection_confirm(request: Request):
     if email is None:
         return RedirectResponse("/login", status_code=303)
     fields = await _body(request)
+    cfg = webauth.load_config()
     try:
-        console, payload, _ = _projection_submission(fields, email, request)
+        if (not fields or set(fields) != {"csrf", "review_token"}
+                or not webauth.verify_csrf(
+                    fields.get("csrf"), email, cfg, _PROJECTION_PURPOSE)):
+            raise PermissionError
+        token_id, reviewed = _verified_projection_review(
+            fields["review_token"], email, cfg)
+        console = _console(request)
+        household = _household(console)
+        eligible = {
+            account.id for account in _pension_accounts(console, household or "")}
+        if reviewed.account_id not in eligible:
+            raise LookupError
+        _consume_projection_review(console.log, token_id, email)
         record = record_pension_provider_projection(
-            console.log, actor=email, **payload)
+            console.log, actor=email,
+            **_canonical_projection_payload(reviewed))
     except PermissionError:
         return HTMLResponse("Forbidden", status_code=403)
     except LookupError:

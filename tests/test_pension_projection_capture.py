@@ -1,6 +1,9 @@
 """Human capture seam for immutable provider pension projections."""
 
 from itertools import count
+import html as html_module
+import re
+import time
 
 import pytest
 
@@ -72,6 +75,16 @@ def _seed(tmp_path):
     return build(EventLog(tmp_path / "events.jsonl"), as_of=AS_OF)
 
 
+def _confirmation_fields(review):
+    token = re.search(r'name="review_token" value="([^"]+)"', review.text)
+    csrf = re.search(r'name="csrf" value="([^"]+)"', review.text)
+    assert token and csrf
+    return {
+        "csrf": html_module.unescape(csrf.group(1)),
+        "review_token": html_module.unescape(token.group(1)),
+    }
+
+
 def _economic_values(household):
     console = _build_console()
     scope = Subject("party", household.household_id)
@@ -107,11 +120,24 @@ def test_capture_review_confirm_and_latest_projection_reaches_mission(tmp_path):
     assert "As at: 12 August 2026" in review.text
     assert "Medium £604,000" in review.text
     assert "Low -0.8% · Medium 2.2% · High 5.1%" in review.text
+    assert 'name="fund_medium"' not in review.text
+    assert not any(event["kind"] == EVENT_KIND
+                   for event in EventLog(tmp_path / "events.jsonl").events())
+
+    confirmation_fields = _confirmation_fields(review)
+    tampered = client.post("/operations/pension-projection/confirm", data={
+        **confirmation_fields, "fund_medium": "650000",
+    })
+    assert tampered.status_code == 403
+    wrong_account = client.post("/operations/pension-projection/confirm", data={
+        **confirmation_fields, "account_id": household.sam_pension_id,
+    })
+    assert wrong_account.status_code == 403
     assert not any(event["kind"] == EVENT_KIND
                    for event in EventLog(tmp_path / "events.jsonl").events())
 
     confirmation = client.post(
-        "/operations/pension-projection/confirm", data=values)
+        "/operations/pension-projection/confirm", data=confirmation_fields)
     assert confirmation.status_code == 200
     assert "Aviva pension projection recorded" in confirmation.text
     assert "Retirement age: 68" in confirmation.text
@@ -122,7 +148,10 @@ def test_capture_review_confirm_and_latest_projection_reaches_mission(tmp_path):
     log = EventLog(tmp_path / "events.jsonl")
     projection_events = [event for event in log.events() if event["kind"] == EVENT_KIND]
     assert len(projection_events) == 1
+    assert len([event for event in log.events()
+                if event["kind"] == "operations.pension_projection_review.consumed"]) == 1
     assert projection_events[0]["payload"]["account_id"] == household.alex_pension_id
+    assert projection_events[0]["payload"]["fund_medium"] == 604_000
     assert projection_events[0]["payload"]["growth_low_percent"] == -.8
     assert _economic_values(household) == before
 
@@ -131,13 +160,21 @@ def test_capture_review_confirm_and_latest_projection_reaches_mission(tmp_path):
     assert "£43,800" in mission.text
     assert "AVIVA · OBSERVED 2026-08-12" in mission.text
 
+    repeated = client.post(
+        "/operations/pension-projection/confirm", data=confirmation_fields)
+    assert repeated.status_code == 403
+    assert len([event for event in EventLog(tmp_path / "events.jsonl").events()
+                if event["kind"] == EVENT_KIND]) == 1
+
     newer = _values(
         household.alex_pension_id, observed_at="2026-08-13T10:30",
         fund_medium="650000", fund_high="1150000",
         income_medium="47000", income_high="99000",
         growth_medium_percent="2.5", growth_high_percent="5.4")
-    assert client.post(
-        "/operations/pension-projection/confirm", data=newer).status_code == 200
+    newer_review = client.post(
+        "/operations/pension-projection/review", data=newer)
+    assert client.post("/operations/pension-projection/confirm",
+                       data=_confirmation_fields(newer_review)).status_code == 200
     history = PensionProviderProjectionProjection(EventLog(tmp_path / "events.jsonl"))
     assert len(history.for_account(household.alex_pension_id, AS_OF)) == 2
     mission = client.get("/missions/pension-independence")
@@ -164,8 +201,36 @@ def test_capture_refuses_invalid_provider_projection(tmp_path, changes):
     values = _values(household.alex_pension_id, **changes)
 
     response = _client().post(
-        "/operations/pension-projection/confirm", data=values)
+        "/operations/pension-projection/review", data=values)
 
     assert response.status_code in {400, 404}
+    assert not any(event["kind"] == EVENT_KIND
+                   for event in EventLog(tmp_path / "events.jsonl").events())
+
+
+def test_confirm_requires_valid_unexpired_review_state(tmp_path, monkeypatch):
+    household = _seed(tmp_path)
+    client = _client()
+    csrf = webauth.csrf_token(
+        ALLOWED, webauth.load_config(), "pension-projection-capture")
+
+    direct = client.post("/operations/pension-projection/confirm", data={
+        "csrf": csrf, "review_token": "not-a-review-token",
+    })
+    assert direct.status_code == 403
+
+    review = client.post(
+        "/operations/pension-projection/review",
+        data=_values(household.alex_pension_id))
+    confirmation = _confirmation_fields(review)
+    future = time.time() + 700
+    monkeypatch.setattr("foundry.webauth.time.time", lambda: future)
+    confirmation["csrf"] = webauth.csrf_token(
+        ALLOWED, webauth.load_config(), "pension-projection-capture")
+
+    expired = client.post(
+        "/operations/pension-projection/confirm", data=confirmation)
+
+    assert expired.status_code == 403
     assert not any(event["kind"] == EVENT_KIND
                    for event in EventLog(tmp_path / "events.jsonl").events())
