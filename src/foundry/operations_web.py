@@ -13,6 +13,7 @@ from datetime import date, datetime, timezone
 import html
 import json
 import os
+import secrets
 import time
 from pathlib import Path
 from urllib.parse import parse_qs
@@ -33,12 +34,21 @@ from foundry.core.capture_targets import CaptureTargetRegistry
 from foundry.finance.acquisition import FinanceManualInterpreter
 from foundry.finance.capture_targets import FinanceCaptureTargetResolver, finance_asset_registry
 from foundry.finance.entities import FinanceEntityProjection
+from foundry.finance import vocab as finance_vocab
+from foundry.finance.pension_projection import (
+    _from_payload as _projection_from_payload,
+    record_pension_provider_projection,
+)
 from foundry.mission_control import _as_of, _footer, _render
 from foundry.operations_console import OperationsConsoleModel
 
 router = APIRouter()
 _PURPOSE = "rfc012-capture"
 _CONTRACT_PURPOSE = "rfc013-capture"
+_PROJECTION_PURPOSE = "pension-projection-capture"
+_PROJECTION_REVIEW_PURPOSE = "pension-projection-reviewed"
+_PROJECTION_REVIEW_TTL = 10 * 60
+_PROJECTION_REVIEW_CONSUMED = "operations.pension_projection_review.consumed"
 _LONDON = ZoneInfo("Europe/London")
 
 
@@ -146,6 +156,142 @@ def _manual_streams(console, household_id: str) -> list[TelemetryStream]:
 
 def _stream_label(stream: TelemetryStream) -> str:
     return stream.property.replace("_", " ").replace("-", " ").capitalize()
+
+
+def _pension_accounts(console, household_id: str):
+    """Return active canonical pensions owned by active household members."""
+    member_ids = {
+        member.id for member in console.entities.members_of(household_id)
+        if member.status == "active"
+    }
+    finance = FinanceEntityProjection(console.log)
+    return tuple(sorted(
+        (
+            account for account in finance.accounts.values()
+            if account.status == "active" and account.account_type == "pension"
+            and any(
+                link.target in member_ids
+                and link.relation in finance_vocab.VALUE_OWNERSHIP_RELATIONS
+                for link in account.ownership
+            )
+        ),
+        key=lambda account: (account.name or "", account.id),
+    ))
+
+
+def _display_date(timestamp: float) -> str:
+    value = datetime.fromtimestamp(timestamp, _LONDON)
+    return f"{value.day} {value.strftime('%B %Y')}"
+
+
+def _projection_payload(fields: dict[str, str]) -> dict:
+    """Translate human controls; domain validation remains authoritative."""
+    payload = {
+        "account_id": fields.get("account_id", ""),
+        "provider": fields.get("provider", ""),
+        "observed_at": _london_timestamp(fields.get("observed_at", "")),
+        "fund_low": float(fields.get("fund_low", "")),
+        "fund_medium": float(fields.get("fund_medium", "")),
+        "fund_high": float(fields.get("fund_high", "")),
+        "income_low": float(fields.get("income_low", "")),
+        "income_medium": float(fields.get("income_medium", "")),
+        "income_high": float(fields.get("income_high", "")),
+        "growth_low_percent": float(fields.get("growth_low_percent", "")),
+        "growth_medium_percent": float(fields.get("growth_medium_percent", "")),
+        "growth_high_percent": float(fields.get("growth_high_percent", "")),
+        "income_basis": fields.get("income_basis", ""),
+        "source": fields.get("source", ""),
+        "lineage": fields.get("lineage", ""),
+    }
+    if fields.get("retirement_age", "").strip():
+        payload["retirement_age"] = float(fields["retirement_age"])
+    if fields.get("retirement_at", "").strip():
+        payload["retirement_at"] = _human_date(fields["retirement_at"])
+    return payload
+
+
+def _canonical_projection_payload(record) -> dict:
+    """Serialize exactly the normalized object shown on the review page."""
+    payload = {
+        "account_id": record.account_id,
+        "provider": record.provider,
+        "observed_at": record.observed_at,
+        "fund_low": record.fund_low,
+        "fund_medium": record.fund_medium,
+        "fund_high": record.fund_high,
+        "income_low": record.income_low,
+        "income_medium": record.income_medium,
+        "income_high": record.income_high,
+        "growth_low_percent": record.growth_low_percent,
+        "growth_medium_percent": record.growth_medium_percent,
+        "growth_high_percent": record.growth_high_percent,
+        "income_basis": record.income_basis,
+        "source": record.source,
+        "lineage": record.lineage,
+    }
+    if record.retirement_age is not None:
+        payload["retirement_age"] = record.retirement_age
+    else:
+        payload["retirement_at"] = record.retirement_at
+    return payload
+
+
+def _projection_review_token(record, email: str, cfg) -> str:
+    return webauth.sign({
+        "email": email,
+        "purpose": _PROJECTION_REVIEW_PURPOSE,
+        "jti": secrets.token_urlsafe(24),
+        "projection": _canonical_projection_payload(record),
+        "exp": int(time.time()) + _PROJECTION_REVIEW_TTL,
+    }, cfg.session_secret)
+
+
+def _verified_projection_review(token: str, email: str, cfg):
+    signed = webauth.verify(token, cfg.session_secret)
+    if (not signed or signed.get("email") != email
+            or signed.get("purpose") != _PROJECTION_REVIEW_PURPOSE
+            or not isinstance(signed.get("jti"), str)
+            or not isinstance(signed.get("projection"), dict)):
+        raise PermissionError
+    return signed["jti"], _projection_from_payload(
+        signed["projection"], "review")
+
+
+def _consume_projection_review(log, token_id: str, email: str) -> None:
+    """Durably consume before append; interruption fails closed, never twice."""
+    if any(
+        event.get("kind") == _PROJECTION_REVIEW_CONSUMED
+        and event.get("payload", {}).get("token_id") == token_id
+        for event in log.events()
+    ):
+        raise PermissionError
+    log.append(_PROJECTION_REVIEW_CONSUMED, {
+        "token_id": token_id,
+        "purpose": _PROJECTION_REVIEW_PURPOSE,
+    }, actor=email)
+
+
+def _projection_summary(record, *, heading: str, action: str = "") -> str:
+    target = (
+        f"Retirement age: {record.retirement_age:g}"
+        if record.retirement_age is not None
+        else f"Retirement date: {_display_date(record.retirement_at)}"
+    )
+    hidden = action
+    return f'''<section class="ops-hero"><div class="ops-eyebrow">OPERATIONS · PENSION PROJECTION</div>
+<h1>{html.escape(heading)}</h1><p>As at: {_display_date(record.observed_at)}<br>{html.escape(target)}</p></section>
+<section class="ops-panel"><h2>Projected fund</h2><div class="ops-list">
+<div class="ops-item"><div><h3>Low £{record.fund_low:,.0f}</h3></div></div>
+<div class="ops-item"><div><h3>Medium £{record.fund_medium:,.0f}</h3></div></div>
+<div class="ops-item"><div><h3>High £{record.fund_high:,.0f}</h3></div></div></div></section>
+<section class="ops-panel"><h2>Estimated yearly income</h2><div class="ops-list">
+<div class="ops-item"><div><h3>Low £{record.income_low:,.0f}</h3></div></div>
+<div class="ops-item"><div><h3>Medium £{record.income_medium:,.0f}</h3></div></div>
+<div class="ops-item"><div><h3>High £{record.income_high:,.0f}</h3></div></div></div></section>
+<section class="ops-panel"><h2>Provider basis</h2><div class="ops-list">
+<div class="ops-item"><div><h3>Growth assumptions</h3><p>Low {record.growth_low_percent:g}% · Medium {record.growth_medium_percent:g}% · High {record.growth_high_percent:g}%</p></div></div>
+<div class="ops-item"><div><h3>Income basis</h3><p>{html.escape(record.income_basis)}</p></div></div>
+<div class="ops-item"><div><h3>Evidence</h3><p>{html.escape(record.source)} · {html.escape(record.lineage)}</p></div></div></div></section>{hidden}'''
 
 
 def _operational_summary(view) -> str:
@@ -381,6 +527,10 @@ def capture_form(request: Request):
 <a class="ops-button primary" href="/operations/capture?contract={html.escape(contract.identifier, quote=True)}">RECORD →</a></div>'''
         for contract in contracts
     )
+    if _pension_accounts(console, household):
+        cards += '''<div class="ops-item"><div><h3>Pension Projection Update</h3>
+<p>Record a dated provider pension illustration for review and confirmation.</p></div>
+<a class="ops-button primary" href="/operations/pension-projection">RECORD →</a></div>'''
     guided = [(stream, _workflow(stream)) for stream in streams if _workflow(stream)]
     token = html.escape(webauth.csrf_token(email, webauth.load_config(), _PURPOSE), quote=True)
     options = "".join(
@@ -405,7 +555,7 @@ def capture_form(request: Request):
         body += f'''<section class="ops-panel"><h2>Capture targets ready</h2><p class="ops-empty">Bootstrap completed successfully. {target_count} capture target{'s' if target_count != 1 else ''} {'is' if target_count == 1 else 'are'} registered.</p></section>'''
     elif bootstrap_result is not None:
         body += '''<section class="ops-panel"><h2>No eligible capture targets</h2><p class="ops-empty">Bootstrap completed successfully, but this household has no eligible entities to register.</p></section>'''
-    if contracts and (targets.for_household(household) or guided):
+    if cards:
         body += f'''<section class="ops-panel"><h2>WHAT DO YOU WANT TO RECORD?</h2><div class="ops-list">{cards}</div></section>'''
     if guided:
         body += f"""<section class="ops-panel"><h2>Capture an update</h2><form class="ops-form" method="post" action="/operations/capture">
@@ -430,6 +580,140 @@ def capture_form(request: Request):
 <label>Canonical event payload (JSON)<textarea name="event_payload" required>{{&quot;entity_id&quot;:&quot;&quot;}}</textarea></label>
 <button class="ops-submit" type="submit">SUBMIT TECHNICAL CAPTURE →</button></form></details>"""
     return _page(console, "Capture information", body)
+
+
+_PROJECTION_FIELDS = frozenset({
+    "account_id", "provider", "observed_at", "retirement_age", "retirement_at",
+    "fund_low", "fund_medium", "fund_high", "income_low", "income_medium",
+    "income_high", "growth_low_percent", "growth_medium_percent",
+    "growth_high_percent", "income_basis", "source", "lineage",
+})
+
+
+@router.get("/operations/pension-projection", response_class=HTMLResponse)
+def pension_projection_form(request: Request):
+    email = _email(request)
+    if email is None:
+        return RedirectResponse("/login", status_code=303)
+    console = _console(request)
+    household = _household(console)
+    accounts = _pension_accounts(console, household or "")
+    if not accounts:
+        return _page(console, "Pension projection", _operations_styles() +
+                     '<section class="ops-hero"><h1>No pension account available.</h1><p>A canonical active pension account is required before a provider projection can be recorded.</p></section>')
+    token = html.escape(webauth.csrf_token(
+        email, webauth.load_config(), _PROJECTION_PURPOSE), quote=True)
+    options = (
+        "" if len(accounts) == 1
+        else '<option value="" selected disabled>Choose a pension account</option>'
+    ) + "".join(
+        f'<option value="{html.escape(account.id, quote=True)}"{(" selected" if len(accounts) == 1 else "")}>{html.escape(account.name or account.id)}</option>'
+        for account in accounts)
+    now = _london_datetime_input()
+    body = _operations_styles() + f'''<section class="ops-hero"><div class="ops-eyebrow">OPERATIONS · CAPTURE</div>
+<h1>Pension Projection Update</h1><p>Record the provider's illustration as a dated forecast observation. It will not change the pension balance or Net Worth.</p></section>
+<section class="ops-panel"><h2>Provider illustration</h2>
+<form class="ops-form" method="post" action="/operations/pension-projection/review">
+<input type="hidden" name="csrf" value="{token}">
+<label>Pension account<select name="account_id" required>{options}</select></label>
+<label>Provider<input name="provider" value="Aviva" required></label>
+<label>As at<input name="observed_at" type="datetime-local" value="{now}" required></label>
+<label>Retirement age<input name="retirement_age" type="number" step="any"></label>
+<label>Retirement date<input name="retirement_at" type="date"></label>
+<p class="hint">Enter exactly one retirement target: age or date.</p>
+<label>Projected fund · Low (£)<input name="fund_low" type="number" min="0" step="any" required></label>
+<label>Projected fund · Medium (£)<input name="fund_medium" type="number" min="0" step="any" required></label>
+<label>Projected fund · High (£)<input name="fund_high" type="number" min="0" step="any" required></label>
+<label>Estimated yearly income · Low (£)<input name="income_low" type="number" min="0" step="any" required></label>
+<label>Estimated yearly income · Medium (£)<input name="income_medium" type="number" min="0" step="any" required></label>
+<label>Estimated yearly income · High (£)<input name="income_high" type="number" min="0" step="any" required></label>
+<label>Growth assumption · Low (%)<input name="growth_low_percent" type="number" step="any" required></label>
+<label>Growth assumption · Medium (%)<input name="growth_medium_percent" type="number" step="any" required></label>
+<label>Growth assumption · High (%)<input name="growth_high_percent" type="number" step="any" required></label>
+<label>Income basis<input name="income_basis" required></label>
+<label>Source / evidence<input name="source" required></label>
+<label>Lineage / provenance<input name="lineage" required></label>
+<button class="ops-submit" type="submit">REVIEW PROJECTION →</button></form></section>'''
+    return _page(console, "Pension projection", body)
+
+
+def _projection_submission(fields, email, request):
+    if (not fields or set(fields) - (_PROJECTION_FIELDS | {"csrf"})
+            or not webauth.verify_csrf(
+                fields.get("csrf"), email, webauth.load_config(), _PROJECTION_PURPOSE)):
+        raise PermissionError
+    console = _console(request)
+    household = _household(console)
+    eligible = {account.id for account in _pension_accounts(console, household or "")}
+    if fields.get("account_id") not in eligible:
+        raise LookupError
+    payload = _projection_payload(fields)
+    return console, payload, _projection_from_payload(payload, "review")
+
+
+@router.post("/operations/pension-projection/review", response_class=HTMLResponse)
+async def pension_projection_review(request: Request):
+    email = _email(request)
+    if email is None:
+        return RedirectResponse("/login", status_code=303)
+    fields = await _body(request)
+    try:
+        console, _, record = _projection_submission(fields, email, request)
+    except PermissionError:
+        return HTMLResponse("Forbidden", status_code=403)
+    except LookupError:
+        return HTMLResponse("Not found", status_code=404)
+    except (KeyError, TypeError, ValueError) as exc:
+        return HTMLResponse("Capture refused: " + html.escape(str(exc)), status_code=400)
+    review_token = html.escape(_projection_review_token(
+        record, email, webauth.load_config()), quote=True)
+    csrf = html.escape(fields["csrf"], quote=True)
+    action = f'''<section class="ops-panel"><h2>Confirm observation</h2>
+<p class="ops-empty">{html.escape(record.income_basis)} · {html.escape(record.source)} · {html.escape(record.lineage)}</p>
+<form method="post" action="/operations/pension-projection/confirm">
+<input type="hidden" name="csrf" value="{csrf}">
+<input type="hidden" name="review_token" value="{review_token}">
+<button class="ops-submit" type="submit">CONFIRM AND RECORD →</button></form></section>'''
+    return _page(console, "Review pension projection",
+                 _operations_styles() + _projection_summary(
+                     record, heading=f"Review {record.provider} pension projection", action=action))
+
+
+@router.post("/operations/pension-projection/confirm", response_class=HTMLResponse)
+async def pension_projection_confirm(request: Request):
+    email = _email(request)
+    if email is None:
+        return RedirectResponse("/login", status_code=303)
+    fields = await _body(request)
+    cfg = webauth.load_config()
+    try:
+        if (not fields or set(fields) != {"csrf", "review_token"}
+                or not webauth.verify_csrf(
+                    fields.get("csrf"), email, cfg, _PROJECTION_PURPOSE)):
+            raise PermissionError
+        token_id, reviewed = _verified_projection_review(
+            fields["review_token"], email, cfg)
+        console = _console(request)
+        household = _household(console)
+        eligible = {
+            account.id for account in _pension_accounts(console, household or "")}
+        if reviewed.account_id not in eligible:
+            raise LookupError
+        _consume_projection_review(console.log, token_id, email)
+        record = record_pension_provider_projection(
+            console.log, actor=email,
+            **_canonical_projection_payload(reviewed))
+    except PermissionError:
+        return HTMLResponse("Forbidden", status_code=403)
+    except LookupError:
+        return HTMLResponse("Not found", status_code=404)
+    except (KeyError, TypeError, ValueError) as exc:
+        return HTMLResponse("Capture refused: " + html.escape(str(exc)), status_code=400)
+    action = '''<section class="ops-panel"><h2>Next</h2><p class="ops-empty">The provider observation is now available to Pension Independence.</p>
+<a class="ops-button primary" href="/missions/pension-independence">VIEW PENSION INDEPENDENCE →</a></section>'''
+    return _page(_console(request), "Pension projection recorded",
+                 _operations_styles() + _projection_summary(
+                     record, heading=f"{record.provider} pension projection recorded", action=action))
 
 
 async def _body(request: Request) -> dict[str, str] | None:
