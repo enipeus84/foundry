@@ -33,7 +33,9 @@ from foundry.core.acquisition import (
 from foundry.core.capture_targets import CaptureTargetRegistry
 from foundry.finance.acquisition import FinanceManualInterpreter
 from foundry.finance.capture_targets import FinanceCaptureTargetResolver, finance_asset_registry
+from foundry.finance import entities as finance_entities
 from foundry.finance.entities import FinanceEntityProjection
+from foundry.finance.runtime_bootstrap import bootstrap_finance_capture_targets
 from foundry.finance import vocab as finance_vocab
 from foundry.finance.pension_projection import (
     _from_payload as _projection_from_payload,
@@ -50,6 +52,60 @@ _PROJECTION_REVIEW_PURPOSE = "pension-projection-reviewed"
 _PROJECTION_REVIEW_TTL = 10 * 60
 _PROJECTION_REVIEW_CONSUMED = "operations.pension_projection_review.consumed"
 _LONDON = ZoneInfo("Europe/London")
+
+
+# These are presentation routes over the existing Finance declarations and
+# RFC-015 compatibility table.  They are deliberately not a second registry.
+_RESOURCE_KINDS = {
+    "pension": {"contract": "pension-balance-update", "label": "pension account", "plural": "pension accounts", "capture": "balance updates",
+                "entity": "account", "types": ("pension",)},
+    "cash": {"contract": "cash-balance-update", "label": "cash account", "plural": "cash accounts", "capture": "cash balance updates",
+             "entity": "account", "types": ("checking", "savings")},
+    "property": {"contract": "property-valuation-update", "label": "property", "plural": "properties", "capture": "property valuation updates",
+                 "entity": "asset", "types": ("property",)},
+}
+
+
+def _resource_kind_for_contract(contract_id: str) -> str | None:
+    return next((kind for kind, spec in _RESOURCE_KINDS.items()
+                 if spec["contract"] == contract_id), None)
+
+
+def _active_members(console, household_id: str):
+    return tuple(member for member in console.entities.members_of(household_id)
+                 if member.status == "active")
+
+
+def _resource_diagnosis(console, household_id: str, contract_id: str,
+                        bootstrap_diagnostics=()) -> tuple[str, str, str | None] | None:
+    """Return user language for an empty contract, never registry jargon."""
+    kind = _resource_kind_for_contract(contract_id)
+    if kind is None:
+        return None
+    spec = _RESOURCE_KINDS[kind]
+    projection = FinanceEntityProjection(console.log)
+    entities = (projection.accounts.values() if spec["entity"] == "account"
+                else projection.assets.values())
+    matching = [entity for entity in entities if entity.status == "active" and
+                getattr(entity, "account_type" if spec["entity"] == "account" else "asset_category") in spec["types"]]
+    if not matching:
+        return (f"No {spec['plural']} are currently registered for {spec['capture']}.",
+                f"Register {spec['label']}", kind)
+    member_ids = {member.id for member in _active_members(console, household_id)}
+    owned = [entity for entity in matching if any(
+        link.target in member_ids and link.relation in finance_vocab.VALUE_OWNERSHIP_RELATIONS
+        for link in entity.ownership)]
+    if not owned:
+        return (f"A {spec['label']} is registered, but it is not linked to an active household member.",
+                "Review ownership", None)
+    if bootstrap_diagnostics:
+        return ("Foundry could not prepare this capture from registered economic facts.",
+                "Review capture setup", None)
+    if kind == "property":
+        return ("A property is registered, but Foundry has not established it as the household's primary residence.",
+                "Review property and mortgage facts", None)
+    return ("Foundry could not prepare this capture from registered economic facts.",
+            "Review capture setup", None)
 
 
 def _email(request: Request) -> str | None:
@@ -467,6 +523,15 @@ def capture_form(request: Request):
             return HTMLResponse("Not found", status_code=404)
         eligible = targets.for_contract(household, contract)
         if not eligible:
+            diagnostics = (bootstrap_result.diagnostics if bootstrap_result is not None
+                           else ((fallback_diagnostic,) if fallback_diagnostic is not None else ()))
+            diagnosis = _resource_diagnosis(console, household, contract.identifier, diagnostics)
+            if diagnosis is not None:
+                message, action, kind = diagnosis
+                link = (f'<p><a class="ops-button primary" href="/operations/resources/new?kind={html.escape(kind, quote=True)}">{html.escape(action).upper()} →</a></p>'
+                        if kind else "")
+                return _page(console, "Capture information", _operations_styles() +
+                             f"<section class=\"ops-hero\"><div class=\"ops-eyebrow\">OPERATIONS · CAPTURE</div><h1>{html.escape(contract.display_name)}</h1><p>{html.escape(message)}</p>{link}<p><a href=\"/operations/capture\">Choose another capture type</a></p></section>")
             return _page(console, "Capture information", _operations_styles() +
                          f"<section class=\"ops-hero\"><div class=\"ops-eyebrow\">OPERATIONS · CAPTURE</div><h1>{html.escape(contract.display_name)}</h1><p>No compatible Capture Targets are registered.</p><p><a href=\"/operations/capture\">Choose another capture type</a></p></section>")
         token = html.escape(webauth.csrf_token(email, webauth.load_config(), _CONTRACT_PURPOSE), quote=True)
@@ -714,6 +779,68 @@ async def pension_projection_confirm(request: Request):
     return _page(_console(request), "Pension projection recorded",
                  _operations_styles() + _projection_summary(
                      record, heading=f"{record.provider} pension projection recorded", action=action))
+
+
+@router.get("/operations/resources/new", response_class=HTMLResponse)
+def new_resource(request: Request):
+    email = _email(request)
+    if email is None:
+        return RedirectResponse("/login", status_code=303)
+    kind = request.query_params.get("kind", "")
+    spec = _RESOURCE_KINDS.get(kind)
+    console = _console(request)
+    household = _household(console)
+    if spec is None or household is None:
+        return HTMLResponse("Not found", status_code=404)
+    members = _active_members(console, household)
+    if not members:
+        return _page(console, "Register resource", _operations_styles() +
+                     "<section class=\"ops-hero\"><h1>No owner is available.</h1><p>An active household member is required before a financial resource can be registered.</p></section>")
+    token = html.escape(webauth.csrf_token(email, webauth.load_config(), "finance-resource-registration"), quote=True)
+    types = "".join(f'<option value="{item}">{html.escape(item.title())}</option>' for item in spec["types"])
+    owner_options = "".join(f'<option value="{html.escape(member.id, quote=True)}">{html.escape(member.attributes.get("name") or member.id)}</option>' for member in members)
+    body = _operations_styles() + f'''<section class="ops-hero"><div class="ops-eyebrow">OPERATIONS · RESOURCE</div>
+<h1>Register {html.escape(spec['label'])}.</h1><p>Record the economic resource and its owner. Foundry will prepare any compatible capture route automatically.</p></section>
+<section class="ops-panel"><form class="ops-form" method="post" action="/operations/resources">
+<input type="hidden" name="csrf" value="{token}"><input type="hidden" name="kind" value="{html.escape(kind, quote=True)}">
+<label>Name or provider<input name="name" maxlength="200" required></label><label>Resource type<select name="resource_type" required>{types}</select></label>
+<label>Currency<input name="currency" value="GBP" minlength="3" maxlength="3" required></label><label>Owner<select name="owner_id" required>{owner_options}</select></label>
+<p class="hint">Ownership is an economic fact. It is independent of any Mission Target subject.</p><button class="ops-submit" type="submit">REGISTER {html.escape(spec['label']).upper()} →</button></form></section>'''
+    return _page(console, "Register resource", body)
+
+
+@router.post("/operations/resources")
+async def create_resource(request: Request):
+    email = _email(request)
+    if email is None:
+        return RedirectResponse("/login", status_code=303)
+    fields = await _body(request)
+    required = {"csrf", "kind", "name", "resource_type", "currency", "owner_id"}
+    if not fields or set(fields) != required:
+        return HTMLResponse("Forbidden", status_code=403)
+    if not webauth.verify_csrf(fields["csrf"], email, webauth.load_config(), "finance-resource-registration"):
+        return HTMLResponse("Forbidden", status_code=403)
+    spec = _RESOURCE_KINDS.get(fields["kind"])
+    if spec is None or fields["resource_type"] not in spec["types"]:
+        return HTMLResponse("Resource refused", status_code=400)
+    name, currency = fields["name"].strip(), fields["currency"].strip().upper()
+    if not name or len(currency) != 3 or not currency.isalpha():
+        return HTMLResponse("Resource refused: name and three-letter currency are required", status_code=400)
+    console = _console(request)
+    household = _household(console)
+    if household is None or fields["owner_id"] not in {member.id for member in _active_members(console, household)}:
+        return HTMLResponse("Forbidden", status_code=403)
+    try:
+        if spec["entity"] == "account":
+            resource = finance_entities.declare_account(console.log, fields["resource_type"], currency, name=name, actor=email)
+            finance_entities.link_ownership(console.log, "account", resource.id, "owner", fields["owner_id"], actor=email)
+        else:
+            resource = finance_entities.declare_asset(console.log, fields["resource_type"], currency, name=name, actor=email)
+            finance_entities.link_ownership(console.log, "asset", resource.id, "owner", fields["owner_id"], actor=email)
+        request.app.state.capture_target_bootstrap_result = bootstrap_finance_capture_targets(console.log, household, actor="runtime_bootstrap")
+    except (TypeError, ValueError, AcquisitionError) as exc:
+        return HTMLResponse("Resource refused: " + html.escape(str(exc)), status_code=400)
+    return RedirectResponse(f"/operations/capture?contract={spec['contract']}", status_code=303)
 
 
 async def _body(request: Request) -> dict[str, str] | None:
