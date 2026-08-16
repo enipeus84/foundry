@@ -55,6 +55,7 @@ def _declare_target(projection: MissionTargetProjection, household_id: str,
                     mission_id: str, effective_from: float, *, supersedes: str | None = None):
     return projection.declare(
         household_id=household_id,
+        subject_id=household_id,
         mission_id=mission_id,
         metric_id="example.metric",
         destination=TargetQuantity(100.0, "GBP", "currency"),

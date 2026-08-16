@@ -17,6 +17,7 @@ from foundry.core.entities import (  # noqa: E402
     achieve_mission,
     declare_mission,
     declare_party,
+    join_household,
 )
 from foundry.core.mission_targets import (  # noqa: E402
     MissionTargetProjection,
@@ -83,12 +84,15 @@ def _seed(tmp_path: Path, *, metric_id: str = "finance.accessible_assets",
     return log, household, mission
 
 
-def _declare_data(mission_id: str, *, value: str = "750000",
+def _declare_data(mission_id: str, *, subject_id: str | None = None, value: str = "750000",
                   reviewed: str = "none", purpose: str = _DECLARE_PURPOSE,
                   basis: str = "Deliberate long-term destination") -> dict[str, str]:
+    household_id = next(party.id for party in _build_console().entities.parties.values()
+                        if party.party_type == "household" and party.status == "active")
     return {
         "csrf": _token(purpose),
         "mission_id": mission_id,
+        "subject_id": subject_id or household_id,
         "destination_value": value,
         "horizon_date": "2035-01-01",
         "basis": basis,
@@ -98,9 +102,12 @@ def _declare_data(mission_id: str, *, value: str = "750000",
 
 def _review_data(mission_id: str, *, value: str = "750000",
                  basis: str = "Deliberate long-term destination") -> dict[str, str]:
+    household_id = next(party.id for party in _build_console().entities.parties.values()
+                        if party.party_type == "household" and party.status == "active")
     return {
         "csrf": _token(_REVIEW_PURPOSE),
         "mission_id": mission_id,
+        "subject_id": household_id,
         "destination_value": value,
         "horizon_date": "2035-01-01",
         "basis": basis,
@@ -118,7 +125,7 @@ def _direct_declare(household_id: str, mission_id: str, *, value: float = 750_00
     projection = _projection()
     descriptor = projection.metric_resolver.describe("finance.accessible_assets")
     return projection.declare(
-        household_id=household_id,
+        household_id=household_id, subject_id=household_id,
         mission_id=mission_id,
         metric_id="finance.accessible_assets",
         destination=TargetQuantity(value, descriptor.unit_or_currency, descriptor.dimension),
@@ -147,6 +154,7 @@ def test_first_declaration_derives_canonical_event_and_replays_deterministically
         "entity_id": payload["entity_id"],
         "mission_id": mission.id,
         "household_id": household.id,
+        "subject_id": household.id,
         "metric_id": "finance.accessible_assets",
         "destination_value": 750_000.0,
         "destination_unit": "GBP",
@@ -160,6 +168,31 @@ def test_first_declaration_derives_canonical_event_and_replays_deterministically
     first = _projection().in_force(mission.id, START + 1_000)
     replay = _projection().in_force(mission.id, START + 10_000)
     assert first == replay
+
+
+def test_ui_submits_selected_active_member_subject(tmp_path):
+    log, household, mission = _seed(tmp_path)
+    member = declare_party(log, "person")
+    join_household(log, member.id, household.id)
+
+    form = _client().get(f"/missions/targets/new?mission={mission.id}")
+    assert form.status_code == 200
+    assert f'name="subject_id"' in form.text
+    assert f'value="{member.id}"' in form.text
+
+    response = _client().post(
+        "/missions/targets/declare",
+        data=_declare_data(mission.id, subject_id=member.id),
+    )
+    assert response.status_code == 303
+    assert _target_events(log)[0]["payload"]["subject_id"] == member.id
+
+
+def test_ui_refuses_missing_subject(tmp_path):
+    _, _, mission = _seed(tmp_path)
+    data = _declare_data(mission.id)
+    del data["subject_id"]
+    assert _client().post("/missions/targets/declare", data=data).status_code == 403
 
 
 def test_replacement_supersedes_current_server_derived_predecessor(tmp_path):
@@ -634,6 +667,7 @@ def test_non_dated_horizons_are_derived_and_append_no_horizon_at(
     response = _client().post("/missions/targets/declare", data={
         "csrf": _token(_DECLARE_PURPOSE),
         "mission_id": mission.id,
+        "subject_id": household.id,
         "destination_value": value,
         "basis": "",
         "reviewed_in_force": "none",
