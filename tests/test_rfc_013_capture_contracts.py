@@ -20,14 +20,17 @@ from foundry.core.acquisition import (  # noqa: E402
     AcquisitionError, AssetRegistration, AssetRegistry, ProposalInbox, TelemetryStream,
     TelemetryStreamRegistry,
 )
+from foundry.core.capture_targets import CaptureTargetRegistry  # noqa: E402
 from foundry.core.entities import declare_party  # noqa: E402
-from foundry.core.entities import EntityProjection, join_household  # noqa: E402
+from foundry.core.entities import EntityProjection, join_household, update_party  # noqa: E402
 from foundry.core.metrics import MetricRegistry, MetricRequest  # noqa: E402
 from foundry.core.scope import Subject  # noqa: E402
 from foundry.eventlog import EventLog  # noqa: E402
 from foundry.finance import entities as finance  # noqa: E402
 from foundry.finance.entities import FinanceEntityProjection  # noqa: E402
+from foundry.finance.capture_targets import FinanceCaptureTargetResolver  # noqa: E402
 from foundry.finance.metrics import FinanceMetricProvider  # noqa: E402
+from foundry.finance.runtime_bootstrap import bootstrap_finance_capture_targets  # noqa: E402
 from foundry.web import app  # noqa: E402
 from foundry.operations_web import _london_datetime_input, _london_timestamp  # noqa: E402
 
@@ -311,6 +314,85 @@ def test_operations_with_compatible_targets_shows_no_empty_state(environment):
     assert "WHAT DO YOU WANT TO RECORD?" in response.text
     assert "Capture is not configured" not in response.text
     assert "no compatible Capture Targets are currently registered" not in response.text
+
+
+def _active_household(log):
+    household = declare_party(log, "household")
+    person = declare_party(log, "person")
+    update_party(log, person.id, {"name": "Chris"}, "test identity")
+    join_household(log, person.id, household.id)
+    return household, person
+
+
+def test_contract_empty_states_describe_missing_economic_resources(environment):
+    log = EventLog(environment / "events.jsonl")
+    _active_household(log)
+    client = _client()
+    pension = client.get("/operations/capture?contract=pension-balance-update")
+    cash = client.get("/operations/capture?contract=cash-balance-update")
+    property_ = client.get("/operations/capture?contract=property-valuation-update")
+    assert "No pension accounts are currently registered for balance updates." in pension.text
+    assert "REGISTER PENSION ACCOUNT" in pension.text
+    assert "No cash accounts are currently registered for cash balance updates." in cash.text
+    assert "No properties are currently registered for property valuation updates." in property_.text
+    assert "Capture Targets" not in pension.text
+
+
+def test_resource_registration_links_active_owner_and_bootstraps_pension_capture(environment):
+    log = EventLog(environment / "events.jsonl")
+    household, person = _active_household(log)
+    client = _client()
+    form = client.get("/operations/resources/new?kind=pension")
+    assert form.status_code == 200 and "Chris" in form.text
+    registered = client.post("/operations/resources", data={
+        "csrf": webauth.csrf_token(ALLOWED, webauth.load_config(), "finance-resource-registration"),
+        "kind": "pension", "name": "Aviva", "resource_type": "pension", "currency": "GBP",
+        "owner_id": person.id,
+    })
+    assert registered.status_code == 303
+    assert registered.headers["location"] == "/operations/capture?contract=pension-balance-update"
+    projection = FinanceEntityProjection(log)
+    account = next(iter(projection.accounts.values()))
+    assert account.name == "Aviva"
+    assert [(link.relation, link.target) for link in account.ownership] == [("owner", person.id)]
+    targets = CaptureTargetRegistry(log, FinanceCaptureTargetResolver(projection)).for_household(household.id)
+    assert len(targets) == 1 and targets[0].subject_id == account.id and targets[0].property == "pension_balance"
+    assert "Capture an update" in client.get(registered.headers["location"]).text
+
+
+def test_registered_resource_without_owner_is_not_misdiagnosed_as_absent(environment):
+    log = EventLog(environment / "events.jsonl")
+    _active_household(log)
+    finance.declare_account(log, "pension", "GBP", name="Aviva")
+    response = _client().get("/operations/capture?contract=pension-balance-update")
+    assert "is registered, but it is not linked to an active household member" in response.text
+    assert "No pension accounts" not in response.text
+
+
+def test_resource_registration_refuses_owner_outside_active_household(environment):
+    log = EventLog(environment / "events.jsonl")
+    _active_household(log)
+    outsider = declare_party(log, "person")
+    response = _client().post("/operations/resources", data={
+        "csrf": webauth.csrf_token(ALLOWED, webauth.load_config(), "finance-resource-registration"),
+        "kind": "pension", "name": "Aviva", "resource_type": "pension", "currency": "GBP",
+        "owner_id": outsider.id,
+    })
+    assert response.status_code == 403
+    assert not FinanceEntityProjection(log).accounts
+
+
+def test_bootstrap_failure_is_not_misdiagnosed_as_missing_resource(environment):
+    log = EventLog(environment / "events.jsonl")
+    household, person = _active_household(log)
+    account = finance.declare_account(log, "pension", "GBP", name="Aviva")
+    finance.link_ownership(log, "account", account.id, "owner", person.id)
+    AssetRegistry(log, entity_exists=lambda subject: subject == account.id).register(
+        AssetRegistration(account.id, "finance", "another-household"))
+    app.state.capture_target_bootstrap_result = bootstrap_finance_capture_targets(log, household.id)
+    response = _client().get("/operations/capture?contract=pension-balance-update")
+    assert "could not prepare this capture from registered economic facts" in response.text
+    assert "Register pension account" not in response.text
 
 
 def test_confirmed_cash_capture_is_a_reconciliation_observation_not_a_finance_projection_update(environment):
