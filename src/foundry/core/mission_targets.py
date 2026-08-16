@@ -80,6 +80,10 @@ class MissionTarget:
     id: str
     mission_id: str
     household_id: str
+    # The household authorises the declaration; the subject identifies whose
+    # outcome the target concerns.  None is reserved for legacy events that
+    # predate this field and must never be read as household scope.
+    subject_id: str | None
     metric_id: str
     destination: TargetQuantity
     destination_direction: str
@@ -190,6 +194,7 @@ class MissionTargetProjection:
         target = MissionTarget(
             id=p["entity_id"], mission_id=_text(p["mission_id"], "mission id"),
             household_id=_text(p["household_id"], "household id"), metric_id=_text(p["metric_id"], "metric id"),
+            subject_id=p.get("subject_id"),
             destination=destination, destination_direction=p["destination_direction"],
             horizon_kind=horizon_kind, horizon_at=horizon_at,
             effective_from=_finite(p["effective_from"], "target effective_from"),
@@ -208,6 +213,11 @@ class MissionTargetProjection:
         mission = self.entities.missions.get(target.mission_id)
         if household is None or household.party_type != "household" or mission is None:
             raise MissionTargetError("Mission Target references unknown canonical state")
+        # Absence is a legacy, explicitly unspecified subject.  New writes
+        # are gated in _validate_declaration; replay must preserve history.
+        if target.subject_id is not None and not self._subject_is_authorised(
+                target.subject_id, target.household_id):
+            raise MissionTargetError("Mission Target subject is outside the authorising household")
         if mission.target_metric != target.metric_id:
             raise MissionTargetError("Mission Target metric does not match Mission")
         declaration = self.log.get(mission.provenance[0]) if mission.provenance else None
@@ -260,16 +270,17 @@ class MissionTargetProjection:
                     seen.add(cursor.id)
                     cursor = self.targets[cursor.supersedes]
 
-    def declare(self, *, household_id: str, mission_id: str, metric_id: str,
+    def declare(self, *, household_id: str, subject_id: str | None = None, mission_id: str, metric_id: str,
                 destination: TargetQuantity, destination_direction: str,
                 horizon_kind: str, horizon_at: float | None, effective_from: float,
                 tolerance: TargetQuantity | None = None, basis: str | None = None,
                 supersedes: str | None = None, actor: str = "user") -> MissionTarget:
-        self._validate_declaration(household_id, mission_id, metric_id, destination,
+        self._validate_declaration(household_id, subject_id, mission_id, metric_id, destination,
                                    destination_direction, horizon_kind, horizon_at,
                                    effective_from, tolerance, basis, supersedes)
         target_id = grammar.new_id()
         payload = {"entity_id": target_id, "mission_id": mission_id, "household_id": household_id,
+                   "subject_id": subject_id,
                    "metric_id": metric_id, "destination_value": destination.value,
                    "destination_unit": destination.unit_or_currency,
                    "destination_dimension": destination.dimension,
@@ -297,12 +308,21 @@ class MissionTargetProjection:
         self.rebuild()
         return self.targets[target_id]
 
-    def _validate_declaration(self, household_id: str, mission_id: str, metric_id: str,
+    def _subject_is_authorised(self, subject_id: object, household_id: str) -> bool:
+        if not isinstance(subject_id, str) or not subject_id:
+            return False
+        if subject_id == household_id:
+            return True
+        subject = self.entities.parties.get(subject_id)
+        return bool(subject and subject.party_type == "person" and subject.status == "active"
+                    and household_id in subject.memberships)
+
+    def _validate_declaration(self, household_id: str, subject_id: object, mission_id: str, metric_id: str,
                               destination: TargetQuantity, direction: str, horizon_kind: str,
                               horizon_at: float | None, effective_from: float,
                               tolerance: TargetQuantity | None, basis: str | None,
                               supersedes: str | None) -> None:
-        _text(household_id, "household id"); _text(mission_id, "mission id"); _text(metric_id, "metric id")
+        _text(household_id, "household id"); _text(subject_id, "subject id"); _text(mission_id, "mission id"); _text(metric_id, "metric id")
         _finite(effective_from, "target effective_from")
         if direction not in vocab.DESTINATION_DIRECTION or horizon_kind not in vocab.TARGET_HORIZON_KIND:
             raise MissionTargetError("unsupported target direction or horizon")
@@ -318,6 +338,8 @@ class MissionTargetProjection:
         mission = self.entities.missions.get(mission_id)
         if household is None or household.party_type != "household" or mission is None or mission.target_metric != metric_id:
             raise MissionTargetError("Mission Target metric does not match an existing Mission")
+        if not self._subject_is_authorised(subject_id, household_id):
+            raise MissionTargetError("Mission Target subject is outside the authorising household")
         declaration = self.log.get(mission.provenance[0]) if mission.provenance else None
         if declaration is None or float(effective_from) < float(declaration["ts"]):
             raise MissionTargetError("target effective_from precedes Mission declaration")

@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from foundry.core.entities import EntityProjection, declare_mission, declare_party
+from foundry.core.entities import EntityProjection, declare_mission, declare_party, join_household
 from foundry.core.mission_assessment import MissionAssessmentRegistry, MissionDefinition
 from foundry.core.mission_targets import (
     MetricDescriptor, MissionTargetError, MissionTargetProjection, TargetQuantity,
@@ -35,7 +35,7 @@ def _projection(tmp_path: Path):
 
 def _declare(projection, household_id, mission_id, *, effective_from, supersedes=None):
     return projection.declare(
-        household_id=household_id, mission_id=mission_id, metric_id="example.metric",
+        household_id=household_id, subject_id=household_id, mission_id=mission_id, metric_id="example.metric",
         destination=TargetQuantity(100.0, "GBP", "currency"),
         destination_direction="higher_is_better", horizon_kind="none", horizon_at=None,
         effective_from=effective_from, supersedes=supersedes,
@@ -103,11 +103,11 @@ def test_target_declaration_fails_closed_for_unknown_metric_and_wrong_unit(tmp_p
     log, household, mission, projection = _projection(tmp_path)
     declared_at = log.get(mission.provenance[0])["ts"]
     with pytest.raises(MissionTargetError):
-        projection.declare(household_id=household.id, mission_id=mission.id, metric_id="unknown",
+        projection.declare(household_id=household.id, subject_id=household.id, mission_id=mission.id, metric_id="unknown",
                            destination=TargetQuantity(1, "GBP", "currency"), destination_direction="higher_is_better",
                            horizon_kind="none", horizon_at=None, effective_from=declared_at + 1)
     with pytest.raises(MissionTargetError):
-        projection.declare(household_id=household.id, mission_id=mission.id, metric_id="example.metric",
+        projection.declare(household_id=household.id, subject_id=household.id, mission_id=mission.id, metric_id="example.metric",
                            destination=TargetQuantity(1, "USD", "currency"), destination_direction="higher_is_better",
                            horizon_kind="none", horizon_at=None, effective_from=declared_at + 1)
     assert not [event for event in log.events() if event["kind"].startswith("core.mission_target.")]
@@ -116,11 +116,11 @@ def test_target_declaration_fails_closed_for_unknown_metric_and_wrong_unit(tmp_p
 def test_basis_is_optional_and_limited_to_500_unicode_characters(tmp_path):
     log, household, mission, projection = _projection(tmp_path)
     declared_at = log.get(mission.provenance[0])["ts"]
-    projection.declare(household_id=household.id, mission_id=mission.id, metric_id="example.metric",
+    projection.declare(household_id=household.id, subject_id=household.id, mission_id=mission.id, metric_id="example.metric",
                        destination=TargetQuantity(1, "GBP", "currency"), destination_direction="higher_is_better",
                        horizon_kind="none", horizon_at=None, effective_from=declared_at + 1, basis="£" * 500)
     with pytest.raises(MissionTargetError):
-        projection.declare(household_id=household.id, mission_id=mission.id, metric_id="example.metric",
+        projection.declare(household_id=household.id, subject_id=household.id, mission_id=mission.id, metric_id="example.metric",
                            destination=TargetQuantity(1, "GBP", "currency"), destination_direction="higher_is_better",
                            horizon_kind="none", horizon_at=None, effective_from=declared_at + 2, basis="£" * 501)
 
@@ -144,7 +144,8 @@ def test_cross_household_and_invalid_supersession_chains_are_conflicts(tmp_path)
     declared_at = log.get(mission.provenance[0])["ts"]
     first = _declare(projection, household.id, mission.id, effective_from=declared_at + 1)
     successor = _payload(log, first.id)
-    successor.update(entity_id="cross-household", household_id=other_household.id, supersedes=first.id,
+    successor.update(entity_id="cross-household", household_id=other_household.id,
+                     subject_id=other_household.id, supersedes=first.id,
                      effective_from=declared_at + 2)
     log.append("core.mission_target.declared", successor)
     replay = MissionTargetProjection(log, projection.entities, projection.definitions, projection.metric_resolver)
@@ -195,3 +196,51 @@ def test_finance_descriptor_seam_is_closed_and_core_is_neutral():
         "finance.liquidity_runway", "duration_months", "months", "higher_is_better")
     core_source = (Path(__file__).resolve().parents[1] / "src/foundry/core/mission_targets.py").read_text()
     assert "foundry.finance" not in core_source
+
+
+def test_new_target_subject_must_be_household_or_active_member(tmp_path):
+    log, household, mission, projection = _projection(tmp_path)
+    member = declare_party(log, "person")
+    join_household(log, member.id, household.id)
+    projection.entities.rebuild()
+    declared_at = log.get(mission.provenance[0])["ts"]
+
+    target = projection.declare(
+        household_id=household.id, subject_id=member.id, mission_id=mission.id,
+        metric_id="example.metric", destination=TargetQuantity(100, "GBP", "currency"),
+        destination_direction="higher_is_better", horizon_kind="none", horizon_at=None,
+        effective_from=declared_at + 1,
+    )
+
+    assert target.subject_id == member.id
+    assert _payload(log, target.id)["subject_id"] == member.id
+
+
+def test_new_target_rejects_missing_or_outside_subject_and_legacy_replays_none(tmp_path):
+    log, household, mission, projection = _projection(tmp_path)
+    other_household = declare_party(log, "household")
+    outsider = declare_party(log, "person")
+    join_household(log, outsider.id, other_household.id)
+    projection.entities.rebuild()
+    declared_at = log.get(mission.provenance[0])["ts"]
+    kwargs = dict(
+        household_id=household.id, mission_id=mission.id, metric_id="example.metric",
+        destination=TargetQuantity(100, "GBP", "currency"),
+        destination_direction="higher_is_better", horizon_kind="none", horizon_at=None,
+        effective_from=declared_at + 1,
+    )
+    with pytest.raises(MissionTargetError):
+        projection.declare(**kwargs)
+    with pytest.raises(MissionTargetError):
+        projection.declare(subject_id=outsider.id, **kwargs)
+
+    legacy_id = "legacy-target"
+    log.append("core.mission_target.declared", {
+        "entity_id": legacy_id, "mission_id": mission.id, "household_id": household.id,
+        "metric_id": "example.metric", "destination_value": 100, "destination_unit": "GBP",
+        "destination_dimension": "currency", "destination_direction": "higher_is_better",
+        "horizon_kind": "none", "effective_from": declared_at + 2,
+    })
+    replay = MissionTargetProjection(log, projection.entities, projection.definitions, projection.metric_resolver)
+    assert replay.targets[legacy_id].subject_id is None
+    assert replay.targets[legacy_id].subject_id != household.id

@@ -124,7 +124,7 @@ async def _body(request: Request) -> dict[str, str] | None:
 
 
 def _expected_declaration_fields(horizon_kind: str, *, approval: bool) -> set[str]:
-    fields = {"csrf", "mission_id", "destination_value", "basis"}
+    fields = {"csrf", "mission_id", "subject_id", "destination_value", "basis"}
     if horizon_kind == "by_date":
         fields.add("horizon_date")
     if approval:
@@ -160,6 +160,7 @@ def _validate_declaration(
     projection: MissionTargetProjection,
     *,
     household_id: str,
+    subject_id: str,
     mission,
     descriptor,
     horizon_kind: str,
@@ -170,7 +171,7 @@ def _validate_declaration(
     effective_from: float,
 ) -> None:
     projection._validate_declaration(
-        household_id,
+        household_id, subject_id,
         mission.id,
         mission.target_metric,
         destination,
@@ -295,11 +296,20 @@ def new_target(request: Request):
     date_field = ""
     if horizon_kind == "by_date":
         date_field = '<label>HORIZON DATE<input name="horizon_date" type="date" required></label>'
+    household = console.entities.parties[household_id]
+    subjects = [(household_id, f'{household.attributes.get("name") or "Household"} Household')]
+    subjects.extend((member.id, member.attributes.get("name") or member.id)
+                    for member in console.entities.members_of(household_id)
+                    if member.status == "active")
+    subject_options = "".join(
+        f'<option value="{html.escape(subject_id, quote=True)}">{html.escape(label)}</option>'
+        for subject_id, label in subjects)
     body = f"""<section class="mt-hero"><div class="mt-k">MISSION TARGET MANAGEMENT</div>
 <h1>Declare a destination.</h1><p>Review the canonical consequence before anything is written.</p></section>
 <form class="mt-form" method="post" action="/missions/targets/review">
 <input type="hidden" name="csrf" value="{token}">
 <label>MISSION<select name="mission_id">{option}</select></label>
+<label>APPLIES TO<select name="subject_id" required>{subject_options}</select></label>
 <label>DESTINATION VALUE<input name="destination_value" type="number" step="any" required></label>
 {date_field}<label>OPTIONAL BASIS<textarea name="basis" maxlength="500"></textarea></label>
 <p>Basis is optional. If approved, it becomes permanent append-only canonical history and cannot be edited or redacted here.</p>
@@ -313,7 +323,7 @@ async def review_target(request: Request):
     if email is None:
         return RedirectResponse("/login", status_code=303)
     fields = await _body(request)
-    allowed = {"csrf", "mission_id", "destination_value", "horizon_date", "basis"}
+    allowed = {"csrf", "mission_id", "subject_id", "destination_value", "horizon_date", "basis"}
     if fields is None or not set(fields) <= allowed or "mission_id" not in fields:
         return _refusal("Forbidden", 403)
     console = _console(request)
@@ -335,6 +345,7 @@ async def review_target(request: Request):
         _validate_declaration(
             projection,
             household_id=household_id,
+            subject_id=fields["subject_id"],
             mission=mission,
             descriptor=descriptor,
             horizon_kind=horizon_kind,
@@ -355,10 +366,15 @@ async def review_target(request: Request):
                    if horizon_kind == "by_date" else "")
     horizon_label = fields["horizon_date"] if horizon_kind == "by_date" else horizon_kind
     predecessor_label = _format_destination(predecessor) if predecessor else "First declaration"
+    subject = console.entities.parties.get(fields["subject_id"])
+    subject_label = (f'{subject.attributes.get("name") or "Household"} Household'
+                     if fields["subject_id"] == household_id and subject is not None
+                     else (subject.attributes.get("name") if subject is not None else fields["subject_id"]))
     body = f"""<section class="mt-hero"><div class="mt-k">REVIEW MISSION TARGET</div>
 <h1>Make this permanent?</h1><p>Review is informational. Approval reloads current canonical state before append.</p></section>
 <section class="mt-review"><dl><dt>Mission</dt><dd>{html.escape(definition.label if definition else mission.name)}</dd>
 <dt>Metric</dt><dd>{html.escape(mission.target_metric)}</dd>
+<dt>Applies to</dt><dd>{html.escape(subject_label)}</dd>
 <dt>Destination</dt><dd>{html.escape(_format_input(destination))}</dd>
 <dt>Direction</dt><dd>{html.escape(descriptor.destination_direction.replace('_', ' '))}</dd>
 <dt>Horizon</dt><dd>{html.escape(horizon_label)}</dd>
@@ -368,6 +384,7 @@ async def review_target(request: Request):
 <form class="mt-form" method="post" action="/missions/targets/declare">
 <input type="hidden" name="csrf" value="{declare_token}">
 <input type="hidden" name="mission_id" value="{html.escape(mission.id, quote=True)}">
+<input type="hidden" name="subject_id" value="{html.escape(fields['subject_id'], quote=True)}">
 <input type="hidden" name="destination_value" value="{html.escape(fields['destination_value'], quote=True)}">
 {hidden_date}<input type="hidden" name="basis" value="{html.escape(fields['basis'], quote=True)}">
 <input type="hidden" name="reviewed_in_force" value="{html.escape(reviewed, quote=True)}">
@@ -381,7 +398,7 @@ async def declare_target(request: Request):
     if email is None:
         return RedirectResponse("/login", status_code=303)
     fields = await _body(request)
-    allowed = {"csrf", "mission_id", "destination_value", "horizon_date", "basis", "reviewed_in_force"}
+    allowed = {"csrf", "mission_id", "subject_id", "destination_value", "horizon_date", "basis", "reviewed_in_force"}
     if fields is None or not set(fields) <= allowed or "mission_id" not in fields:
         return _refusal("Forbidden", 403)
     console = _console(request)
@@ -409,6 +426,7 @@ async def declare_target(request: Request):
         _validate_declaration(
             projection,
             household_id=household_id,
+            subject_id=fields["subject_id"],
             mission=mission,
             descriptor=descriptor,
             horizon_kind=horizon_kind,
@@ -420,6 +438,7 @@ async def declare_target(request: Request):
         )
         projection.declare(
             household_id=household_id,
+            subject_id=fields["subject_id"],
             mission_id=mission.id,
             metric_id=mission.target_metric,
             destination=destination,
