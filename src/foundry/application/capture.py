@@ -46,6 +46,13 @@ class ProposalReceipt:
 
 
 @dataclass(frozen=True)
+class CaptureAudit:
+    origin: str
+    principal: str
+    request_id: str
+
+
+@dataclass(frozen=True)
 class AvailabilityDiagnosis:
     state: str
     message: str
@@ -63,7 +70,8 @@ class CaptureService:
         self.household_id = household_id
 
     def propose(self, contract_id: str, target_id: str, values: dict[str, Any], *,
-                actor: str, channel: str, idempotency_key: str | None = None) -> ProposalReceipt:
+                actor: str, channel: str, idempotency_key: str | None = None,
+                audit: CaptureAudit | None = None) -> ProposalReceipt:
         contract = self.contracts.get(contract_id)
         if contract is None:
             raise LookupError(contract_id)
@@ -82,12 +90,16 @@ class CaptureService:
         normalised = contract.normalise(capture_values)
         capture_id = contract.capture_id(normalised, stream_id=stream.id, subject_id=stream.subject_id)
         fact = contract.canonical_mapper.map(normalised, subject_id=stream.subject_id, capture_id=capture_id)
-        external_ref = normalised.get("evidence_reference") or idempotency_key
+        external_ref = idempotency_key or normalised.get("evidence_reference") or None
+        payload = {"capture_contract": {"identifier": contract.identifier, "version": contract.version},
+                   "review_summary": contract.review_summary(normalised, subject_id=stream.subject_id)}
+        if audit is not None:
+            payload["capture_audit"] = {"origin": audit.origin, "principal": audit.principal,
+                                        "request_id": audit.request_id}
         return self.propose_fact(
             household_id, stream.id, fact, actor=actor, channel=channel,
             external_ref=external_ref,
-            payload={"capture_contract": {"identifier": contract.identifier, "version": contract.version},
-                     "review_summary": contract.review_summary(normalised, subject_id=stream.subject_id)},
+            payload=payload,
         )
 
     def propose_fact(self, household_id: str, target_id: str, fact: dict[str, Any], *, actor: str,
