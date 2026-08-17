@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+import base64
+import hashlib
 import json
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
 import pytest
 
@@ -15,6 +18,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 from foundry.core.entities import declare_party  # noqa: E402
 from foundry.eventlog import EventLog  # noqa: E402
 from foundry.mcp_remote import RemoteMcpApplication  # noqa: E402
+from foundry import webauth  # noqa: E402
 
 
 def _client(monkeypatch, tmp_path):
@@ -68,3 +72,83 @@ def test_remote_mcp_fails_closed_then_serves_sdk_initialize(monkeypatch, tmp_pat
 def test_render_build_installs_web_and_mcp_extras():
     manifest = Path(__file__).parents[1] / "render.yaml"
     assert 'buildCommand: pip install -e ".[web,mcp]"' in manifest.read_text()
+
+
+def test_desktop_oauth_registration_pkce_and_mcp_access(monkeypatch, tmp_path):
+    monkeypatch.setenv("FOUNDRY_MCP_OAUTH_ENABLED", "true")
+    client, _ = _client(monkeypatch, tmp_path)
+    registration = {
+        "redirect_uris": ["http://127.0.0.1:4321/callback"],
+        "token_endpoint_auth_method": "none",
+        "grant_types": ["authorization_code", "refresh_token"],
+        "response_types": ["code"],
+    }
+    with client:
+        metadata = client.get("/mcp/.well-known/oauth-authorization-server")
+        assert metadata.status_code == 200
+        assert metadata.json()["code_challenge_methods_supported"] == ["S256"]
+        registered = client.post("/mcp/register", json=registration)
+        assert registered.status_code == 201
+        client_id = registered.json()["client_id"]
+        bad = client.get("/mcp/authorize", params={
+            "client_id": client_id, "response_type": "code", "code_challenge": "challenge",
+            "code_challenge_method": "S256", "redirect_uri": "https://attacker.invalid/callback",
+        })
+        assert bad.status_code == 400
+        client.cookies.set(webauth.SESSION_COOKIE, webauth.session_token(
+            "remote@example.com", webauth.load_config()))
+        verifier = "desktop-pkce-verifier"
+        challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
+        authorize = client.get("/mcp/authorize", params={
+            "client_id": client_id, "response_type": "code", "code_challenge": challenge,
+            "code_challenge_method": "S256", "redirect_uri": "http://127.0.0.1:4321/callback",
+            "state": "state-value",
+        }, follow_redirects=False)
+        assert authorize.status_code == 302
+        consent = client.get(authorize.headers["location"], follow_redirects=False)
+        assert consent.status_code == 302
+        callback = urlparse(consent.headers["location"])
+        assert callback.hostname == "127.0.0.1"
+        query = parse_qs(callback.query)
+        assert query["state"] == ["state-value"]
+        token = client.post("/mcp/token", data={
+            "grant_type": "authorization_code", "client_id": client_id, "code": query["code"][0],
+            "redirect_uri": "http://127.0.0.1:4321/callback", "code_verifier": "wrong",
+        })
+        assert token.status_code == 400
+        authorize = client.get("/mcp/authorize", params={
+            "client_id": client_id, "response_type": "code", "code_challenge": challenge,
+            "code_challenge_method": "S256", "redirect_uri": "http://127.0.0.1:4321/callback",
+        }, follow_redirects=False)
+        consent = client.get(authorize.headers["location"], follow_redirects=False)
+        code = parse_qs(urlparse(consent.headers["location"]).query)["code"][0]
+        token = client.post("/mcp/token", data={
+            "grant_type": "authorization_code", "client_id": client_id, "code": code,
+            "redirect_uri": "http://127.0.0.1:4321/callback", "code_verifier": verifier,
+        })
+        assert token.status_code == 200
+        access_token = token.json()["access_token"]
+        assert "refresh_token" in token.json()
+        initialize = {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
+            "protocolVersion": "2025-06-18", "capabilities": {},
+            "clientInfo": {"name": "Claude Desktop", "version": "test"},
+        }}
+        response = client.post("/mcp/", headers={
+            "Authorization": f"Bearer {access_token}", "Accept": "application/json, text/event-stream",
+            "Content-Type": "application/json", "MCP-Protocol-Version": "2025-06-18",
+        }, json=initialize)
+        assert response.status_code == 200
+
+
+def test_protected_resource_metadata_is_only_enabled_with_oauth(monkeypatch):
+    from foundry.web import app
+
+    monkeypatch.setenv("APP_BASE_URL", "https://foundry.example")
+    monkeypatch.delenv("FOUNDRY_MCP_OAUTH_ENABLED", raising=False)
+    with TestClient(app) as client:
+        assert client.get("/.well-known/oauth-protected-resource/mcp").status_code == 404
+    monkeypatch.setenv("FOUNDRY_MCP_OAUTH_ENABLED", "true")
+    with TestClient(app) as client:
+        metadata = client.get("/.well-known/oauth-protected-resource/mcp")
+    assert metadata.status_code == 200
+    assert metadata.json()["resource"] == "https://foundry.example/mcp"

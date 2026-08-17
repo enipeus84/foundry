@@ -52,7 +52,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from foundry import __version__
@@ -110,6 +110,16 @@ async def _lifespan(_app):
 app = FastAPI(title="Foundry", version=__version__, docs_url=None, redoc_url=None, lifespan=_lifespan)
 app.mount("/static", StaticFiles(directory=Path(__file__).with_name("static")), name="static")
 app.mount("/mcp", remote_mcp_app, name="mcp")
+
+
+@app.get("/.well-known/oauth-protected-resource/mcp")
+def mcp_protected_resource_metadata():
+    """RFC 9728 discovery is above the mounted MCP ASGI application."""
+    base = os.environ.get("APP_BASE_URL", "").rstrip("/")
+    if os.environ.get("FOUNDRY_MCP_OAUTH_ENABLED") != "true" or not base:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    return JSONResponse({"resource": f"{base}/mcp", "authorization_servers": [f"{base}/mcp"],
+                         "bearer_methods_supported": ["header"]})
 
 DEFAULT_DATA_PATH = "foundry_data/events.jsonl"
 

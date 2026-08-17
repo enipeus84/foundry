@@ -14,7 +14,7 @@ from foundry.application.resources import FinancialResourceQuery, ResourceNotFou
 def create_mcp_server(query: FinancialResourceQuery | None = None,
                       principal: McpPrincipal | None = None,
                       streamable_http_path: str = "/mcp", *, host: str = "127.0.0.1",
-                      transport_security=None) -> FastMCP:
+                      transport_security=None, auth=None, auth_server_provider=None) -> FastMCP:
     """Build the fixed three-tool MCP surface; no transport code knows event shapes."""
     active_principal = principal or authenticated_principal_from_environment()
     query = query or query_for_mcp_principal(active_principal)
@@ -23,7 +23,8 @@ def create_mcp_server(query: FinancialResourceQuery | None = None,
         active_principal.client, active_principal.witness_model)
     server = FastMCP("Foundry", instructions="Governed financial-resource access.",
                      streamable_http_path=streamable_http_path, host=host,
-                     transport_security=transport_security)
+                     transport_security=transport_security, auth=auth,
+                     auth_server_provider=auth_server_provider)
 
     @server.tool()
     def list_financial_resources() -> dict:
