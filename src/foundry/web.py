@@ -96,7 +96,11 @@ from foundry.finance.resilience_metrics import (
 )
 from foundry.mission_control import Console, router as mission_control_router
 from foundry.mission_targets_web import router as mission_targets_router
-from foundry.mcp_remote import McpCanonicalPath, remote_mcp_app
+from foundry.mcp_remote import (
+    McpCanonicalPath,
+    oauth_authorization_server_metadata,
+    remote_mcp_app,
+)
 from foundry.operations_web import router as operations_router
 
 logger = logging.getLogger("foundry.web")
@@ -121,6 +125,16 @@ def mcp_protected_resource_metadata():
         return JSONResponse({"error": "not found"}, status_code=404)
     return JSONResponse({"resource": f"{base}/mcp", "authorization_servers": [f"{base}/mcp"],
                          "bearer_methods_supported": ["header"]})
+
+
+@app.get("/.well-known/oauth-authorization-server/mcp")
+def mcp_authorization_server_metadata():
+    """RFC 8414 discovery for Foundry's path-based OAuth issuer."""
+    base = os.environ.get("APP_BASE_URL", "").rstrip("/")
+    if not base:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    return JSONResponse(oauth_authorization_server_metadata(base),
+                        headers={"Cache-Control": "public, max-age=3600"})
 
 DEFAULT_DATA_PATH = "foundry_data/events.jsonl"
 

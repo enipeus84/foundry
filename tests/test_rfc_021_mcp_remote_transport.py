@@ -173,3 +173,46 @@ def test_protected_resource_metadata_is_public_without_feature_flag(monkeypatch)
         metadata = client.get("/.well-known/oauth-protected-resource/mcp")
     assert metadata.status_code == 200
     assert metadata.json()["resource"] == "https://foundry.example/mcp"
+
+
+def test_claude_discovery_follows_rfc8414_issuer_path_metadata(monkeypatch, tmp_path):
+    """Regression: Claude looked up /.well-known/oauth-authorization-server/mcp."""
+    from foundry.web import app
+
+    log = EventLog(tmp_path / "events.jsonl")
+    household = declare_party(log, "household")
+    monkeypatch.setenv("FOUNDRY_DATA_PATH", str(log.path))
+    monkeypatch.setenv("FOUNDRY_MCP_REMOTE_TOKEN", "remote-test-token")
+    monkeypatch.setenv("FOUNDRY_MCP_PRINCIPAL", "remote@example.com")
+    monkeypatch.setenv("FOUNDRY_MCP_HOUSEHOLD_ID", household.id)
+    monkeypatch.setenv("FOUNDRY_MCP_CLIENT", "claude-code")
+    monkeypatch.setenv("FOUNDRY_WITNESS_MODEL", "claude-sonnet-4-6")
+    monkeypatch.setenv("APP_BASE_URL", "https://foundry.example")
+    monkeypatch.setenv("SUPABASE_URL", "https://example.supabase.co")
+    monkeypatch.setenv("SUPABASE_PUBLISHABLE_KEY", "test-key")
+    monkeypatch.setenv("FOUNDRY_ALLOWED_EMAIL", "remote@example.com")
+    monkeypatch.setenv("SESSION_SECRET", "test-secret")
+    initialize = {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
+        "protocolVersion": "2025-06-18", "capabilities": {},
+        "clientInfo": {"name": "Claude Desktop", "version": "test"},
+    }}
+
+    with TestClient(app) as client:
+        challenge = client.post("/mcp", json=initialize, follow_redirects=False)
+        assert challenge.status_code == 401
+        resource_metadata = client.get("/.well-known/oauth-protected-resource/mcp")
+        assert resource_metadata.status_code == 200
+        assert resource_metadata.json()["authorization_servers"] == ["https://foundry.example/mcp"]
+        authorization_metadata = client.get("/.well-known/oauth-authorization-server/mcp")
+
+    assert authorization_metadata.status_code == 200
+    assert authorization_metadata.json() == {
+        "issuer": "https://foundry.example/mcp",
+        "authorization_endpoint": "https://foundry.example/mcp/authorize",
+        "token_endpoint": "https://foundry.example/mcp/token",
+        "registration_endpoint": "https://foundry.example/mcp/register",
+        "response_types_supported": ["code"],
+        "grant_types_supported": ["authorization_code", "refresh_token"],
+        "token_endpoint_auth_methods_supported": ["none"],
+        "code_challenge_methods_supported": ["S256"],
+    }

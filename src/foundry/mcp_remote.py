@@ -47,6 +47,20 @@ def _transport_security() -> tuple[str, TransportSecuritySettings]:
     )
 
 
+def oauth_authorization_server_metadata(base_url: str) -> dict[str, object]:
+    """The single metadata document for Foundry's path-based OAuth issuer."""
+    return {
+        "issuer": f"{base_url}/mcp",
+        "authorization_endpoint": f"{base_url}/mcp/authorize",
+        "token_endpoint": f"{base_url}/mcp/token",
+        "registration_endpoint": f"{base_url}/mcp/register",
+        "response_types_supported": ["code"],
+        "grant_types_supported": ["authorization_code", "refresh_token"],
+        "token_endpoint_auth_methods_supported": ["none"],
+        "code_challenge_methods_supported": ["S256"],
+    }
+
+
 class RemoteMcpApplication:
     """A fixed single-principal transport; credentials never enter tool arguments."""
 
@@ -96,16 +110,8 @@ class RemoteMcpApplication:
                 if (scope["type"] == "http"
                         and scope["path"].endswith("/.well-known/oauth-authorization-server")
                         and scope["method"] == "GET"):
-                    response = JSONResponse({
-                        "issuer": f"{base_url}/mcp",
-                        "authorization_endpoint": f"{base_url}/mcp/authorize",
-                        "token_endpoint": f"{base_url}/mcp/token",
-                        "registration_endpoint": f"{base_url}/mcp/register",
-                        "response_types_supported": ["code"],
-                        "grant_types_supported": ["authorization_code", "refresh_token"],
-                        "token_endpoint_auth_methods_supported": ["none"],
-                        "code_challenge_methods_supported": ["S256"],
-                    }, headers={"Cache-Control": "public, max-age=3600"})
+                    response = JSONResponse(oauth_authorization_server_metadata(base_url),
+                                            headers={"Cache-Control": "public, max-age=3600"})
                     await response(scope, receive, send)
                     return
                 if (scope["type"] == "http" and scope["path"].endswith("/register")):
