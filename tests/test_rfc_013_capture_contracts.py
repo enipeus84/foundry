@@ -11,6 +11,7 @@ pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient  # noqa: E402
 
 from foundry import webauth  # noqa: E402
+from foundry.application.capture import CaptureService  # noqa: E402
 from foundry.acquisition_web import _timestamp  # noqa: E402
 from foundry.capture_contracts import (  # noqa: E402
     CanonicalMapper, CaptureContract, CaptureContractRegistry, CaptureField,
@@ -367,6 +368,33 @@ def test_registered_resource_without_owner_is_not_misdiagnosed_as_absent(environ
     response = _client().get("/operations/capture?contract=pension-balance-update")
     assert "is registered, but it is not linked to an active household member" in response.text
     assert "No pension accounts" not in response.text
+
+
+def test_capture_service_proposes_the_same_inert_contract_capture_without_http(environment):
+    log = _capture_streams(environment)
+    receipt = CaptureService(log).propose(
+        "property-valuation-update", "property-value", {
+            "amount": "450000", "currency": "GBP", "valid_at": "2023-11-14T22:13",
+            "evidence_reference": "valuer-report-2026",
+        }, actor=ALLOWED, channel="manual")
+    proposal = ProposalInbox(log).proposals[receipt.proposal_id]
+    assert proposal.state == "pending"
+    assert proposal.draft_events[0]["kind"] == "finance.valuation.declared"
+    assert not any(event["kind"] == "finance.valuation.declared" for event in log.events())
+
+
+def test_capture_service_availability_is_structured_without_http(environment):
+    log = EventLog(environment / "events.jsonl")
+    household, _ = _active_household(log)
+    service = CaptureService(log)
+    absent = service.availability(household.id, "pension-balance-update")
+    assert absent is not None
+    assert absent.state == "no_resource_registered"
+    assert absent.message == "No pension accounts are currently registered for balance updates."
+    finance.declare_account(log, "pension", "GBP", name="Aviva")
+    unlinked = service.availability(household.id, "pension-balance-update")
+    assert unlinked is not None
+    assert unlinked.state == "no_active_owner_link"
 
 
 def test_resource_registration_refuses_owner_outside_active_household(environment):

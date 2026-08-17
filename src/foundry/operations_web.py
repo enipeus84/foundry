@@ -12,10 +12,8 @@ from __future__ import annotations
 from datetime import date, datetime, timezone
 import html
 import json
-import os
 import secrets
 import time
-from pathlib import Path
 from urllib.parse import parse_qs
 from zoneinfo import ZoneInfo
 
@@ -23,15 +21,14 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from foundry import webauth
+from foundry.application.capture import CaptureService
 from foundry.capture_contracts import CaptureContract, CaptureContractRegistry, capture_contract_registry
 from foundry.core.acquisition import (
     AcquisitionError, AssetRegistry, CanonicalObservationProjection,
-    EnvelopeProjection, EvidenceVault, IdentityIndex, ManualAcquisitionProvider,
-    ProposalInbox, ResolutionService, TelemetryStream, TelemetryStreamRegistry,
+    EnvelopeProjection, ProposalInbox, TelemetryStream, TelemetryStreamRegistry,
     ValuationLenses,
 )
 from foundry.core.capture_targets import CaptureTargetRegistry
-from foundry.finance.acquisition import FinanceManualInterpreter
 from foundry.finance.capture_targets import FinanceCaptureTargetResolver, finance_asset_registry
 from foundry.finance import entities as finance_entities
 from foundry.finance.entities import FinanceEntityProjection
@@ -78,34 +75,11 @@ def _active_members(console, household_id: str):
 
 def _resource_diagnosis(console, household_id: str, contract_id: str,
                         bootstrap_diagnostics=()) -> tuple[str, str, str | None] | None:
-    """Return user language for an empty contract, never registry jargon."""
-    kind = _resource_kind_for_contract(contract_id)
-    if kind is None:
+    diagnosis = CaptureService(console.log).availability(
+        household_id, contract_id, bootstrap_diagnostics=tuple(bootstrap_diagnostics))
+    if diagnosis is None:
         return None
-    spec = _RESOURCE_KINDS[kind]
-    projection = FinanceEntityProjection(console.log)
-    entities = (projection.accounts.values() if spec["entity"] == "account"
-                else projection.assets.values())
-    matching = [entity for entity in entities if entity.status == "active" and
-                getattr(entity, "account_type" if spec["entity"] == "account" else "asset_category") in spec["types"]]
-    if not matching:
-        return (f"No {spec['plural']} are currently registered for {spec['capture']}.",
-                f"Register {spec['label']}", kind)
-    member_ids = {member.id for member in _active_members(console, household_id)}
-    owned = [entity for entity in matching if any(
-        link.target in member_ids and link.relation in finance_vocab.VALUE_OWNERSHIP_RELATIONS
-        for link in entity.ownership)]
-    if not owned:
-        return (f"A {spec['label']} is registered, but it is not linked to an active household member.",
-                "Review ownership", None)
-    if bootstrap_diagnostics:
-        return ("Foundry could not prepare this capture from registered economic facts.",
-                "Review capture setup", None)
-    if kind == "property":
-        return ("A property is registered, but Foundry has not established it as the household's primary residence.",
-                "Review property and mortgage facts", None)
-    return ("Foundry could not prepare this capture from registered economic facts.",
-            "Review capture setup", None)
+    return diagnosis.message, diagnosis.action or "", diagnosis.resource_kind
 
 
 def _email(request: Request) -> str | None:
@@ -153,6 +127,10 @@ def _contracts(request: Request) -> CaptureContractRegistry:
     """The composition root may inject a registry; renderers name no types."""
     registry = getattr(request.app.state, "capture_contract_registry", None)
     return registry if isinstance(registry, CaptureContractRegistry) else capture_contract_registry()
+
+
+def _capture_service(request: Request, console) -> CaptureService:
+    return CaptureService(console.log, _contracts(request), _household(console))
 
 
 def _evidence_reference_policy(contract: CaptureContract) -> str:
@@ -889,39 +867,15 @@ async def capture(request: Request):
             return HTMLResponse("Forbidden", status_code=403)
         try:
             console = _console(request)
-            streams = TelemetryStreamRegistry(console.log)
             household = _household(console)
-            eligible = {target.id: target for target in _target_registry(console).for_contract(household or "", contract)}
-            target = eligible.get(fields["stream_id"])
-            if target is None:
+            if household is None:
                 return HTMLResponse("Not found", status_code=404)
-            stream = target.stream
             capture_values = {name: fields.get(name, "") for name in contract_fields}
-            if "valid_at" in capture_values:
-                capture_values["valid_at"] = str(_london_timestamp(capture_values["valid_at"]))
-            normalised = contract.normalise(capture_values)
-            capture_id = contract.capture_id(normalised, stream_id=stream.id, subject_id=stream.subject_id)
-            fact = contract.canonical_mapper.map(normalised, subject_id=stream.subject_id,
-                                                  capture_id=capture_id)
-            external_ref = normalised.get("evidence_reference") or None
-            vault_root = os.environ.get("FOUNDRY_EVIDENCE_VAULT_PATH")
-            if not vault_root:
-                vault_root = str(Path(os.environ.get("FOUNDRY_DATA_PATH", "foundry_data/events.jsonl")).with_suffix(".vault"))
-            vault = EvidenceVault(vault_root, authorized=lambda actor: actor == email)
-            provider = ManualAcquisitionProvider(console.log, streams, vault, [stream.id])
-            envelope = provider.capture(
-                stream.id, {"capture_contract": {"identifier": contract.identifier, "version": contract.version},
-                            "review_summary": contract.review_summary(normalised, subject_id=stream.subject_id),
-                            "observations": [fact]},
-                received_at=time.time(), actor=email, source_identity=stream.source_identity,
-                external_ref=external_ref,
-            )
-            inbox = ProposalInbox(console.log)
-            interpreter = FinanceManualInterpreter(
-                vault, EnvelopeProjection(console.log), streams,
-                ResolutionService(IdentityIndex(console.log), _asset_registry(console), inbox),
-            )
-            interpreter.interpret(envelope.id, email)
+            _capture_service(request, console).propose(
+                contract.identifier, fields["stream_id"], capture_values,
+                actor=email, channel="manual")
+        except LookupError:
+            return HTMLResponse("Not found", status_code=404)
         except (KeyError, TypeError, ValueError, AcquisitionError, json.JSONDecodeError) as exc:
             return HTMLResponse("Capture refused: " + html.escape(str(exc)), status_code=400)
         return RedirectResponse("/acquisition/inbox", status_code=303)
@@ -950,22 +904,11 @@ async def capture(request: Request):
                 "valid_at": float(fields["valid_at"]), "value": float(fields["value"]),
                 "canonical_event": {"kind": fields["event_kind"], "payload": payload},
             }
-        vault_root = os.environ.get("FOUNDRY_EVIDENCE_VAULT_PATH")
-        if not vault_root:
-            vault_root = str(Path(os.environ.get("FOUNDRY_DATA_PATH", "foundry_data/events.jsonl")).with_suffix(".vault"))
-        vault = EvidenceVault(vault_root, authorized=lambda actor: actor == email)
-        provider = ManualAcquisitionProvider(console.log, streams, vault, [stream.id])
-        envelope = provider.capture(
-            stream.id, {"observations": [fact]}, received_at=time.time(), actor=email,
-            source_identity=stream.source_identity,
-            external_ref=fields.get("external_ref") or None,
-        )
-        inbox = ProposalInbox(console.log)
-        interpreter = FinanceManualInterpreter(
-            vault, EnvelopeProjection(console.log), streams,
-            ResolutionService(IdentityIndex(console.log), _asset_registry(console), inbox),
-        )
-        interpreter.interpret(envelope.id, email)
+        _capture_service(request, console).propose_fact(
+            _household(console) or "", stream.id, fact, actor=email, channel="manual",
+            external_ref=fields.get("external_ref") or None)
+    except LookupError:
+        return HTMLResponse("Not found", status_code=404)
     except (KeyError, TypeError, ValueError, AcquisitionError, json.JSONDecodeError) as exc:
         return HTMLResponse("Capture refused: " + html.escape(str(exc)), status_code=400)
     return RedirectResponse("/acquisition/inbox", status_code=303)
