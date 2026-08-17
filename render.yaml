@@ -1,6 +1,6 @@
 # Render deployment for the Foundry status/web layer.
 # The web interface is a shell over the substrate; the core package
-# keeps zero runtime dependencies. Only the [web] extra is installed.
+# keeps zero runtime dependencies. The web service installs its web and MCP extras.
 services:
   - type: web
     name: foundry

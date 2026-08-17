@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 import json
+from pathlib import Path
 
 import pytest
 
@@ -62,3 +63,8 @@ def test_remote_mcp_fails_closed_then_serves_sdk_initialize(monkeypatch, tmp_pat
     message = next(line.removeprefix("data: ") for line in response.text.splitlines()
                    if line.startswith("data: "))
     assert json.loads(message)["result"]["serverInfo"]["name"] == "Foundry"
+
+
+def test_render_build_installs_web_and_mcp_extras():
+    manifest = Path(__file__).parents[1] / "render.yaml"
+    assert 'buildCommand: pip install -e ".[web,mcp]"' in manifest.read_text()
