@@ -10,6 +10,7 @@ from urllib.parse import urlparse
 
 from mcp.server.transport_security import TransportSecuritySettings
 from mcp.server.auth.settings import AuthSettings, ClientRegistrationOptions
+from starlette.responses import JSONResponse
 
 from foundry.application.mcp_context import McpPrincipal, query_for_mcp_principal, remote_principal_from_environment
 from foundry.mcp_oauth import FoundryOAuthProvider
@@ -37,6 +38,7 @@ class RemoteMcpApplication:
     def __init__(self):
         self._application: _ASGIApp | None = None
         self._oauth_application: _ASGIApp | None = None
+        self._oauth_lifespan_application = None
         self._oauth_provider: FoundryOAuthProvider | None = None
 
     def _application_for_request(self) -> _ASGIApp:
@@ -69,7 +71,31 @@ class RemoteMcpApplication:
             async def consent(request):
                 return await self._oauth_provider.consent(request)
 
-            self._oauth_application = server.streamable_http_app()
+            application = server.streamable_http_app()
+            self._oauth_lifespan_application = application
+
+            async def oauth_application(scope, receive, send) -> None:
+                # MCP SDK 1.29 advertises only confidential token endpoint
+                # methods despite registering Claude as a PKCE public client.
+                # Preserve its routes, correcting only that discovery document.
+                if (scope["type"] == "http"
+                        and scope["path"].endswith("/.well-known/oauth-authorization-server")
+                        and scope["method"] == "GET"):
+                    response = JSONResponse({
+                        "issuer": f"{base_url}/mcp",
+                        "authorization_endpoint": f"{base_url}/mcp/authorize",
+                        "token_endpoint": f"{base_url}/mcp/token",
+                        "registration_endpoint": f"{base_url}/mcp/register",
+                        "response_types_supported": ["code"],
+                        "grant_types_supported": ["authorization_code", "refresh_token"],
+                        "token_endpoint_auth_methods_supported": ["none"],
+                        "code_challenge_methods_supported": ["S256"],
+                    }, headers={"Cache-Control": "public, max-age=3600"})
+                    await response(scope, receive, send)
+                    return
+                await application(scope, receive, send)
+
+            self._oauth_application = oauth_application
         return self._oauth_application
 
     @asynccontextmanager
@@ -81,7 +107,8 @@ class RemoteMcpApplication:
         application = self._application_for_request()
         async with application.router.lifespan_context(application):
             oauth_application = self._oauth_application_for_request()
-            async with oauth_application.router.lifespan_context(oauth_application):
+            async with self._oauth_lifespan_application.router.lifespan_context(
+                    self._oauth_lifespan_application):
                 yield
 
     async def __call__(self, scope, receive, send) -> None:

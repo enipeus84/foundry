@@ -77,7 +77,8 @@ def test_render_build_installs_web_and_mcp_extras():
 def test_desktop_oauth_registration_pkce_and_mcp_access(monkeypatch, tmp_path):
     client, _ = _client(monkeypatch, tmp_path)
     registration = {
-        "redirect_uris": ["http://127.0.0.1:4321/callback"],
+        "client_name": "Claude",
+        "redirect_uris": ["https://claude.ai/api/mcp/auth_callback"],
         "token_endpoint_auth_method": "none",
         "grant_types": ["authorization_code", "refresh_token"],
         "response_types": ["code"],
@@ -86,8 +87,12 @@ def test_desktop_oauth_registration_pkce_and_mcp_access(monkeypatch, tmp_path):
         metadata = client.get("/mcp/.well-known/oauth-authorization-server")
         assert metadata.status_code == 200
         assert metadata.json()["code_challenge_methods_supported"] == ["S256"]
+        assert "none" in metadata.json()["token_endpoint_auth_methods_supported"]
         registered = client.post("/mcp/register", json=registration)
         assert registered.status_code == 201
+        assert registered.json()["client_name"] == "Claude"
+        assert registered.json()["redirect_uris"] == ["https://claude.ai/api/mcp/auth_callback"]
+        assert registered.json()["token_endpoint_auth_method"] == "none"
         client_id = registered.json()["client_id"]
         bad = client.get("/mcp/authorize", params={
             "client_id": client_id, "response_type": "code", "code_challenge": "challenge",
@@ -100,30 +105,30 @@ def test_desktop_oauth_registration_pkce_and_mcp_access(monkeypatch, tmp_path):
         challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
         authorize = client.get("/mcp/authorize", params={
             "client_id": client_id, "response_type": "code", "code_challenge": challenge,
-            "code_challenge_method": "S256", "redirect_uri": "http://127.0.0.1:4321/callback",
+            "code_challenge_method": "S256", "redirect_uri": "https://claude.ai/api/mcp/auth_callback",
             "state": "state-value",
         }, follow_redirects=False)
         assert authorize.status_code == 302
         consent = client.get(authorize.headers["location"], follow_redirects=False)
         assert consent.status_code == 302
         callback = urlparse(consent.headers["location"])
-        assert callback.hostname == "127.0.0.1"
+        assert callback.hostname == "claude.ai"
         query = parse_qs(callback.query)
         assert query["state"] == ["state-value"]
         token = client.post("/mcp/token", data={
             "grant_type": "authorization_code", "client_id": client_id, "code": query["code"][0],
-            "redirect_uri": "http://127.0.0.1:4321/callback", "code_verifier": "wrong",
+            "redirect_uri": "https://claude.ai/api/mcp/auth_callback", "code_verifier": "wrong",
         })
         assert token.status_code == 400
         authorize = client.get("/mcp/authorize", params={
             "client_id": client_id, "response_type": "code", "code_challenge": challenge,
-            "code_challenge_method": "S256", "redirect_uri": "http://127.0.0.1:4321/callback",
+            "code_challenge_method": "S256", "redirect_uri": "https://claude.ai/api/mcp/auth_callback",
         }, follow_redirects=False)
         consent = client.get(authorize.headers["location"], follow_redirects=False)
         code = parse_qs(urlparse(consent.headers["location"]).query)["code"][0]
         token = client.post("/mcp/token", data={
             "grant_type": "authorization_code", "client_id": client_id, "code": code,
-            "redirect_uri": "http://127.0.0.1:4321/callback", "code_verifier": verifier,
+            "redirect_uri": "https://claude.ai/api/mcp/auth_callback", "code_verifier": verifier,
         })
         assert token.status_code == 200
         access_token = token.json()["access_token"]
