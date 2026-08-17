@@ -6,7 +6,7 @@ services:
     name: foundry
     runtime: python
     plan: free
-    buildCommand: pip install -e ".[web]"
+    buildCommand: pip install -e ".[web,mcp]"
     startCommand: uvicorn foundry.web:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /health
     envVars:
@@ -26,4 +26,14 @@ services:
       - key: FOUNDRY_DEMO_DATA
         sync: false
       - key: FOUNDRY_DATA_PATH
+        sync: false
+      - key: FOUNDRY_MCP_REMOTE_TOKEN
+        generateValue: true
+      - key: FOUNDRY_MCP_PRINCIPAL
+        sync: false
+      - key: FOUNDRY_MCP_HOUSEHOLD_ID
+        sync: false
+      - key: FOUNDRY_MCP_CLIENT
+        sync: false
+      - key: FOUNDRY_WITNESS_MODEL
         sync: false

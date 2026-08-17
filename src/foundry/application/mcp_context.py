@@ -37,6 +37,24 @@ def authenticated_principal_from_environment() -> McpPrincipal:
     return McpPrincipal(email, household_id, client, witness_model)
 
 
+def remote_principal_from_environment() -> McpPrincipal:
+    """Resolve the fixed, deployment-owned identity for remote MCP."""
+    email = os.environ.get("FOUNDRY_MCP_PRINCIPAL", "").strip().lower()
+    household_id = os.environ.get("FOUNDRY_MCP_HOUSEHOLD_ID")
+    client = os.environ.get("FOUNDRY_MCP_CLIENT")
+    witness_model = os.environ.get("FOUNDRY_WITNESS_MODEL")
+    config = webauth.load_config()
+    if not all((email, household_id, client, witness_model)):
+        raise PermissionError("Foundry remote MCP is not configured")
+    if not config.configured or email != config.allowed_email:
+        raise PermissionError("Foundry remote MCP principal is not permitted")
+    log = EventLog(os.environ.get("FOUNDRY_DATA_PATH", "foundry_data/events.jsonl"))
+    household = EntityProjection(log).parties.get(household_id)
+    if household is None or household.party_type != "household" or household.status != "active":
+        raise PermissionError("Foundry MCP household binding is unavailable")
+    return McpPrincipal(email, household_id, client, witness_model)
+
+
 def query_for_mcp_principal(principal: McpPrincipal) -> FinancialResourceQuery:
     log = EventLog(os.environ.get("FOUNDRY_DATA_PATH", "foundry_data/events.jsonl"))
     return FinancialResourceQuery(log, principal.household_id)
