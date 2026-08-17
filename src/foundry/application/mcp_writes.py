@@ -20,6 +20,8 @@ class McpBalanceCapture:
     log: EventLog
     principal: str
     household_id: str
+    client: str
+    witness_model: str
 
     def record_account_balance(self, resource_id: str, amount: float, currency: str, as_at: str,
                                request_id: str, evidence_reference: str | None = None) -> ProposalReceipt:
@@ -43,4 +45,4 @@ class McpBalanceCapture:
         return CaptureService(self.log, household_id=self.household_id).propose(
             operation["contract_id"], operation["target_id"], values,
             actor=f"mcp:{self.principal}", channel="manual", idempotency_key=request_id,
-            audit=CaptureAudit("mcp", self.principal, request_id))
+            audit=CaptureAudit("mcp", self.principal, request_id, self.client, self.witness_model))

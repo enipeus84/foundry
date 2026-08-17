@@ -50,6 +50,8 @@ class CaptureAudit:
     origin: str
     principal: str
     request_id: str
+    client: str | None = None
+    witness_model: str | None = None
 
 
 @dataclass(frozen=True)
@@ -95,7 +97,8 @@ class CaptureService:
                    "review_summary": contract.review_summary(normalised, subject_id=stream.subject_id)}
         if audit is not None:
             payload["capture_audit"] = {"origin": audit.origin, "principal": audit.principal,
-                                        "request_id": audit.request_id}
+                                        "request_id": audit.request_id, "client": audit.client,
+                                        "witness_model": audit.witness_model}
         return self.propose_fact(
             household_id, stream.id, fact, actor=actor, channel=channel,
             external_ref=external_ref,

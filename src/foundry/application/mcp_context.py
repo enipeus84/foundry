@@ -15,13 +15,17 @@ from foundry.eventlog import EventLog
 class McpPrincipal:
     email: str
     household_id: str
+    client: str
+    witness_model: str
 
 
 def authenticated_principal_from_environment() -> McpPrincipal:
     """Resolve a server-owned principal binding; tool arguments carry no authority."""
     token = os.environ.get("FOUNDRY_MCP_SESSION_TOKEN")
     household_id = os.environ.get("FOUNDRY_MCP_HOUSEHOLD_ID")
-    if not token or not household_id:
+    client = os.environ.get("FOUNDRY_MCP_CLIENT")
+    witness_model = os.environ.get("FOUNDRY_WITNESS_MODEL")
+    if not token or not household_id or not client or not witness_model:
         raise PermissionError("Foundry MCP requires an authenticated principal and household binding")
     email = webauth.session_email(token, webauth.load_config())
     if email is None:
@@ -30,7 +34,7 @@ def authenticated_principal_from_environment() -> McpPrincipal:
     household = EntityProjection(log).parties.get(household_id)
     if household is None or household.party_type != "household" or household.status != "active":
         raise PermissionError("Foundry MCP household binding is unavailable")
-    return McpPrincipal(email, household_id)
+    return McpPrincipal(email, household_id, client, witness_model)
 
 
 def query_for_mcp_principal(principal: McpPrincipal) -> FinancialResourceQuery:

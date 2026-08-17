@@ -1,4 +1,4 @@
-"""Privileged, read-only MCP adapter for Foundry's financial-resource state."""
+"""Privileged MCP adapter for Foundry's governed financial-resource surface."""
 
 from __future__ import annotations
 
@@ -16,7 +16,9 @@ def create_mcp_server(query: FinancialResourceQuery | None = None,
     """Build the fixed three-tool MCP surface; no transport code knows event shapes."""
     active_principal = principal or authenticated_principal_from_environment()
     query = query or query_for_mcp_principal(active_principal)
-    balance_capture = McpBalanceCapture(query.log, active_principal.email, active_principal.household_id)
+    balance_capture = McpBalanceCapture(
+        query.log, active_principal.email, active_principal.household_id,
+        active_principal.client, active_principal.witness_model)
     server = FastMCP("Foundry", instructions="Read-only governed financial-resource access.")
 
     @server.tool()

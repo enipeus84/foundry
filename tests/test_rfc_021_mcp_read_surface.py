@@ -40,6 +40,8 @@ def environment(monkeypatch, tmp_path):
     monkeypatch.setenv("SESSION_SECRET", "unit-test-secret-0123456789abcdef")
     monkeypatch.setenv("FOUNDRY_DATA_PATH", str(tmp_path / "events.jsonl"))
     monkeypatch.setenv("FOUNDRY_EVIDENCE_VAULT_PATH", str(tmp_path / "vault"))
+    monkeypatch.setenv("FOUNDRY_MCP_CLIENT", "claude-code")
+    monkeypatch.setenv("FOUNDRY_WITNESS_MODEL", "claude-sonnet-4-6")
     return tmp_path
 
 
@@ -124,6 +126,11 @@ def test_mcp_client_connects_and_cannot_cross_household(environment):
                 no_authority = await session.call_tool("record_account_balance", {
                     **command, "resource_id": other_account.id, "request_id": "mcp-request-2"})
                 assert no_authority.isError
+                identity_override = await session.call_tool("record_account_balance", {
+                    **command, "client": "evil-client",
+                    "witness_model": "evil-model", "household_id": "other-household"})
+                assert not identity_override.isError
+                assert identity_override.content[0].text == first.content[0].text
 
     asyncio.run(exercise())
     proposal = next(iter(ProposalInbox(log).proposals.values()))
@@ -134,7 +141,8 @@ def test_mcp_client_connects_and_cannot_cross_household(environment):
     vault = EvidenceVault(environment / "vault", authorized=lambda actor: actor == f"mcp:{ALLOWED}")
     captured = json.loads(vault.get(envelope.payload_hash, f"mcp:{ALLOWED}"))
     assert captured["capture_audit"] == {
-        "origin": "mcp", "principal": ALLOWED, "request_id": "mcp-request-1"}
+        "origin": "mcp", "principal": ALLOWED, "request_id": "mcp-request-1",
+        "client": "claude-code", "witness_model": "claude-sonnet-4-6"}
     gate = ConfirmationGate(log, ProposalInbox(log), TelemetryStreamRegistry(log), IdentityIndex(log),
                             finance_asset_registry(log), FINANCE_MANUAL_DRAFT_CONTRACT)
     gate.confirm(proposal.id, actor="human-reviewer")
@@ -144,7 +152,7 @@ def test_mcp_client_connects_and_cannot_cross_household(environment):
 
 def test_mcp_balance_capture_requires_durable_write_authority(environment):
     log, household, account, other_account = _world(environment)
-    command = McpBalanceCapture(log, ALLOWED, household.id)
+    command = McpBalanceCapture(log, ALLOWED, household.id, "claude-code", "claude-sonnet-4-6")
     with pytest.raises(McpWriteDenied):
         command.record_account_balance(account.id, 10, "GBP", "2026-08-17T10:30", "request-1")
     grant_principal_household_authority(log, ALLOWED, household.id)
