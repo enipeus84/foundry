@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import hmac
+import json
+import logging
 import os
 from contextlib import asynccontextmanager
 from typing import Awaitable, Callable
@@ -18,6 +20,7 @@ from foundry.mcp_server import create_mcp_server
 
 
 _ASGIApp = Callable[[dict, Callable, Callable], Awaitable[None]]
+logger = logging.getLogger(__name__)
 
 
 def _transport_security() -> tuple[str, TransportSecuritySettings]:
@@ -93,10 +96,52 @@ class RemoteMcpApplication:
                     }, headers={"Cache-Control": "public, max-age=3600"})
                     await response(scope, receive, send)
                     return
+                if (scope["type"] == "http" and scope["path"].endswith("/register")):
+                    await self._diagnose_registration(scope, receive, send, application)
+                    return
                 await application(scope, receive, send)
 
             self._oauth_application = oauth_application
         return self._oauth_application
+
+    @staticmethod
+    async def _diagnose_registration(scope, receive, send, application) -> None:
+        """Log only public DCR shape and outcome; never credential material."""
+        request_body: list[bytes] = []
+        response_body: list[bytes] = []
+        status = None
+
+        async def observed_receive():
+            message = await receive()
+            if message["type"] == "http.request":
+                request_body.append(message.get("body", b""))
+            return message
+
+        async def observed_send(message):
+            nonlocal status
+            if message["type"] == "http.response.start":
+                status = message["status"]
+            elif message["type"] == "http.response.body":
+                response_body.append(message.get("body", b""))
+            await send(message)
+
+        try:
+            await application(scope, observed_receive, observed_send)
+        finally:
+            fields, category = {}, "unclassified"
+            try:
+                request = json.loads(b"".join(request_body))
+                if isinstance(request, dict):
+                    fields = {key: request.get(key) for key in (
+                        "client_name", "redirect_uris", "grant_types", "response_types",
+                        "token_endpoint_auth_method") if key in request}
+                response = json.loads(b"".join(response_body))
+                if isinstance(response, dict):
+                    category = response.get("error", "accepted" if status == 201 else "unclassified")
+            except (TypeError, UnicodeDecodeError, json.JSONDecodeError):
+                category = "malformed_json"
+            logger.info("mcp_oauth_registration method=%s path=%s fields=%s status=%s category=%s",
+                        scope["method"], scope["path"], fields, status, category)
 
     @asynccontextmanager
     async def lifespan(self):

@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 import base64
 import hashlib
 import json
+import logging
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
@@ -74,7 +75,8 @@ def test_render_build_installs_web_and_mcp_extras():
     assert 'buildCommand: pip install -e ".[web,mcp]"' in manifest.read_text()
 
 
-def test_desktop_oauth_registration_pkce_and_mcp_access(monkeypatch, tmp_path):
+def test_desktop_oauth_registration_pkce_and_mcp_access(monkeypatch, tmp_path, caplog):
+    caplog.set_level(logging.INFO, logger="foundry.mcp_remote")
     client, _ = _client(monkeypatch, tmp_path)
     registration = {
         "client_name": "Claude",
@@ -93,6 +95,11 @@ def test_desktop_oauth_registration_pkce_and_mcp_access(monkeypatch, tmp_path):
         assert registered.json()["client_name"] == "Claude"
         assert registered.json()["redirect_uris"] == ["https://claude.ai/api/mcp/auth_callback"]
         assert registered.json()["token_endpoint_auth_method"] == "none"
+        diagnostic = next(record.getMessage() for record in caplog.records
+                          if record.getMessage().startswith("mcp_oauth_registration"))
+        assert "client_name" in diagnostic and "redirect_uris" in diagnostic
+        assert "status=201" in diagnostic and "category=accepted" in diagnostic
+        assert "client_secret" not in diagnostic and "Bearer" not in diagnostic
         client_id = registered.json()["client_id"]
         bad = client.get("/mcp/authorize", params={
             "client_id": client_id, "response_type": "code", "code_challenge": "challenge",
