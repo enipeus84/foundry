@@ -29,8 +29,6 @@ services:
         sync: false
       - key: FOUNDRY_MCP_REMOTE_TOKEN
         generateValue: true
-      - key: FOUNDRY_MCP_OAUTH_ENABLED
-        value: "true"
       - key: FOUNDRY_MCP_PRINCIPAL
         sync: false
       - key: FOUNDRY_MCP_HOUSEHOLD_ID

@@ -75,7 +75,6 @@ def test_render_build_installs_web_and_mcp_extras():
 
 
 def test_desktop_oauth_registration_pkce_and_mcp_access(monkeypatch, tmp_path):
-    monkeypatch.setenv("FOUNDRY_MCP_OAUTH_ENABLED", "true")
     client, _ = _client(monkeypatch, tmp_path)
     registration = {
         "redirect_uris": ["http://127.0.0.1:4321/callback"],
@@ -140,14 +139,19 @@ def test_desktop_oauth_registration_pkce_and_mcp_access(monkeypatch, tmp_path):
         assert response.status_code == 200
 
 
-def test_protected_resource_metadata_is_only_enabled_with_oauth(monkeypatch):
+def test_oauth_discovery_bypasses_static_bearer_guard_without_feature_flag(monkeypatch, tmp_path):
+    """Regression: deployed Burn 06 returned 401 before OAuth discovery."""
+    client, _ = _client(monkeypatch, tmp_path)
+    with client:
+        assert client.get("/mcp/.well-known/oauth-authorization-server").status_code == 200
+
+
+def test_protected_resource_metadata_is_public_without_feature_flag(monkeypatch):
+    """Regression: deployed Burn 06 returned 404 at the RFC 9728 path."""
     from foundry.web import app
 
     monkeypatch.setenv("APP_BASE_URL", "https://foundry.example")
     monkeypatch.delenv("FOUNDRY_MCP_OAUTH_ENABLED", raising=False)
-    with TestClient(app) as client:
-        assert client.get("/.well-known/oauth-protected-resource/mcp").status_code == 404
-    monkeypatch.setenv("FOUNDRY_MCP_OAUTH_ENABLED", "true")
     with TestClient(app) as client:
         metadata = client.get("/.well-known/oauth-protected-resource/mcp")
     assert metadata.status_code == 200

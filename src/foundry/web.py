@@ -116,7 +116,7 @@ app.mount("/mcp", remote_mcp_app, name="mcp")
 def mcp_protected_resource_metadata():
     """RFC 9728 discovery is above the mounted MCP ASGI application."""
     base = os.environ.get("APP_BASE_URL", "").rstrip("/")
-    if os.environ.get("FOUNDRY_MCP_OAUTH_ENABLED") != "true" or not base:
+    if not base:
         return JSONResponse({"error": "not found"}, status_code=404)
     return JSONResponse({"resource": f"{base}/mcp", "authorization_servers": [f"{base}/mcp"],
                          "bearer_methods_supported": ["header"]})

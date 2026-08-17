@@ -80,11 +80,8 @@ class RemoteMcpApplication:
             return
         application = self._application_for_request()
         async with application.router.lifespan_context(application):
-            if os.environ.get("FOUNDRY_MCP_OAUTH_ENABLED") == "true":
-                oauth_application = self._oauth_application_for_request()
-                async with oauth_application.router.lifespan_context(oauth_application):
-                    yield
-            else:
+            oauth_application = self._oauth_application_for_request()
+            async with oauth_application.router.lifespan_context(oauth_application):
                 yield
 
     async def __call__(self, scope, receive, send) -> None:
@@ -100,10 +97,10 @@ class RemoteMcpApplication:
             if authorization.startswith("Bearer ") and hmac.compare_digest(
                     authorization.removeprefix("Bearer "), credential):
                 await self._application_for_request()(scope, receive, send)
-            elif os.environ.get("FOUNDRY_MCP_OAUTH_ENABLED") == "true":
-                await self._oauth_application_for_request()(scope, receive, send)
             else:
-                await self._refuse(send, 401)
+                # OAuth endpoints remain public; the SDK's middleware protects
+                # only the mounted MCP streamable-HTTP route.
+                await self._oauth_application_for_request()(scope, receive, send)
         except PermissionError:
             await self._refuse(send, 503)
 
