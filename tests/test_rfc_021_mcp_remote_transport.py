@@ -18,7 +18,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 
 from foundry.core.entities import declare_party  # noqa: E402
 from foundry.eventlog import EventLog  # noqa: E402
-from foundry.mcp_remote import RemoteMcpApplication  # noqa: E402
+from foundry.mcp_remote import McpCanonicalPath, RemoteMcpApplication  # noqa: E402
 from foundry import webauth  # noqa: E402
 
 
@@ -44,6 +44,7 @@ def _client(monkeypatch, tmp_path):
             yield
 
     app = FastAPI(lifespan=lifespan)
+    app.add_middleware(McpCanonicalPath)
     app.mount("/mcp", remote)
     return TestClient(app), household
 
@@ -55,7 +56,11 @@ def test_remote_mcp_fails_closed_then_serves_sdk_initialize(monkeypatch, tmp_pat
         "clientInfo": {"name": "test", "version": "1"},
     }}
     with client:
-        assert client.post("/mcp/", json=initialize).status_code == 401
+        challenge = client.post("/mcp", json=initialize, follow_redirects=False)
+        assert challenge.status_code == 401
+        assert challenge.headers["www-authenticate"] == (
+            'Bearer error="invalid_token", error_description="Authentication required", '
+            'resource_metadata="https://testserver/.well-known/oauth-protected-resource/mcp"')
         assert client.post("/mcp/", headers={"Authorization": "Bearer wrong"},
                            json=initialize).status_code == 401
         response = client.post("/mcp/", headers={

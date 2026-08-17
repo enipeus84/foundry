@@ -96,7 +96,7 @@ from foundry.finance.resilience_metrics import (
 )
 from foundry.mission_control import Console, router as mission_control_router
 from foundry.mission_targets_web import router as mission_targets_router
-from foundry.mcp_remote import remote_mcp_app
+from foundry.mcp_remote import McpCanonicalPath, remote_mcp_app
 from foundry.operations_web import router as operations_router
 
 logger = logging.getLogger("foundry.web")
@@ -108,6 +108,7 @@ async def _lifespan(_app):
 
 
 app = FastAPI(title="Foundry", version=__version__, docs_url=None, redoc_url=None, lifespan=_lifespan)
+app.add_middleware(McpCanonicalPath)
 app.mount("/static", StaticFiles(directory=Path(__file__).with_name("static")), name="static")
 app.mount("/mcp", remote_mcp_app, name="mcp")
 

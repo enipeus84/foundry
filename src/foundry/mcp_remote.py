@@ -23,6 +23,18 @@ _ASGIApp = Callable[[dict, Callable, Callable], Awaitable[None]]
 logger = logging.getLogger(__name__)
 
 
+class McpCanonicalPath:
+    """Route the resource identifier itself without Starlette's slash redirect."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send) -> None:
+        if scope["type"] == "http" and scope["path"] == "/mcp":
+            scope = {**scope, "path": "/mcp/"}
+        await self.app(scope, receive, send)
+
+
 def _transport_security() -> tuple[str, TransportSecuritySettings]:
     base_url = os.environ.get("APP_BASE_URL", "")
     parsed = urlparse(base_url)
