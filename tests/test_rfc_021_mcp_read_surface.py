@@ -109,6 +109,7 @@ def test_mcp_client_connects_and_cannot_cross_household(environment):
                 assert {tool.name for tool in tools.tools} == {
                     "list_financial_resources", "get_financial_resource",
                     "explain_capture_availability", "record_account_balance",
+                    "propose_financial_observation",
                     "create_financial_resource", "execute_create_financial_resource",
                     "update_financial_resource", "execute_update_financial_resource",
                     "close_financial_resource", "execute_close_financial_resource"}
@@ -161,6 +162,32 @@ def test_mcp_balance_capture_requires_durable_write_authority(environment):
     grant_principal_household_authority(log, ALLOWED, household.id)
     with pytest.raises(McpWriteDenied):
         command.record_account_balance(other_account.id, 10, "GBP", "2026-08-17T10:30", "request-2")
+
+
+def test_mcp_financial_observation_proposal_is_contract_bound_and_idempotent(environment):
+    log, household, account, _ = _world(environment)
+    grant_principal_household_authority(log, ALLOWED, household.id)
+    command = McpBalanceCapture(log, ALLOWED, household.id, "claude-code", "claude-sonnet-4-6")
+
+    first = command.propose_financial_observation(
+        resource_id=account.id, capture_contract_id="cash-balance-update",
+        amount=31400, currency="GBP", as_at="2026-08-18T10:30",
+        command_id="observation-command-1", evidence_reference="bank-statement")
+    second = command.propose_financial_observation(
+        resource_id=account.id, capture_contract_id="cash-balance-update",
+        amount=31400, currency="GBP", as_at="2026-08-18T10:30",
+        command_id="observation-command-1", evidence_reference="bank-statement")
+
+    assert first == second
+    assert "31,400.00" in first.review_summary
+    assert len(ProposalInbox(log).proposals) == 1
+    assert not any(event["kind"] == "finance.account.reconciliation_observed"
+                   for event in log.events())
+    with pytest.raises(McpWriteDenied, match="different capture"):
+        command.propose_financial_observation(
+            resource_id=account.id, capture_contract_id="cash-balance-update",
+            amount=31401, currency="GBP", as_at="2026-08-18T10:30",
+            command_id="observation-command-1", evidence_reference="bank-statement")
 
 
 def test_mcp_adapter_has_no_persistence_or_generic_query_surface():

@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from hashlib import sha256
 import json
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from foundry.application.capture import CaptureAudit, CaptureService, ProposalReceipt
+from foundry.core.acquisition import AcquisitionError
+from foundry.capture_contracts import capture_contract_registry
 from foundry.application.resources import (
     FinancialResourceCommandService, FinancialResourceQuery, ResourceCommandDenied, ResourceNotFound,
 )
@@ -25,8 +29,31 @@ class ResourceProposalReceipt:
     operation: str
 
 
+@dataclass(frozen=True)
+class FinancialObservationProposalReceipt:
+    """The MCP-facing receipt for an inert, reviewable capture proposal."""
+
+    proposal_id: str
+    envelope_id: str
+    contract_id: str
+    contract_version: str
+    resource_id: str
+    review_summary: str
+    command_id: str
+
+
 def _proposal_digest(values: dict[str, Any]) -> str:
     return sha256(json.dumps(values, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+
+def _capture_values_for_summary(values: dict[str, Any]) -> dict[str, Any]:
+    """Mirror CaptureService's canonical London timestamp normalisation."""
+    result = dict(values)
+    valid_at = result.get("valid_at")
+    if isinstance(valid_at, str) and "T" in valid_at:
+        result["valid_at"] = str(datetime.fromisoformat(valid_at).replace(
+            tzinfo=ZoneInfo("Europe/London")).timestamp())
+    return result
 
 
 @dataclass(frozen=True)
@@ -148,10 +175,90 @@ class McpBalanceCapture:
     client: str
     witness_model: str
 
-    def record_account_balance(self, resource_id: str, amount: float, currency: str, as_at: str,
-                               request_id: str, evidence_reference: str | None = None) -> ProposalReceipt:
+    def propose_financial_observation(
+            self, *, resource_id: str, capture_contract_id: str, amount: float,
+            currency: str, as_at: str, command_id: str,
+            evidence_reference: str | None = None,
+            valuation_basis: str | None = None, source: str | None = None,
+    ) -> FinancialObservationProposalReceipt:
+        """Validate and stage one existing contract for human confirmation.
+
+        This is deliberately the only MCP financial-observation write path.
+        Confirmation remains with the canonical acquisition confirmation gate.
+        """
+        if not isinstance(command_id, str) or not command_id.strip():
+            raise McpWriteDenied("command_id is required for idempotent capture")
         if not PrincipalHouseholdAuthority(self.log).permits_write(self.principal, self.household_id):
             raise McpWriteDenied("principal is not authorised to mutate this household")
+
+        query = FinancialResourceQuery(self.log, self.household_id)
+        try:
+            resource = query.get_financial_resource(resource_id)
+            availability = query.capture_availability(resource_id)
+        except ResourceNotFound as exc:
+            raise McpWriteDenied("financial resource is unavailable") from exc
+        operation = next((item for item in availability["supported_capture_operations"]
+                          if item["contract_id"] == capture_contract_id), None)
+        if operation is None:
+            raise McpWriteDenied("capture contract is not available for this resource")
+
+        values: dict[str, Any] = {
+            "amount": str(amount), "currency": currency, "valid_at": as_at,
+        }
+        for name, value in (("evidence_reference", evidence_reference),
+                            ("valuation_basis", valuation_basis), ("source", source)):
+            if value is not None:
+                values[name] = value
+        request = {
+            "operation": "propose_financial_observation",
+            "household_id": self.household_id,
+            "resource_id": resource_id,
+            "capture_contract_id": capture_contract_id,
+            "values": values,
+            "principal": self.principal,
+        }
+        digest = _proposal_digest(request)
+        for event in self.log.events():
+            if event["kind"] != "application.mcp_capture.proposed":
+                continue
+            payload = event["payload"]
+            if (payload.get("household_id") == self.household_id
+                    and payload.get("command_id") == command_id):
+                if payload.get("request_digest") != digest:
+                    raise McpWriteDenied("command id was already used for a different capture")
+                return FinancialObservationProposalReceipt(
+                    payload["proposal_id"], payload["envelope_id"], payload["contract_id"],
+                    payload["contract_version"], resource_id, payload["review_summary"], command_id)
+
+        contract = capture_contract_registry().get(capture_contract_id)
+        if contract is None:
+            raise McpWriteDenied("unknown capture contract")
+        try:
+            review_summary = contract.review_summary(
+                contract.normalise(_capture_values_for_summary(values)), subject_id=resource_id)
+            receipt = CaptureService(self.log, household_id=self.household_id).propose(
+                capture_contract_id, operation["target_id"], values,
+                actor=f"mcp:{self.principal}", channel="manual", idempotency_key=command_id,
+                audit=CaptureAudit("mcp", self.principal, command_id,
+                                   self.client, self.witness_model))
+        except (LookupError, ValueError, AcquisitionError) as exc:
+            raise McpWriteDenied(str(exc)) from exc
+
+        self.log.append("application.mcp_capture.proposed", {
+            "operation": "propose_financial_observation", "command_id": command_id,
+            "request_digest": digest, "household_id": self.household_id,
+            "resource_id": resource_id, "contract_id": contract.identifier,
+            "contract_version": contract.version, "proposal_id": receipt.proposal_id,
+            "envelope_id": receipt.envelope_id, "review_summary": review_summary,
+            "principal": self.principal, "client": self.client,
+            "witness_model": self.witness_model,
+        }, actor=f"mcp:{self.principal}")
+        return FinancialObservationProposalReceipt(
+            receipt.proposal_id, receipt.envelope_id, contract.identifier,
+            contract.version, resource_id, review_summary, command_id)
+
+    def record_account_balance(self, resource_id: str, amount: float, currency: str, as_at: str,
+                               request_id: str, evidence_reference: str | None = None) -> ProposalReceipt:
         query = FinancialResourceQuery(self.log, self.household_id)
         try:
             resource = query.get_financial_resource(resource_id)
@@ -164,10 +271,8 @@ class McpBalanceCapture:
                           if item["contract_id"] in {"cash-balance-update", "pension-balance-update"}), None)
         if operation is None:
             raise McpWriteDenied("account does not support governed balance capture")
-        values: dict[str, Any] = {"amount": str(amount), "currency": currency, "valid_at": as_at}
-        if evidence_reference is not None:
-            values["evidence_reference"] = evidence_reference
-        return CaptureService(self.log, household_id=self.household_id).propose(
-            operation["contract_id"], operation["target_id"], values,
-            actor=f"mcp:{self.principal}", channel="manual", idempotency_key=request_id,
-            audit=CaptureAudit("mcp", self.principal, request_id, self.client, self.witness_model))
+        receipt = self.propose_financial_observation(
+            resource_id=resource_id, capture_contract_id=operation["contract_id"],
+            amount=amount, currency=currency, as_at=as_at, command_id=request_id,
+            evidence_reference=evidence_reference)
+        return ProposalReceipt(receipt.envelope_id, receipt.proposal_id)
