@@ -8,6 +8,7 @@ from foundry.application.mcp_context import (
     McpPrincipal, authenticated_principal_from_environment, query_for_mcp_principal,
 )
 from foundry.application.mcp_writes import McpBalanceCapture, McpFinancialResourceWrites, McpWriteDenied
+from foundry.application.mission_assumptions import MissionAssumptionError, MissionAssumptionService
 from foundry.application.resources import FinancialResourceQuery, ResourceNotFound
 
 
@@ -24,10 +25,43 @@ def create_mcp_server(query: FinancialResourceQuery | None = None,
     resource_writes = McpFinancialResourceWrites(
         query.log, active_principal.email, active_principal.household_id,
         active_principal.client, active_principal.witness_model)
+    mission_assumptions = MissionAssumptionService(query.log)
     server = FastMCP("Foundry", instructions="Governed financial-resource access.",
                      streamable_http_path=streamable_http_path, host=host,
                      transport_security=transport_security, auth=auth,
                      auth_server_provider=auth_server_provider)
+
+    @server.tool()
+    def get_mission_assumption_readiness(mission_id: str) -> dict:
+        """Explain the authorised mission's Assumption Set readiness."""
+        try:
+            return mission_assumptions.readiness(mission_id, active_principal.household_id).as_dict()
+        except MissionAssumptionError as exc:
+            raise ValueError("mission assumption readiness unavailable") from exc
+
+    @server.tool()
+    def propose_mission_assumption_set(mission_id: str, assumptions: dict) -> dict:
+        """Propose an exact typed Assumption Set payload; this never activates it."""
+        try:
+            result = mission_assumptions.propose(
+                mission_id=mission_id, household_id=active_principal.household_id,
+                assumptions=assumptions, principal=active_principal.email)
+            return {"operation": "declare_mission_assumption_set", "state": "proposed",
+                    **result, "requires_execution": True}
+        except MissionAssumptionError as exc:
+            raise ValueError("mission assumption proposal refused") from exc
+
+    @server.tool()
+    def execute_mission_assumption_set(mission_id: str, assumptions: dict,
+                                       proposal_id: str, command_id: str) -> dict:
+        """Execute only the matching prior typed proposal, idempotently."""
+        try:
+            return mission_assumptions.execute(
+                proposal_id=proposal_id, mission_id=mission_id,
+                household_id=active_principal.household_id, assumptions=assumptions,
+                principal=active_principal.email, command_id=command_id)
+        except MissionAssumptionError as exc:
+            raise ValueError("mission assumption execution refused") from exc
 
     @server.tool()
     def list_financial_resources() -> dict:

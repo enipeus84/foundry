@@ -43,6 +43,7 @@ import math
 import os
 import subprocess
 import time
+from urllib.parse import quote
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -2368,6 +2369,9 @@ def mission_detail(request: Request, slug: str):
         mission_id=mission.id, policy_id=definition.assessment_policy_id,
         scope=scope, as_of=as_of))
     if assessment.status == "unavailable" or assessment.current_value is None:
+        missing_assumptions = any("Assumption Set not found" in note for note in assessment.limitations)
+        setup = (f'<p><a href="/missions/{html.escape(mission.id, quote=True)}/assumptions">ASSUMPTIONS REQUIRED → CONFIGURE</a></p>'
+                 if missing_assumptions else "")
         limitations = "".join(
             f"<li>{html.escape(note)}</li>" for note in assessment.limitations)
         body = f"""<section class="mission-empty-state">{mission_return}
@@ -2375,7 +2379,7 @@ def mission_detail(request: Request, slug: str):
   <div class="status-word none">NOT EVALUABLE</div>
   <p class="status-sub">We cannot assess this mission right now. No mission
   status is shown because the available data could not be evaluated safely.</p>
-  <ul style="margin:24px 0 0 18px;color:var(--muted);">{limitations}</ul>
+  {setup}<ul style="margin:24px 0 0 18px;color:var(--muted);">{limitations}</ul>
 </section>{_footer(console)}"""
         return _render(definition.label, body, as_of, "/missions")
 

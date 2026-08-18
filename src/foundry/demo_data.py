@@ -540,6 +540,7 @@ def build(log: EventLog, as_of: float | None = None) -> MorganHousehold:
         target_value=18.0,
         assessment_policy_id=RESILIENCE_POLICY_ID,
         assumption_set_id=resilience_assumptions.id,
+        household_id=hh.household_id,
         actor="synthetic_demo",
     )
     resilience_common = {
@@ -600,6 +601,7 @@ def build(log: EventLog, as_of: float | None = None) -> MorganHousehold:
         target_value=750_000.0, target_date=as_of + 12 * 365.2425 * DAY,
         tolerance=60_000.0, assessment_policy_id=POLICY_ID,
         assumption_set_id=fi_assumptions.id,
+        household_id=hh.household_id,
     )
 
     # RFC-009 Pension Independence proof data. Pot valuations remain
@@ -657,6 +659,7 @@ def build(log: EventLog, as_of: float | None = None) -> MorganHousehold:
         target_metric=PENSION_TARGET_METRIC,
         assessment_policy_id=PENSION_POLICY_ID,
         assumption_set_id=pension_assumptions.id,
+        household_id=hh.household_id,
         actor="synthetic_demo",
     )
 
@@ -881,6 +884,7 @@ def build(log: EventLog, as_of: float | None = None) -> MorganHousehold:
         target_date=utc(2050, 7, 1),
         assessment_policy_id=MORTGAGE_POLICY_ID,
         assumption_set_id=mortgage_assumptions.id,
+        household_id=hh.household_id,
     )
 
     _, claim_id = derive_claim_directly(
