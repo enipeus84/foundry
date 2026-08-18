@@ -134,6 +134,35 @@ def create_mcp_server(query: FinancialResourceQuery | None = None,
         return {"proposal_id": receipt.proposal_id, "envelope_id": receipt.envelope_id,
                 "state": "pending"}
 
+    @server.tool()
+    def propose_financial_observation(resource_id: str, capture_contract_id: str,
+                                      amount: float, currency: str, as_at: str,
+                                      command_id: str, evidence_reference: str | None = None,
+                                      valuation_basis: str | None = None,
+                                      source: str | None = None) -> dict:
+        """Propose one available contract-backed observation for human confirmation.
+
+        This stages a pending acquisition proposal only. Canonical confirmation
+        remains on Foundry's acquisition review surface.
+        """
+        try:
+            receipt = balance_capture.propose_financial_observation(
+                resource_id=resource_id, capture_contract_id=capture_contract_id,
+                amount=amount, currency=currency, as_at=as_at, command_id=command_id,
+                evidence_reference=evidence_reference, valuation_basis=valuation_basis,
+                source=source)
+        except McpWriteDenied as exc:
+            raise ValueError("financial observation proposal refused") from exc
+        return {
+            "operation": "propose_financial_observation", "state": "pending",
+            "proposal_id": receipt.proposal_id, "envelope_id": receipt.envelope_id,
+            "resource_id": receipt.resource_id, "capture_contract_id": receipt.contract_id,
+            "capture_contract_version": receipt.contract_version,
+            "command_id": receipt.command_id, "summary": receipt.review_summary,
+            "requires_confirmation": True,
+            "confirmation_surface": "Foundry acquisition review",
+        }
+
     return server
 
 

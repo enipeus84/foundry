@@ -86,10 +86,7 @@ class CaptureService:
         stream = target.stream
         if channel != stream.channel:
             raise AcquisitionError("capture channel does not match stream declaration")
-        capture_values = dict(values)
-        if "valid_at" in capture_values:
-            capture_values["valid_at"] = str(_london_timestamp(capture_values["valid_at"]))
-        normalised = contract.normalise(capture_values)
+        _, normalised = self.normalise(contract_id, values)
         capture_id = contract.capture_id(normalised, stream_id=stream.id, subject_id=stream.subject_id)
         fact = contract.canonical_mapper.map(normalised, subject_id=stream.subject_id, capture_id=capture_id)
         external_ref = idempotency_key or normalised.get("evidence_reference") or None
@@ -104,6 +101,16 @@ class CaptureService:
             external_ref=external_ref,
             payload=payload,
         )
+
+    def normalise(self, contract_id: str, values: dict[str, Any]):
+        """Apply the canonical contract and London timestamp normalisation."""
+        contract = self.contracts.get(contract_id)
+        if contract is None:
+            raise LookupError(contract_id)
+        capture_values = dict(values)
+        if "valid_at" in capture_values:
+            capture_values["valid_at"] = str(_london_timestamp(capture_values["valid_at"]))
+        return contract, contract.normalise(capture_values)
 
     def propose_fact(self, household_id: str, target_id: str, fact: dict[str, Any], *, actor: str,
                      channel: str, external_ref: str | None = None,
