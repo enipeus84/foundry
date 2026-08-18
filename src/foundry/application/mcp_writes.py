@@ -6,13 +6,59 @@ from dataclasses import dataclass
 from typing import Any
 
 from foundry.application.capture import CaptureAudit, CaptureService, ProposalReceipt
-from foundry.application.resources import FinancialResourceQuery, ResourceNotFound
+from foundry.application.resources import (
+    FinancialResourceCommandService, FinancialResourceQuery, ResourceCommandDenied, ResourceNotFound,
+)
 from foundry.core.principal_authority import PrincipalHouseholdAuthority
 from foundry.eventlog import EventLog
 
 
 class McpWriteDenied(PermissionError):
     """MCP writes fail closed when authority or an eligible command is absent."""
+
+
+@dataclass(frozen=True)
+class McpFinancialResourceWrites:
+    log: EventLog
+    principal: str
+    household_id: str
+    client: str
+    witness_model: str
+
+    def create(self, *, resource_type: str, currency: str, name: str | None = None,
+               provider: str | None = None, owner: str | None = None,
+               owners: list[str] | None = None, liquidity_classification: str | None = None,
+               command_id: str) -> dict[str, Any]:
+        if not command_id.strip():
+            raise McpWriteDenied("command_id is required for idempotent execution")
+        try:
+            return FinancialResourceCommandService(self.log).create_financial_resource(
+                household_id=self.household_id, resource_type=resource_type, currency=currency,
+                name=name, provider=provider, owner=owner, owners=owners,
+                liquidity_classification=liquidity_classification,
+                actor=f"mcp:{self.principal}", principal=self.principal, command_id=command_id,
+                client=self.client, witness_model=self.witness_model)
+        except ResourceCommandDenied as exc:
+            raise McpWriteDenied(str(exc)) from exc
+
+    def update(self, *, resource_id: str, name: str, command_id: str,
+               reason: str = "metadata update") -> dict[str, Any]:
+        try:
+            return FinancialResourceCommandService(self.log).update_financial_resource(
+                household_id=self.household_id, resource_id=resource_id, name=name,
+                reason=reason, actor=f"mcp:{self.principal}", principal=self.principal,
+                command_id=command_id, client=self.client, witness_model=self.witness_model)
+        except (ResourceCommandDenied, ResourceNotFound) as exc:
+            raise McpWriteDenied(str(exc)) from exc
+
+    def close(self, *, resource_id: str, command_id: str, reason: str = "closed") -> dict[str, Any]:
+        try:
+            return FinancialResourceCommandService(self.log).close_financial_resource(
+                household_id=self.household_id, resource_id=resource_id, reason=reason,
+                actor=f"mcp:{self.principal}", principal=self.principal,
+                command_id=command_id, client=self.client, witness_model=self.witness_model)
+        except (ResourceCommandDenied, ResourceNotFound) as exc:
+            raise McpWriteDenied(str(exc)) from exc
 
 
 @dataclass(frozen=True)

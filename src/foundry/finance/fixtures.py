@@ -59,6 +59,9 @@ def build_parker_brads_household(log: EventLog, as_of: float | None = None) -> P
     fiona = declare_party(log, "person")
     hamish = declare_party(log, "person")
     harriet = declare_party(log, "person")
+    for member, name in ((chris, "Chris"), (fiona, "Fiona"),
+                         (hamish, "Hamish"), (harriet, "Harriet")):
+        update_party(log, member.id, {"name": name}, reason="fixture identity")
     for member in (chris, fiona, hamish, harriet):
         join_household(log, member.id, household.id)
 
