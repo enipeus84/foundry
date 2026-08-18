@@ -96,6 +96,7 @@ from foundry.finance.resilience_metrics import (
 )
 from foundry.mission_control import Console, router as mission_control_router
 from foundry.mission_targets_web import router as mission_targets_router
+from foundry.mission_assumptions_web import router as mission_assumptions_router
 from foundry.mcp_remote import (
     McpCanonicalPath,
     oauth_authorization_server_metadata,
@@ -328,6 +329,7 @@ def _build_console() -> Console:
 app.state.console_factory = _build_console
 app.include_router(mission_control_router)
 app.include_router(mission_targets_router)
+app.include_router(mission_assumptions_router)
 app.include_router(acquisition_router)
 app.include_router(operations_router)
 
