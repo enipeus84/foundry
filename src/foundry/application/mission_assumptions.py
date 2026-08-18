@@ -180,7 +180,9 @@ class MissionAssumptionService:
         if not command_id.strip():
             raise MissionAssumptionError("command_id is required")
         for event in self.log.events():
-            if event["kind"] == "application.mission_assumption.executed" and event["payload"].get("command_id") == command_id:
+            if (event["kind"] == "application.mission_assumption.executed"
+                    and event["payload"].get("household_id") == household_id
+                    and event["payload"].get("command_id") == command_id):
                 return event["payload"]["result"]
         expected = {"mission_id": mission_id, "household_id": household_id,
                     "assumptions": assumptions, "principal": principal}
@@ -193,6 +195,7 @@ class MissionAssumptionService:
         result = self.declare(mission_id=mission_id, household_id=household_id,
                               assumptions=assumptions, actor=f"mcp:{principal}")
         self.log.append("application.mission_assumption.executed",
-                        {"command_id": command_id, "proposal_id": proposal_id, "result": result},
+                        {"household_id": household_id, "command_id": command_id,
+                         "proposal_id": proposal_id, "result": result},
                         actor=f"mcp:{principal}")
         return result

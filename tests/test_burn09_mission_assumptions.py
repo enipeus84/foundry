@@ -84,3 +84,31 @@ def test_proposal_binds_payload_mission_principal_and_replay(tmp_path):
     assert service.execute(proposal_id=proposal["proposal_id"], mission_id=mission.id,
                            household_id=household.id, assumptions=PAYLOADS[FI],
                            principal="owner@example.com", command_id="cmd-1") == result
+
+
+def test_execute_command_id_collision_is_household_scoped(tmp_path):
+    log = EventLog(tmp_path / "events.jsonl")
+    household_a = declare_party(log, "household")
+    household_b = declare_party(log, "household")
+    mission_a = declare_mission(log, "Household A FI", assessment_policy_id=FI,
+                                household_id=household_a.id)
+    mission_b = declare_mission(log, "Household B FI", assessment_policy_id=FI,
+                                household_id=household_b.id)
+    service = MissionAssumptionService(log)
+    proposal_a = service.propose(mission_id=mission_a.id, household_id=household_a.id,
+                                 assumptions=PAYLOADS[FI], principal="owner@example.com")
+    result_a = service.execute(proposal_id=proposal_a["proposal_id"], mission_id=mission_a.id,
+                               household_id=household_a.id, assumptions=PAYLOADS[FI],
+                               principal="owner@example.com", command_id="shared-command")
+
+    proposal_b = service.propose(mission_id=mission_b.id, household_id=household_b.id,
+                                 assumptions=PAYLOADS[FI], principal="owner@example.com")
+    result_b = service.execute(proposal_id=proposal_b["proposal_id"], mission_id=mission_b.id,
+                               household_id=household_b.id, assumptions=PAYLOADS[FI],
+                               principal="owner@example.com", command_id="shared-command")
+
+    assert result_b != result_a
+    assert result_b["mission_id"] == mission_b.id
+    assert service.execute(proposal_id=proposal_b["proposal_id"], mission_id=mission_b.id,
+                           household_id=household_b.id, assumptions=PAYLOADS[FI],
+                           principal="owner@example.com", command_id="shared-command") == result_b
