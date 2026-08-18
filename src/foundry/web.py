@@ -49,7 +49,9 @@ import logging
 import os
 import time
 from contextlib import asynccontextmanager
+from html import escape
 from pathlib import Path
+from urllib.parse import urlencode
 
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
@@ -382,7 +384,7 @@ _LOGIN_PAGE = """<!doctype html>
 <body>
 <div class="mark">◈</div>
 <h1>FOUNDRY · MISSION CONTROL</h1>
-<a class="button" href="/auth/google">Continue with Google</a>
+<a class="button" href="{auth_url}">Continue with Google</a>
 <p class="note">{note}</p>
 </body></html>
 """
@@ -395,27 +397,36 @@ def _cookie(resp: Response, name: str, value: str, max_age: int,
 
 
 @app.get("/login", response_class=HTMLResponse)
-def login():
+def login(request: Request):
     cfg = webauth.load_config()
+    return_to = request.query_params.get("return_to")
+    if return_to is not None and webauth.local_return_path(return_to) is None:
+        return HTMLResponse("Invalid return path.", status_code=400)
     note = ("Access restricted to the authorised account."
             if cfg.configured else
             "Authentication is not configured on this deployment.")
-    return HTMLResponse(_LOGIN_PAGE.format(note=note))
+    auth_url = "/auth/google"
+    if return_to:
+        auth_url += "?" + urlencode({"return_to": return_to})
+    return HTMLResponse(_LOGIN_PAGE.format(note=note, auth_url=escape(auth_url, quote=True)))
 
 
 @app.get("/auth/google")
-def auth_google():
+def auth_google(request: Request):
     cfg = webauth.load_config()
     if not cfg.configured:
         return RedirectResponse("/login", status_code=303)
+    return_to = request.query_params.get("return_to")
+    if return_to is not None and webauth.local_return_path(return_to) is None:
+        return HTMLResponse("Invalid return path.", status_code=400)
     verifier, challenge = webauth.pkce_pair()
     resp = RedirectResponse(webauth.authorize_url(cfg, challenge),
                             status_code=303)
     # Verifier travels signed so it can't be tampered with in transit.
-    _cookie(resp, webauth.VERIFIER_COOKIE,
-            webauth.sign({"v": verifier,
-                          "exp": int(time.time()) + webauth.VERIFIER_TTL},
-                         cfg.session_secret),
+    payload = {"v": verifier, "exp": int(time.time()) + webauth.VERIFIER_TTL}
+    if return_to:
+        payload["return_to"] = return_to
+    _cookie(resp, webauth.VERIFIER_COOKIE, webauth.sign(payload, cfg.session_secret),
             webauth.VERIFIER_TTL, cfg.secure_cookies)
     return resp
 
@@ -434,10 +445,11 @@ def auth_callback(request: Request, code: str | None = None):
     if email is None or email != cfg.allowed_email:
         # Authenticated with Google, but not the permitted account.
         resp = HTMLResponse(_LOGIN_PAGE.format(
-            note="This Google account is not authorised for this Foundry."),
+            note="This Google account is not authorised for this Foundry.", auth_url="/auth/google"),
             status_code=403)
     else:
-        resp = RedirectResponse("/", status_code=303)
+        return_to = webauth.local_return_path(packed.get("return_to")) or "/"
+        resp = RedirectResponse(return_to, status_code=303)
         _cookie(resp, webauth.SESSION_COOKIE,
                 webauth.session_token(email, cfg),
                 webauth.SESSION_TTL, cfg.secure_cookies)

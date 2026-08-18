@@ -30,6 +30,7 @@ import os
 import secrets
 import time
 from dataclasses import dataclass
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -67,6 +68,16 @@ def load_config() -> AuthConfig:
         app_base_url=base,
         secure_cookies=base.startswith("https://"),
     )
+
+
+def local_return_path(value: str | None) -> str | None:
+    """Accept only an origin-local absolute path for post-login redirects."""
+    if not value or not value.startswith("/") or value.startswith("//") or "\\" in value:
+        return None
+    parsed = urlsplit(value)
+    if parsed.scheme or parsed.netloc or not parsed.path.startswith("/"):
+        return None
+    return value
 
 
 # --- signed tokens (stdlib) -------------------------------------------------

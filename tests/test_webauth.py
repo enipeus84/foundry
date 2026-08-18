@@ -63,6 +63,12 @@ def test_auth_google_redirects_to_supabase_with_pkce():
     assert webauth.VERIFIER_COOKIE in r.cookies
 
 
+@pytest.mark.parametrize("path", ["https://attacker.invalid", "//attacker.invalid", "/\\attacker"])
+def test_unsafe_post_login_return_path_is_rejected(path):
+    assert client().get("/login", params={"return_to": path}).status_code == 400
+    assert client().get("/auth/google", params={"return_to": path}).status_code == 400
+
+
 def test_allowed_user_can_access_root():
     c = client()
     c.cookies.set(webauth.SESSION_COOKIE, _session_cookie(ALLOWED))
@@ -100,6 +106,16 @@ def test_allowed_user_callback_sets_session_and_redirects(monkeypatch):
     # Cookie hardening
     set_cookie = r.headers["set-cookie"].lower()
     assert "httponly" in set_cookie and "samesite=lax" in set_cookie
+
+
+def test_callback_resumes_valid_local_return_path(monkeypatch):
+    monkeypatch.setattr(webauth, "exchange_code", lambda cfg, code, verifier: ALLOWED)
+    c = client()
+    start = c.get("/auth/google", params={"return_to": "/mcp/consent?request=abc"})
+    assert start.status_code == 303
+    callback = c.get("/auth/callback?code=fake")
+    assert callback.status_code == 303
+    assert callback.headers["location"] == "/mcp/consent?request=abc"
 
 
 def test_forged_session_is_rejected():

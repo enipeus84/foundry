@@ -59,13 +59,17 @@ class FoundryOAuthProvider:
 
     async def consent(self, request: Request):
         request_id = request.query_params.get("request", "")
-        pending = self.pending.pop(request_id, None)
+        pending = self.pending.get(request_id)
         cfg = webauth.load_config()
         email = webauth.session_email(request.cookies.get(webauth.SESSION_COOKIE), cfg)
         if pending is None or pending.expires_at < time.time():
             return HTMLResponse("OAuth request expired. Return to Claude and try again.", status_code=400)
         if email != cfg.allowed_email:
-            return RedirectResponse("/login", status_code=303)
+            return_to = f"/mcp/consent?{urlencode({'request': request_id})}"
+            return RedirectResponse(f"/login?{urlencode({'return_to': return_to})}", status_code=303)
+        # The request becomes single-use only when it produces a code.  Login
+        # redirects must be able to revisit this endpoint without losing it.
+        self.pending.pop(request_id, None)
         code = secrets.token_urlsafe(32)
         self.codes[code] = AuthorizationCode(
             code=code, scopes=pending.params.scopes or [], expires_at=time.time() + _CODE_TTL,

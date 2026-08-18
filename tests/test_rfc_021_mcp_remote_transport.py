@@ -7,6 +7,7 @@ import base64
 import hashlib
 import json
 from pathlib import Path
+import re
 from urllib.parse import parse_qs, urlparse
 
 import pytest
@@ -147,6 +148,80 @@ def test_desktop_oauth_registration_pkce_and_mcp_access(monkeypatch, tmp_path):
             "Content-Type": "application/json", "MCP-Protocol-Version": "2025-06-18",
         }, json=initialize)
         assert response.status_code == 200
+
+
+def test_google_login_resumes_mcp_consent_and_loads_existing_tools(monkeypatch, tmp_path):
+    """The MCP request survives Google login and is consumed at code issuance."""
+    from foundry import web
+
+    log = EventLog(tmp_path / "events.jsonl")
+    household = declare_party(log, "household")
+    monkeypatch.setenv("FOUNDRY_DATA_PATH", str(log.path))
+    monkeypatch.setenv("FOUNDRY_MCP_REMOTE_TOKEN", "remote-test-token")
+    monkeypatch.setenv("FOUNDRY_MCP_PRINCIPAL", "remote@example.com")
+    monkeypatch.setenv("FOUNDRY_MCP_HOUSEHOLD_ID", household.id)
+    monkeypatch.setenv("FOUNDRY_MCP_CLIENT", "claude-code")
+    monkeypatch.setenv("FOUNDRY_WITNESS_MODEL", "claude-sonnet-4-6")
+    monkeypatch.setenv("APP_BASE_URL", "https://testserver")
+    monkeypatch.setenv("SUPABASE_URL", "https://example.supabase.co")
+    monkeypatch.setenv("SUPABASE_PUBLISHABLE_KEY", "test-key")
+    monkeypatch.setenv("FOUNDRY_ALLOWED_EMAIL", "remote@example.com")
+    monkeypatch.setenv("SESSION_SECRET", "test-secret")
+    monkeypatch.setattr(webauth, "exchange_code", lambda cfg, code, verifier: "remote@example.com")
+    verifier = "desktop-pkce-verifier"
+    challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
+    registration = {"client_name": "Claude", "redirect_uris": ["https://claude.ai/api/mcp/auth_callback"],
+                    "token_endpoint_auth_method": "none", "grant_types": ["authorization_code", "refresh_token"],
+                    "response_types": ["code"]}
+    initialize = {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
+        "protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "Claude", "version": "test"}}}
+    remote = RemoteMcpApplication()
+
+    @asynccontextmanager
+    async def lifespan(_):
+        async with remote.lifespan():
+            yield
+
+    app = FastAPI(lifespan=lifespan)
+    app.add_middleware(McpCanonicalPath)
+    app.add_api_route("/login", web.login, methods=["GET"])
+    app.add_api_route("/auth/google", web.auth_google, methods=["GET"])
+    app.add_api_route("/auth/callback", web.auth_callback, methods=["GET"])
+    app.mount("/mcp", remote)
+    with TestClient(app, base_url="https://testserver") as client:
+        registered = client.post("/mcp/register", json=registration)
+        assert registered.status_code == 201, registered.text
+        client_id = registered.json()["client_id"]
+        authorize = client.get("/mcp/authorize", params={
+            "client_id": client_id, "response_type": "code", "code_challenge": challenge,
+            "code_challenge_method": "S256", "redirect_uri": "https://claude.ai/api/mcp/auth_callback"},
+            follow_redirects=False)
+        consent = client.get(authorize.headers["location"], follow_redirects=False)
+        assert consent.headers["location"].startswith("/login?return_to=")
+        login = client.get(consent.headers["location"], follow_redirects=False)
+        auth_google = re.search(r'href="([^"]+)"', login.text).group(1).replace("&amp;", "&")
+        client.get(auth_google, follow_redirects=False)
+        callback = client.get("/auth/callback?code=fake", follow_redirects=False)
+        resumed = client.get(callback.headers["location"], follow_redirects=False)
+        redirect = resumed.headers["location"]
+        code = parse_qs(urlparse(redirect).query)["code"][0]
+        assert client.get(callback.headers["location"], follow_redirects=False).status_code == 400
+        token = client.post("/mcp/token", data={"grant_type": "authorization_code", "client_id": client_id,
+                            "code": code, "redirect_uri": "https://claude.ai/api/mcp/auth_callback",
+                            "code_verifier": verifier})
+        assert token.status_code == 200
+        headers = {"Authorization": f"Bearer {token.json()['access_token']}",
+                   "Accept": "application/json, text/event-stream", "Content-Type": "application/json",
+                   "MCP-Protocol-Version": "2025-06-18"}
+        initialized = client.post("/mcp/", headers=headers, json=initialize)
+        assert initialized.status_code == 200
+        headers["Mcp-Session-Id"] = initialized.headers["mcp-session-id"]
+        tools = client.post("/mcp/", headers=headers, json={"jsonrpc": "2.0", "id": 2,
+                            "method": "tools/list", "params": {}})
+    assert tools.status_code == 200
+    message = next(line.removeprefix("data: ") for line in tools.text.splitlines() if line.startswith("data: "))
+    # OAuth exposes the pre-existing registry; this change must not alter it.
+    assert len(json.loads(message)["result"]["tools"]) == 14
 
 
 def test_oauth_discovery_bypasses_static_bearer_guard_without_feature_flag(monkeypatch, tmp_path):
