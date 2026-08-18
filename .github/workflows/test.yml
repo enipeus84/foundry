@@ -1,8 +1,7 @@
 # CI for the Foundry substrate and product domains: install the
-# package with the dev extra and run the full pytest suite on every
-# supported Python line. Web tests importorskip fastapi and simply
-# skip here — the core suite must stay runnable in a zero-dependency
-# environment (see pyproject.toml's dependencies = []).
+# package with the dev, web, and MCP extras and run the full pytest suite on
+# every supported Python line. The core suite remains runnable in a
+# zero-dependency environment (see pyproject.toml's dependencies = []).
 name: tests
 
 on:
@@ -23,8 +22,8 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install
-        # dev + web so the Mission Control and auth suites actually run
-        # here rather than importorskip-ping out.
-        run: pip install -e ".[dev,web]"
+        # dev + web + mcp so the composed Mission Control/remote MCP surface
+        # is collected and tested rather than failing on an absent SDK.
+        run: pip install -e ".[dev,web,mcp]"
       - name: Test
         run: python -m pytest tests -q
