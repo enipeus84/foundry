@@ -84,9 +84,11 @@ class FinancialResourceCommandService:
             if event["kind"] != "application.mcp_command.executed":
                 continue
             payload = event["payload"]
+            if payload.get("household_id") != household_id:
+                continue
             if payload.get("command_id") != command_id:
                 continue
-            if payload.get("request_digest") != digest or payload.get("household_id") != household_id:
+            if payload.get("request_digest") != digest:
                 raise ResourceCommandDenied("command id was already used for a different request")
             return self.get_financial_resource(household_id, payload["resource_id"])
         return None

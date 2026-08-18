@@ -810,8 +810,6 @@ async def create_resource(request: Request):
     if household is None or fields["owner_id"] not in {member.id for member in _active_members(console, household)}:
         return HTMLResponse("Forbidden", status_code=403)
     try:
-        if spec["entity"] != "account":
-            return HTMLResponse("Resource refused", status_code=400)
         resource = FinancialResourceCommandService(console.log).create_financial_resource(
             household_id=household, resource_type=fields["resource_type"], currency=currency,
             name=name, owner=fields["owner_id"], actor=email, require_authority=False)

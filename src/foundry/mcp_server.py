@@ -53,49 +53,64 @@ def create_mcp_server(query: FinancialResourceQuery | None = None,
                                   owners: list[str] | None = None,
                                   liquidity_classification: str | None = None) -> dict:
         """Propose creation; this tool never mutates canonical financial state."""
+        receipt = resource_writes.propose_create(
+            resource_type=resource_type, currency=currency, owner=owner, owners=owners,
+            name=name, provider=provider, liquidity_classification=liquidity_classification)
         return {"operation": "create_financial_resource", "state": "proposed",
-                "requires_confirmation": True,
+                "proposal_id": receipt.proposal_id, "requires_execution": True,
                 "resource_type": resource_type, "currency": currency,
                 "owner": owner, "owners": owners, "name": name, "provider": provider,
                 "liquidity_classification": liquidity_classification}
 
     @server.tool()
     def execute_create_financial_resource(resource_type: str, currency: str, command_id: str,
-                                          confirmed: bool, owner: str | None = None,
+                                          proposal_id: str, owner: str | None = None,
                                           name: str | None = None, provider: str | None = None,
                                           owners: list[str] | None = None,
                                           liquidity_classification: str | None = None) -> dict:
-        """Execute a previously proposed creation only after explicit confirmation."""
-        if confirmed is not True:
-            raise ValueError("explicit confirmation is required")
+        """Execute a previously proposed creation by its proposal receipt."""
         try:
             return resource_writes.create(resource_type=resource_type, currency=currency,
                                           owner=owner, owners=owners, command_id=command_id,
+                                          proposal_id=proposal_id,
                                           name=name, provider=provider,
                                           liquidity_classification=liquidity_classification)
         except McpWriteDenied as exc:
             raise ValueError("financial resource creation refused") from exc
 
     @server.tool()
-    def update_financial_resource(resource_id: str, name: str, command_id: str, confirmed: bool,
+    def update_financial_resource(resource_id: str, name: str, reason: str = "metadata update") -> dict:
+        receipt = resource_writes.propose_update(resource_id=resource_id, name=name, reason=reason)
+        return {"operation": "update_financial_resource", "state": "proposed",
+                "proposal_id": receipt.proposal_id, "resource_id": resource_id,
+                "name": name, "reason": reason, "requires_execution": True}
+
+    @server.tool()
+    def execute_update_financial_resource(resource_id: str, name: str, command_id: str,
+                                          proposal_id: str,
                                   reason: str = "metadata update") -> dict:
-        """Rename a resource after explicit confirmation; economic observations are immutable here."""
-        if confirmed is not True:
-            raise ValueError("explicit confirmation is required")
+        """Execute a previously proposed resource rename."""
         try:
             return resource_writes.update(resource_id=resource_id, name=name,
-                                          command_id=command_id, reason=reason)
+                                          command_id=command_id, reason=reason, proposal_id=proposal_id)
         except McpWriteDenied as exc:
             raise ValueError("financial resource update refused") from exc
 
     @server.tool()
-    def close_financial_resource(resource_id: str, command_id: str, confirmed: bool,
-                                 reason: str = "closed") -> dict:
-        """Close a resource without deleting its historical record."""
-        if confirmed is not True:
-            raise ValueError("explicit confirmation is required")
+    def close_financial_resource(resource_id: str, reason: str = "closed") -> dict:
+        """Propose closure without changing the canonical resource."""
+        receipt = resource_writes.propose_close(resource_id=resource_id, reason=reason)
+        return {"operation": "close_financial_resource", "state": "proposed",
+                "proposal_id": receipt.proposal_id, "resource_id": resource_id,
+                "reason": reason, "requires_execution": True}
+
+    @server.tool()
+    def execute_close_financial_resource(resource_id: str, command_id: str,
+                                         proposal_id: str, reason: str = "closed") -> dict:
+        """Execute a previously proposed resource closure."""
         try:
-            return resource_writes.close(resource_id=resource_id, command_id=command_id, reason=reason)
+            return resource_writes.close(resource_id=resource_id, command_id=command_id,
+                                         reason=reason, proposal_id=proposal_id)
         except McpWriteDenied as exc:
             raise ValueError("financial resource closure refused") from exc
 
