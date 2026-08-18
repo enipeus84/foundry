@@ -3,15 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
 from hashlib import sha256
 import json
 from typing import Any
-from zoneinfo import ZoneInfo
 
 from foundry.application.capture import CaptureAudit, CaptureService, ProposalReceipt
 from foundry.core.acquisition import AcquisitionError
-from foundry.capture_contracts import capture_contract_registry
 from foundry.application.resources import (
     FinancialResourceCommandService, FinancialResourceQuery, ResourceCommandDenied, ResourceNotFound,
 )
@@ -44,16 +41,6 @@ class FinancialObservationProposalReceipt:
 
 def _proposal_digest(values: dict[str, Any]) -> str:
     return sha256(json.dumps(values, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
-
-
-def _capture_values_for_summary(values: dict[str, Any]) -> dict[str, Any]:
-    """Mirror CaptureService's canonical London timestamp normalisation."""
-    result = dict(values)
-    valid_at = result.get("valid_at")
-    if isinstance(valid_at, str) and "T" in valid_at:
-        result["valid_at"] = str(datetime.fromisoformat(valid_at).replace(
-            tzinfo=ZoneInfo("Europe/London")).timestamp())
-    return result
 
 
 @dataclass(frozen=True)
@@ -230,18 +217,16 @@ class McpBalanceCapture:
                     payload["proposal_id"], payload["envelope_id"], payload["contract_id"],
                     payload["contract_version"], resource_id, payload["review_summary"], command_id)
 
-        contract = capture_contract_registry().get(capture_contract_id)
-        if contract is None:
-            raise McpWriteDenied("unknown capture contract")
+        capture_service = CaptureService(self.log, household_id=self.household_id)
         try:
-            review_summary = contract.review_summary(
-                contract.normalise(_capture_values_for_summary(values)), subject_id=resource_id)
-            receipt = CaptureService(self.log, household_id=self.household_id).propose(
+            contract, normalised = capture_service.normalise(capture_contract_id, values)
+            review_summary = contract.review_summary(normalised, subject_id=resource_id)
+            receipt = capture_service.propose(
                 capture_contract_id, operation["target_id"], values,
                 actor=f"mcp:{self.principal}", channel="manual", idempotency_key=command_id,
                 audit=CaptureAudit("mcp", self.principal, command_id,
                                    self.client, self.witness_model))
-        except (LookupError, ValueError, AcquisitionError) as exc:
+        except (LookupError, ValueError, TypeError, AcquisitionError) as exc:
             raise McpWriteDenied(str(exc)) from exc
 
         self.log.append("application.mcp_capture.proposed", {
@@ -259,6 +244,8 @@ class McpBalanceCapture:
 
     def record_account_balance(self, resource_id: str, amount: float, currency: str, as_at: str,
                                request_id: str, evidence_reference: str | None = None) -> ProposalReceipt:
+        if not PrincipalHouseholdAuthority(self.log).permits_write(self.principal, self.household_id):
+            raise McpWriteDenied("principal is not authorised to mutate this household")
         query = FinancialResourceQuery(self.log, self.household_id)
         try:
             resource = query.get_financial_resource(resource_id)

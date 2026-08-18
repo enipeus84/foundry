@@ -164,6 +164,26 @@ def test_mcp_balance_capture_requires_durable_write_authority(environment):
         command.record_account_balance(other_account.id, 10, "GBP", "2026-08-17T10:30", "request-2")
 
 
+def test_mcp_account_balance_denies_before_any_resource_access(environment, monkeypatch):
+    log, household, account, other_account = _world(environment)
+    command = McpBalanceCapture(log, ALLOWED, household.id, "claude-code", "claude-sonnet-4-6")
+    calls = []
+
+    def forbidden_lookup(*args, **kwargs):
+        calls.append("lookup")
+        raise AssertionError("unauthorised capture must not inspect resources")
+
+    monkeypatch.setattr(FinancialResourceQuery, "get_financial_resource", forbidden_lookup)
+    monkeypatch.setattr(FinancialResourceQuery, "capture_availability", forbidden_lookup)
+    errors = []
+    for resource_id in (account.id, other_account.id, "missing-resource"):
+        with pytest.raises(McpWriteDenied) as denied:
+            command.record_account_balance(resource_id, 10, "GBP", "2026-08-17T10:30", resource_id)
+        errors.append(str(denied.value))
+    assert errors == ["principal is not authorised to mutate this household"] * 3
+    assert calls == []
+
+
 def test_mcp_financial_observation_proposal_is_contract_bound_and_idempotent(environment):
     log, household, account, _ = _world(environment)
     grant_principal_household_authority(log, ALLOWED, household.id)
