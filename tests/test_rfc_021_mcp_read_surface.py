@@ -108,7 +108,10 @@ def test_mcp_client_connects_and_cannot_cross_household(environment):
                 tools = await session.list_tools()
                 assert {tool.name for tool in tools.tools} == {
                     "list_financial_resources", "get_financial_resource",
-                    "explain_capture_availability", "record_account_balance"}
+                    "explain_capture_availability", "record_account_balance",
+                    "create_financial_resource", "execute_create_financial_resource",
+                    "update_financial_resource", "execute_update_financial_resource",
+                    "close_financial_resource", "execute_close_financial_resource"}
                 listed = await session.call_tool("list_financial_resources", {})
                 assert account.id in listed.content[0].text
                 available = await session.call_tool("explain_capture_availability", {"resource_id": account.id})

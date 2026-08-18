@@ -361,6 +361,20 @@ def test_resource_registration_links_active_owner_and_bootstraps_pension_capture
     assert "Capture an update" in client.get(registered.headers["location"]).text
 
 
+def test_resource_registration_links_property_through_web_path(environment):
+    log = EventLog(environment / "events.jsonl")
+    household, person = _active_household(log)
+    response = _client().post("/operations/resources", data={
+        "csrf": webauth.csrf_token(ALLOWED, webauth.load_config(), "finance-resource-registration"),
+        "kind": "property", "name": "Family home", "resource_type": "property", "currency": "GBP",
+        "owner_id": person.id,
+    })
+    assert response.status_code == 303
+    asset = next(iter(FinanceEntityProjection(log).assets.values()))
+    assert asset.name == "Family home"
+    assert asset.asset_category == "property"
+
+
 def test_registered_resource_without_owner_is_not_misdiagnosed_as_absent(environment):
     log = EventLog(environment / "events.jsonl")
     _active_household(log)

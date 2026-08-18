@@ -22,6 +22,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 
 from foundry import webauth
 from foundry.application.capture import CaptureService
+from foundry.application.resources import FinancialResourceCommandService, ResourceCommandDenied
 from foundry.capture_contracts import CaptureContract, CaptureContractRegistry, capture_contract_registry
 from foundry.core.acquisition import (
     AcquisitionError, AssetRegistry, CanonicalObservationProjection,
@@ -809,14 +810,11 @@ async def create_resource(request: Request):
     if household is None or fields["owner_id"] not in {member.id for member in _active_members(console, household)}:
         return HTMLResponse("Forbidden", status_code=403)
     try:
-        if spec["entity"] == "account":
-            resource = finance_entities.declare_account(console.log, fields["resource_type"], currency, name=name, actor=email)
-            finance_entities.link_ownership(console.log, "account", resource.id, "owner", fields["owner_id"], actor=email)
-        else:
-            resource = finance_entities.declare_asset(console.log, fields["resource_type"], currency, name=name, actor=email)
-            finance_entities.link_ownership(console.log, "asset", resource.id, "owner", fields["owner_id"], actor=email)
+        resource = FinancialResourceCommandService(console.log).create_financial_resource(
+            household_id=household, resource_type=fields["resource_type"], currency=currency,
+            name=name, owner=fields["owner_id"], actor=email, require_authority=False)
         request.app.state.capture_target_bootstrap_result = bootstrap_finance_capture_targets(console.log, household, actor="runtime_bootstrap")
-    except (TypeError, ValueError, AcquisitionError) as exc:
+    except (TypeError, ValueError, AcquisitionError, ResourceCommandDenied) as exc:
         return HTMLResponse("Resource refused: " + html.escape(str(exc)), status_code=400)
     return RedirectResponse(f"/operations/capture?contract={spec['contract']}", status_code=303)
 
