@@ -2,9 +2,10 @@
 
 import pytest
 
-from foundry.application.mcp_writes import McpFinancialResourceWrites, McpWriteDenied
+from foundry.application.mcp_writes import McpBalanceCapture, McpFinancialResourceWrites, McpWriteDenied
+from foundry.core.acquisition import ProposalInbox
 from foundry.application.resources import FinancialResourceCommandService, FinancialResourceQuery
-from foundry.core.entities import declare_party, join_household, update_party
+from foundry.core.entities import EntityProjection, declare_party, join_household, update_party
 from foundry.core.principal_authority import grant_principal_household_authority
 from foundry.eventlog import EventLog
 from foundry.finance import entities as finance
@@ -42,6 +43,39 @@ def test_confirmed_creation_is_canonical_idempotent_and_discovers_capture(tmp_pa
     availability = FinancialResourceQuery(log, household.id).capture_availability(first["id"])
     assert availability["supported_capture_operations"][0]["contract_id"] == "pension-balance-update"
     assert sum(event["kind"] == "finance.account.declared" for event in log.events()) == 1
+    assert sum(event["kind"] == "core.telemetry_stream.declared" for event in log.events()) == 1
+
+
+def test_isa_registration_provisions_cash_balance_capture_and_stages_observation(tmp_path):
+    log, household, writes = _world(tmp_path)
+    proposal = writes.propose_create(resource_type="isa", currency="GBP", name="AJ Bell ISA", owner="Chris")
+    resource = writes.create(resource_type="isa", currency="GBP", name="AJ Bell ISA", owner="Chris",
+                             command_id="isa-create", proposal_id=proposal.proposal_id)
+
+    availability = FinancialResourceQuery(log, household.id).capture_availability(resource["id"])
+    assert len(availability["supported_capture_operations"]) == 1
+    operation = availability["supported_capture_operations"][0]
+    assert operation["contract_id"] == "cash-balance-update"
+    assert operation["contract_version"] == "1" and operation["target_id"]
+    owner = EntityProjection(log).members_of(household.id)[0]
+    assert resource["ownership"] == [{"relation": "owner", "subject_id": owner.id}]
+
+    receipt = McpBalanceCapture(log, PRINCIPAL, household.id, "claude-code", "gpt-test").propose_financial_observation(
+        resource_id=resource["id"], capture_contract_id="cash-balance-update", amount=12_345,
+        currency="GBP", as_at="2026-08-19T10:30", command_id="isa-observation",
+        evidence_reference="AJ Bell statement")
+    assert receipt.contract_id == "cash-balance-update"
+    assert ProposalInbox(log).proposals[receipt.proposal_id].state == "pending"
+    assert not any(event["kind"] == "finance.account.reconciliation_observed" for event in log.events())
+
+
+def test_unsupported_account_type_does_not_receive_arbitrary_capture_contract(tmp_path):
+    log, household, writes = _world(tmp_path)
+    proposal = writes.propose_create(resource_type="credit_card", currency="GBP", name="Card", owner="Chris")
+    resource = writes.create(resource_type="credit_card", currency="GBP", name="Card", owner="Chris",
+                             command_id="card-create", proposal_id=proposal.proposal_id)
+    assert FinancialResourceQuery(log, household.id).capture_availability(resource["id"]) == {
+        "resource_id": resource["id"], "supported_capture_operations": []}
 
 
 def test_update_and_close_are_metadata_lifecycle_commands_with_audit(tmp_path):

@@ -361,6 +361,22 @@ def test_resource_registration_links_active_owner_and_bootstraps_pension_capture
     assert "Capture an update" in client.get(registered.headers["location"]).text
 
 
+def test_web_isa_registration_uses_the_same_canonical_balance_capture(environment):
+    log = EventLog(environment / "events.jsonl")
+    household, person = _active_household(log)
+    response = _client().post("/operations/resources", data={
+        "csrf": webauth.csrf_token(ALLOWED, webauth.load_config(), "finance-resource-registration"),
+        "kind": "isa", "name": "AJ Bell", "resource_type": "isa", "currency": "GBP",
+        "owner_id": person.id,
+    })
+    assert response.status_code == 303
+    assert response.headers["location"] == "/operations/capture?contract=cash-balance-update"
+    account = next(iter(FinanceEntityProjection(log).accounts.values()))
+    assert account.account_type == "brokerage" and account.tax_wrapper == "isa"
+    targets = CaptureTargetRegistry(log, FinanceCaptureTargetResolver(FinanceEntityProjection(log))).for_household(household.id)
+    assert [(target.subject_id, target.property) for target in targets] == [(account.id, "cash_balance")]
+
+
 def test_resource_registration_links_property_through_web_path(environment):
     log = EventLog(environment / "events.jsonl")
     household, person = _active_household(log)

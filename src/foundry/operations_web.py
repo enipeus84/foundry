@@ -33,7 +33,6 @@ from foundry.core.capture_targets import CaptureTargetRegistry
 from foundry.finance.capture_targets import FinanceCaptureTargetResolver, finance_asset_registry
 from foundry.finance import entities as finance_entities
 from foundry.finance.entities import FinanceEntityProjection
-from foundry.finance.runtime_bootstrap import bootstrap_finance_capture_targets
 from foundry.finance import vocab as finance_vocab
 from foundry.finance.pension_projection import (
     _from_payload as _projection_from_payload,
@@ -59,6 +58,8 @@ _RESOURCE_KINDS = {
                 "entity": "account", "types": ("pension",)},
     "cash": {"contract": "cash-balance-update", "label": "cash account", "plural": "cash accounts", "capture": "cash balance updates",
              "entity": "account", "types": ("checking", "savings")},
+    "isa": {"contract": "cash-balance-update", "label": "ISA account", "plural": "ISA accounts", "capture": "balance updates",
+            "entity": "account", "types": ("isa",)},
     "property": {"contract": "property-valuation-update", "label": "property", "plural": "properties", "capture": "property valuation updates",
                  "entity": "asset", "types": ("property",)},
 }
@@ -813,7 +814,6 @@ async def create_resource(request: Request):
         resource = FinancialResourceCommandService(console.log).create_financial_resource(
             household_id=household, resource_type=fields["resource_type"], currency=currency,
             name=name, owner=fields["owner_id"], actor=email, require_authority=False)
-        request.app.state.capture_target_bootstrap_result = bootstrap_finance_capture_targets(console.log, household, actor="runtime_bootstrap")
     except (TypeError, ValueError, AcquisitionError, ResourceCommandDenied) as exc:
         return HTMLResponse("Resource refused: " + html.escape(str(exc)), status_code=400)
     return RedirectResponse(f"/operations/capture?contract={spec['contract']}", status_code=303)

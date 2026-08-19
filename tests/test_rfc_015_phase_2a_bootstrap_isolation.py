@@ -95,7 +95,7 @@ def test_operations_truthfully_reports_total_failure_and_multiple_issues(tmp_pat
     assert first.id not in response.text and second.id not in response.text
 
 
-def test_operations_truthfully_reports_success_and_no_eligible_entities(tmp_path, monkeypatch):
+def test_operations_truthfully_reports_success_for_eligible_brokerage_account(tmp_path, monkeypatch):
     log = EventLog(tmp_path / "events.jsonl")
     household, person = _household(log)
     _account(log, person, "brokerage")
@@ -103,8 +103,8 @@ def test_operations_truthfully_reports_success_and_no_eligible_entities(tmp_path
     client, _ = _capture_client(log, monkeypatch)
     response = client.get("/operations/capture")
 
-    assert "No eligible capture targets" in response.text
-    assert "Bootstrap completed successfully" in response.text
+    assert "Capture targets ready" in response.text
+    assert "1 capture target is registered." in response.text
 
 
 def test_operations_truthfully_reports_successful_bootstrap(tmp_path, monkeypatch):
@@ -188,7 +188,7 @@ def test_primary_residence_is_canonical_and_retired_streams_remain_retired(tmp_p
     assert not CaptureTargetRegistry(log, FinanceCaptureTargetResolver(FinanceEntityProjection(log))).for_household(household.id)
 
 
-def test_all_canonical_cash_accounts_bootstrap_but_brokerage_does_not(tmp_path):
+def test_all_canonical_balance_accounts_bootstrap(tmp_path):
     log = EventLog(tmp_path / "events.jsonl")
     household, person = _household(log)
     checking, savings, brokerage = (_account(log, person, "checking"), _account(log, person, "savings"),
@@ -196,8 +196,7 @@ def test_all_canonical_cash_accounts_bootstrap_but_brokerage_does_not(tmp_path):
     bootstrap_finance_capture_targets(log, household.id)
     subjects = {item.subject_id for item in CaptureTargetRegistry(
         log, FinanceCaptureTargetResolver(FinanceEntityProjection(log))).for_household(household.id)}
-    assert subjects == {checking.id, savings.id}
-    assert brokerage.id not in subjects
+    assert subjects == {checking.id, savings.id, brokerage.id}
 
 
 def test_ambiguous_primary_residence_is_diagnosed_without_registry_writes(tmp_path):

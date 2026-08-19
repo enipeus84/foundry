@@ -10,7 +10,11 @@ from foundry.finance.entities import FinanceEntityProjection
 
 _SUPPORTED_PROPERTIES = {
     "pension_balance": {"account:pension"},
-    "cash_balance": {"account:checking", "account:savings"},
+    # Brokerage accounts, including ISA-wrapped accounts, have the same
+    # point-in-time balance-observation semantics as cash accounts.  The
+    # wrapper remains an economic-resource fact; it does not need a separate
+    # capture contract.
+    "cash_balance": {"account:checking", "account:savings", "account:brokerage"},
     "property_valuation": {"asset:property"},
 }
 
