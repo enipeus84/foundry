@@ -7,9 +7,21 @@ from mcp.server.fastmcp import FastMCP
 from foundry.application.mcp_context import (
     McpPrincipal, authenticated_principal_from_environment, query_for_mcp_principal,
 )
-from foundry.application.mcp_writes import McpBalanceCapture, McpFinancialResourceWrites, McpWriteDenied
+from foundry.application.mcp_writes import (
+    McpBalanceCapture, McpClientSafeDenied, McpFinancialResourceWrites, McpWriteDenied,
+)
 from foundry.application.mission_assumptions import MissionAssumptionError, MissionAssumptionService
 from foundry.application.resources import FinancialResourceQuery, ResourceNotFound
+
+
+_GENERIC_OBSERVATION_REFUSAL = "financial observation proposal refused"
+
+
+def _observation_refusal_message(exc: McpWriteDenied) -> str:
+    """Return only reviewed capture-contract denial text to MCP clients."""
+    if isinstance(exc, McpClientSafeDenied):
+        return str(exc)
+    return _GENERIC_OBSERVATION_REFUSAL
 
 
 def create_mcp_server(query: FinancialResourceQuery | None = None,
@@ -186,10 +198,7 @@ def create_mcp_server(query: FinancialResourceQuery | None = None,
                 evidence_reference=evidence_reference, valuation_basis=valuation_basis,
                 source=source)
         except McpWriteDenied as exc:
-            # McpWriteDenied is deliberately the bounded, client-safe error
-            # vocabulary for this boundary.  Preserve the specific validation
-            # diagnosis; do not leak a traceback or an arbitrary exception.
-            raise ValueError(str(exc)) from exc
+            raise ValueError(_observation_refusal_message(exc)) from exc
         return {
             "operation": "propose_financial_observation", "state": "pending",
             "proposal_id": receipt.proposal_id, "envelope_id": receipt.envelope_id,

@@ -10,7 +10,7 @@ import time
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from foundry.capture_contracts import CaptureContractRegistry, capture_contract_registry
+from foundry.capture_contracts import CaptureContractRegistry, CaptureValidationError, capture_contract_registry
 from foundry.core.acquisition import (
     AcquisitionError, EnvelopeProjection, EvidenceVault, IdentityIndex,
     ManualAcquisitionProvider, ProposalInbox,
@@ -202,6 +202,9 @@ def _vault_root() -> str:
 
 
 def _london_timestamp(value: Any) -> float:
-    if isinstance(value, str) and "T" in value:
-        return datetime.fromisoformat(value).replace(tzinfo=_LONDON).timestamp()
-    return float(value)
+    try:
+        if isinstance(value, str) and "T" in value:
+            return datetime.fromisoformat(value).replace(tzinfo=_LONDON).timestamp()
+        return float(value)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise CaptureValidationError("as_at must be a valid ISO-8601 timestamp") from exc

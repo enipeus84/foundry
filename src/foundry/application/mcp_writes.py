@@ -8,6 +8,7 @@ import json
 from typing import Any
 
 from foundry.application.capture import CaptureAudit, CaptureService, ProposalReceipt
+from foundry.capture_contracts import CaptureValidationError
 from foundry.core.acquisition import AcquisitionError
 from foundry.application.resources import (
     FinancialResourceCommandService, FinancialResourceQuery, ResourceCommandDenied, ResourceNotFound,
@@ -18,6 +19,10 @@ from foundry.eventlog import EventLog
 
 class McpWriteDenied(PermissionError):
     """MCP writes fail closed when authority or an eligible command is absent."""
+
+
+class McpClientSafeDenied(McpWriteDenied):
+    """An explicitly reviewed, bounded refusal that MCP may disclose."""
 
 
 @dataclass(frozen=True)
@@ -174,20 +179,20 @@ class McpBalanceCapture:
         Confirmation remains with the canonical acquisition confirmation gate.
         """
         if not isinstance(command_id, str) or not command_id.strip():
-            raise McpWriteDenied("command_id is required for idempotent capture")
+            raise McpClientSafeDenied("command_id is required for idempotent capture")
         if not PrincipalHouseholdAuthority(self.log).permits_write(self.principal, self.household_id):
-            raise McpWriteDenied("principal is not authorised to mutate this household")
+            raise McpClientSafeDenied("principal is not authorised to mutate this household")
 
         query = FinancialResourceQuery(self.log, self.household_id)
         try:
             resource = query.get_financial_resource(resource_id)
             availability = query.capture_availability(resource_id)
         except ResourceNotFound as exc:
-            raise McpWriteDenied("financial resource is unavailable") from exc
+            raise McpClientSafeDenied("financial resource is unavailable") from exc
         operation = next((item for item in availability["supported_capture_operations"]
                           if item["contract_id"] == capture_contract_id), None)
         if operation is None:
-            raise McpWriteDenied("capture contract is not available for this resource")
+            raise McpClientSafeDenied("capture contract is not available for this resource")
 
         values: dict[str, Any] = {
             "amount": str(amount), "currency": currency, "valid_at": as_at,
@@ -212,7 +217,7 @@ class McpBalanceCapture:
             if (payload.get("household_id") == self.household_id
                     and payload.get("command_id") == command_id):
                 if payload.get("request_digest") != digest:
-                    raise McpWriteDenied("command id was already used for a different capture")
+                    raise McpClientSafeDenied("command id was already used for a different capture")
                 return FinancialObservationProposalReceipt(
                     payload["proposal_id"], payload["envelope_id"], payload["contract_id"],
                     payload["contract_version"], resource_id, payload["review_summary"], command_id)
@@ -228,9 +233,14 @@ class McpBalanceCapture:
                                    self.client, self.witness_model))
         except LookupError as exc:
             # A target identifier is household-scoped; never reflect it through MCP.
-            raise McpWriteDenied("capture target is unavailable") from exc
-        except (ValueError, TypeError, AcquisitionError) as exc:
-            raise McpWriteDenied(str(exc)) from exc
+            raise McpClientSafeDenied("capture target is unavailable") from exc
+        except CaptureValidationError as exc:
+            # This is the deliberately bounded capture-contract validation
+            # vocabulary.  It is a ValueError subclass, so it must be handled
+            # before generic parser or implementation failures.
+            raise McpClientSafeDenied(str(exc)) from exc
+        except (AcquisitionError, ValueError, TypeError) as exc:
+            raise McpWriteDenied("financial observation proposal refused") from exc
 
         self.log.append("application.mcp_capture.proposed", {
             "operation": "propose_financial_observation", "command_id": command_id,

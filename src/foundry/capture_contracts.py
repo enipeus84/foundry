@@ -24,6 +24,10 @@ MIN_VALID_AT = 0.0
 MAX_VALID_AT = 253_402_300_799.0  # 9999-12-31T23:59:59Z
 
 
+class CaptureValidationError(AcquisitionError):
+    """Bounded, client-safe validation vocabulary declared by a capture contract."""
+
+
 class EvidencePolicy(str, Enum):
     NONE = "NONE"
     OPTIONAL = "OPTIONAL"
@@ -56,16 +60,16 @@ class CaptureValidation:
             amount = float(values[self.amount_field])
             valid_at = float(values[self.valid_at_field])
         except (KeyError, TypeError, ValueError) as exc:
-            raise AcquisitionError("amount and valid_at must be numeric") from exc
+            raise CaptureValidationError("amount and valid_at must be numeric") from exc
         if not math.isfinite(amount) or amount < 0:
-            raise AcquisitionError("amount must be a finite non-negative number")
+            raise CaptureValidationError("amount must be a finite non-negative number")
         if not math.isfinite(valid_at):
-            raise AcquisitionError("valid_at must be a finite timestamp")
+            raise CaptureValidationError("valid_at must be a finite timestamp")
         if not MIN_VALID_AT <= valid_at <= MAX_VALID_AT:
-            raise AcquisitionError("valid_at is outside the supported Unix timestamp range")
+            raise CaptureValidationError("valid_at is outside the supported Unix timestamp range")
         currency = str(values.get(self.currency_field, "")).upper()
         if not re.fullmatch(r"[A-Z]{3}", currency):
-            raise AcquisitionError("currency must be a three-letter ISO code")
+            raise CaptureValidationError("currency must be a three-letter ISO code")
         return {self.amount_field: amount, self.currency_field: currency,
                 self.valid_at_field: valid_at}
 
@@ -143,15 +147,15 @@ class CaptureContract:
         fields = {item.name: item for item in self.schema}
         unknown = set(values) - set(fields)
         if unknown:
-            raise AcquisitionError("capture contains unsupported fields: " + ", ".join(sorted(unknown)))
+            raise CaptureValidationError("capture contains unsupported fields: " + ", ".join(sorted(unknown)))
         missing = [name for name, item in fields.items()
                    if item.required and not values.get(name, item.default).strip()]
         if missing:
-            raise AcquisitionError("capture is missing required fields: " + ", ".join(missing))
+            raise CaptureValidationError("capture is missing required fields: " + ", ".join(missing))
         normalised = self.validation.validate(values)
         evidence_reference = values.get("evidence_reference", "").strip()
         if self.evidence_policy is EvidencePolicy.REQUIRED and not evidence_reference:
-            raise AcquisitionError("this capture requires an evidence reference")
+            raise CaptureValidationError("this capture requires an evidence reference")
         if "evidence_reference" in fields:
             normalised["evidence_reference"] = evidence_reference
         for name in set(fields) - {self.validation.amount_field, self.validation.currency_field,
@@ -161,7 +165,7 @@ class CaptureContract:
                 normalised[name] = value
         basis = normalised.get("valuation_basis")
         if basis is not None and basis not in VALUATION_BASES:
-            raise AcquisitionError("valuation_basis is not recognised")
+            raise CaptureValidationError("valuation_basis is not recognised")
         return normalised
 
     def draft(self, values: Mapping[str, str], *, subject_id: str,
