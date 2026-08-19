@@ -143,7 +143,7 @@ class CaptureContract:
         fields = {item.name: item for item in self.schema}
         unknown = set(values) - set(fields)
         if unknown:
-            raise AcquisitionError("capture contains unsupported fields")
+            raise AcquisitionError("capture contains unsupported fields: " + ", ".join(sorted(unknown)))
         missing = [name for name, item in fields.items()
                    if item.required and not values.get(name, item.default).strip()]
         if missing:

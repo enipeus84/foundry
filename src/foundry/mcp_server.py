@@ -186,7 +186,10 @@ def create_mcp_server(query: FinancialResourceQuery | None = None,
                 evidence_reference=evidence_reference, valuation_basis=valuation_basis,
                 source=source)
         except McpWriteDenied as exc:
-            raise ValueError("financial observation proposal refused") from exc
+            # McpWriteDenied is deliberately the bounded, client-safe error
+            # vocabulary for this boundary.  Preserve the specific validation
+            # diagnosis; do not leak a traceback or an arbitrary exception.
+            raise ValueError(str(exc)) from exc
         return {
             "operation": "propose_financial_observation", "state": "pending",
             "proposal_id": receipt.proposal_id, "envelope_id": receipt.envelope_id,

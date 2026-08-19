@@ -226,7 +226,10 @@ class McpBalanceCapture:
                 actor=f"mcp:{self.principal}", channel="manual", idempotency_key=command_id,
                 audit=CaptureAudit("mcp", self.principal, command_id,
                                    self.client, self.witness_model))
-        except (LookupError, ValueError, TypeError, AcquisitionError) as exc:
+        except LookupError as exc:
+            # A target identifier is household-scoped; never reflect it through MCP.
+            raise McpWriteDenied("capture target is unavailable") from exc
+        except (ValueError, TypeError, AcquisitionError) as exc:
             raise McpWriteDenied(str(exc)) from exc
 
         self.log.append("application.mcp_capture.proposed", {

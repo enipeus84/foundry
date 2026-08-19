@@ -253,7 +253,12 @@ class FinancialResourceQuery:
                 if target.subject_id == resource_id:
                     supported.append({"contract_id": contract.identifier,
                                       "contract_version": contract.version,
-                                      "target_id": target.id})
+                                      "target_id": target.id,
+                                      "input_schema": [{"name": field.name,
+                                                        "required": field.required,
+                                                        "help_text": field.help_text,
+                                                        "default": field.default}
+                                                       for field in contract.schema]})
         return {"resource_id": resource_id, "supported_capture_operations": supported}
 
     def _state(self) -> tuple[AssetRegistry, FinanceEntityProjection]:

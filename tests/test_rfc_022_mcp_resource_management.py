@@ -69,6 +69,27 @@ def test_isa_registration_provisions_cash_balance_capture_and_stages_observation
     assert not any(event["kind"] == "finance.account.reconciliation_observed" for event in log.events())
 
 
+def test_pension_registration_provisions_and_stages_contract_backed_observation(tmp_path):
+    log, household, writes = _world(tmp_path)
+    proposal = writes.propose_create(resource_type="pension", currency="GBP", name="Aviva", owner="Chris")
+    resource = writes.create(resource_type="pension", currency="GBP", name="Aviva", owner="Chris",
+                             command_id="pension-create", proposal_id=proposal.proposal_id)
+
+    capture = McpBalanceCapture(log, PRINCIPAL, household.id, "claude-code", "gpt-test")
+    with pytest.raises(McpWriteDenied, match="currency must be a three-letter ISO code"):
+        capture.propose_financial_observation(
+            resource_id=resource["id"], capture_contract_id="pension-balance-update", amount=12_345,
+            currency="GB", as_at="2026-08-19T10:30", command_id="invalid-pension-observation")
+
+    receipt = capture.propose_financial_observation(
+        resource_id=resource["id"], capture_contract_id="pension-balance-update", amount=12_345,
+        currency="GBP", as_at="2026-08-19T10:30", command_id="pension-observation",
+        evidence_reference="Aviva statement")
+    assert receipt.contract_id == "pension-balance-update"
+    assert ProposalInbox(log).proposals[receipt.proposal_id].state == "pending"
+    assert not any(event["kind"] == "finance.valuation.declared" for event in log.events())
+
+
 def test_unsupported_account_type_does_not_receive_arbitrary_capture_contract(tmp_path):
     log, household, writes = _world(tmp_path)
     proposal = writes.propose_create(resource_type="credit_card", currency="GBP", name="Card", owner="Chris")

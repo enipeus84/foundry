@@ -78,7 +78,15 @@ def test_resource_query_is_household_scoped_and_exposes_domain_shape(environment
     resource = query.get_financial_resource(account.id)
     assert resource["provenance"]["event_ids"]
     assert query.capture_availability(account.id)["supported_capture_operations"] == [{
-        "contract_id": "cash-balance-update", "contract_version": "1", "target_id": "cash-balance"}]
+        "contract_id": "cash-balance-update", "contract_version": "1", "target_id": "cash-balance",
+        "input_schema": [
+            {"name": "amount", "required": True,
+             "help_text": "Recorded for reconciliation only; it does not update Finance projections.", "default": ""},
+            {"name": "currency", "required": True, "help_text": "Three-letter ISO currency code.", "default": ""},
+            {"name": "valid_at", "required": True, "help_text": "When this value was stated.", "default": ""},
+            {"name": "evidence_reference", "required": False,
+             "help_text": "Statement or other source reference.", "default": ""},
+        ]}]
     with pytest.raises(ResourceNotFound):
         query.get_financial_resource(other_account.id)
 
@@ -129,6 +137,24 @@ def test_mcp_client_connects_and_cannot_cross_household(environment):
                 first = await session.call_tool("record_account_balance", command)
                 second = await session.call_tool("record_account_balance", command)
                 assert not first.isError and first.content[0].text == second.content[0].text
+                invalid_observation = await session.call_tool("propose_financial_observation", {
+                    "resource_id": account.id, "capture_contract_id": "cash-balance-update",
+                    "amount": -1, "currency": "GBP", "as_at": "2026-08-17T10:30",
+                    "command_id": "invalid-observation"})
+                assert invalid_observation.isError
+                assert "amount must be a finite non-negative number" in invalid_observation.content[0].text
+                incompatible_field = await session.call_tool("propose_financial_observation", {
+                    "resource_id": account.id, "capture_contract_id": "cash-balance-update",
+                    "amount": 1200.0, "currency": "GBP", "as_at": "2026-08-17T10:30",
+                    "command_id": "incompatible-field", "source": "bank statement"})
+                assert incompatible_field.isError
+                assert "capture contains unsupported fields: source" in incompatible_field.content[0].text
+                observation = await session.call_tool("propose_financial_observation", {
+                    "resource_id": account.id, "capture_contract_id": "cash-balance-update",
+                    "amount": 1201.0, "currency": "GBP", "as_at": "2026-08-17T10:30",
+                    "command_id": "observation-command-1"})
+                assert not observation.isError
+                assert json.loads(observation.content[0].text)["state"] == "pending"
                 no_authority = await session.call_tool("record_account_balance", {
                     **command, "resource_id": other_account.id, "request_id": "mcp-request-2"})
                 assert no_authority.isError
@@ -141,7 +167,8 @@ def test_mcp_client_connects_and_cannot_cross_household(environment):
     asyncio.run(exercise())
     proposal = next(iter(ProposalInbox(log).proposals.values()))
     assert proposal.state == "pending"
-    assert len(ProposalInbox(log).proposals) == 1
+    assert len(ProposalInbox(log).proposals) == 2
+    assert all(proposal.state == "pending" for proposal in ProposalInbox(log).proposals.values())
     assert sum(event["kind"].startswith("finance.") for event in log.events()) == finance_events_before
     envelope = next(iter(EnvelopeProjection(log).envelopes.values()))
     vault = EvidenceVault(environment / "vault", authorized=lambda actor: actor == f"mcp:{ALLOWED}")
