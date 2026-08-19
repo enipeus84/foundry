@@ -241,6 +241,10 @@ class McpBalanceCapture:
             raise McpClientSafeDenied(str(exc)) from exc
         except (AcquisitionError, ValueError, TypeError) as exc:
             raise McpWriteDenied("financial observation proposal refused") from exc
+        except Exception as exc:
+            # Keep unexpected implementation failures observable in server-side
+            # exception chaining, but never reflect their text through MCP.
+            raise McpWriteDenied("financial observation proposal refused") from exc
 
         self.log.append("application.mcp_capture.proposed", {
             "operation": "propose_financial_observation", "command_id": command_id,
