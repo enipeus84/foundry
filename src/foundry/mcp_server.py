@@ -11,6 +11,7 @@ from foundry.application.mcp_writes import (
     McpBalanceCapture, McpClientSafeDenied, McpFinancialResourceWrites, McpWriteDenied,
 )
 from foundry.application.mission_assumptions import MissionAssumptionError, MissionAssumptionService
+from foundry.application.pension_mission import PensionMissionQueryError, PensionMissionQueryService
 from foundry.application.resources import FinancialResourceQuery, ResourceNotFound
 
 
@@ -28,7 +29,7 @@ def create_mcp_server(query: FinancialResourceQuery | None = None,
                       principal: McpPrincipal | None = None,
                       streamable_http_path: str = "/mcp", *, host: str = "127.0.0.1",
                       transport_security=None, auth=None, auth_server_provider=None) -> FastMCP:
-    """Build the fixed three-tool MCP surface; no transport code knows event shapes."""
+    """Build the governed MCP surface; no transport code knows event shapes."""
     active_principal = principal or authenticated_principal_from_environment()
     query = query or query_for_mcp_principal(active_principal)
     balance_capture = McpBalanceCapture(
@@ -38,10 +39,38 @@ def create_mcp_server(query: FinancialResourceQuery | None = None,
         query.log, active_principal.email, active_principal.household_id,
         active_principal.client, active_principal.witness_model)
     mission_assumptions = MissionAssumptionService(query.log)
-    server = FastMCP("Foundry", instructions="Governed financial-resource access.",
+    pension_mission = PensionMissionQueryService(query.log, active_principal.household_id)
+    server = FastMCP("Foundry", instructions="Governed household finance and Mission access.",
                      streamable_http_path=streamable_http_path, host=host,
                      transport_security=transport_security, auth=auth,
                      auth_server_provider=auth_server_provider)
+
+    @server.tool()
+    def inspect_pension_independence(mission_id: str | None = None,
+                                    as_of: str | None = None) -> dict:
+        """Inspect the authorised Pension Independence Mission and its exact blockers."""
+        try:
+            return pension_mission.inspect(mission_id, as_of)
+        except PensionMissionQueryError as exc:
+            raise ValueError(str(exc)) from exc
+
+    @server.tool()
+    def get_current_pension_value(mission_id: str | None = None,
+                                  as_of: str | None = None) -> dict:
+        """Return canonical aggregated pension wealth; clients need not replay history."""
+        try:
+            return pension_mission.current_value(mission_id, as_of)
+        except PensionMissionQueryError as exc:
+            raise ValueError(str(exc)) from exc
+
+    @server.tool()
+    def evaluate_pension_independence(mission_id: str | None = None,
+                                      as_of: str | None = None) -> dict:
+        """Evaluate Pension Independence through Foundry's canonical Mission assessor."""
+        try:
+            return pension_mission.evaluate(mission_id, as_of)
+        except PensionMissionQueryError as exc:
+            raise ValueError(str(exc)) from exc
 
     @server.tool()
     def get_mission_assumption_readiness(mission_id: str) -> dict:

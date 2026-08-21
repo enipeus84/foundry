@@ -112,3 +112,19 @@ def test_execute_command_id_collision_is_household_scoped(tmp_path):
     assert service.execute(proposal_id=proposal_b["proposal_id"], mission_id=mission_b.id,
                            household_id=household_b.id, assumptions=PAYLOADS[FI],
                            principal="owner@example.com", command_id="shared-command") == result_b
+
+
+def test_execute_rejects_command_id_reuse_for_different_operation(tmp_path):
+    _, household, mission, service = _world(tmp_path, FI)
+    first = service.propose(mission_id=mission.id, household_id=household.id,
+                            assumptions=PAYLOADS[FI], principal="owner@example.com")
+    service.execute(proposal_id=first["proposal_id"], mission_id=mission.id,
+                    household_id=household.id, assumptions=PAYLOADS[FI],
+                    principal="owner@example.com", command_id="command-1")
+    changed = {**PAYLOADS[FI], "monthly_contribution": 1250}
+    second = service.propose(mission_id=mission.id, household_id=household.id,
+                             assumptions=changed, principal="owner@example.com")
+    with pytest.raises(MissionAssumptionError, match="different operation"):
+        service.execute(proposal_id=second["proposal_id"], mission_id=mission.id,
+                        household_id=household.id, assumptions=changed,
+                        principal="owner@example.com", command_id="command-1")
