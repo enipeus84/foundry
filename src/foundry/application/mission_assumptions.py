@@ -6,15 +6,20 @@ from dataclasses import dataclass
 from hashlib import sha256
 import json
 import math
+import time
 from typing import Any
 
 from foundry.core import grammar
 from foundry.core.entities import EntityProjection
+from foundry.core.mission_assessment import MissionAssessmentRegistry
+from foundry.core.mission_targets import MissionTargetProjection
 from foundry.eventlog import EventLog
 from foundry.finance.entities import AssumptionSet, FinanceEntityProjection
 from foundry.finance.mission_assessment import ProjectionInputs, POLICY_ID as FI_POLICY_ID
 from foundry.finance.missions import FINANCE_MISSION_DEFINITIONS
+from foundry.finance.missions import register_finance_mission_definitions
 from foundry.finance.mortgage_assessment import MortgageProjectionInputs, POLICY_ID as MORTGAGE_POLICY_ID
+from foundry.finance.mission_targets import FinanceTargetMetricResolver
 from foundry.finance.pension_assessment import PensionIndependenceInputs, POLICY_ID as PENSION_POLICY_ID
 from foundry.finance.resilience_assessment import FinancialResilienceInputs, TARGET_MONTHS, POLICY_ID as RESILIENCE_POLICY_ID
 from foundry.finance.entities import declare_assumption_set, archive_assumption_set
@@ -107,7 +112,15 @@ class MissionAssumptionService:
         mission = core.missions.get(mission_id)
         if mission is None or mission.status != "active":
             raise MissionAssumptionError("mission not found")
-        if mission.household_id != household_id:
+        definitions = MissionAssessmentRegistry()
+        register_finance_mission_definitions(definitions)
+        targets = MissionTargetProjection(
+            self.log, core, definitions, FinanceTargetMetricResolver())
+        target = targets.in_force(mission_id, time.time())
+        # Pre-RFC-016 Mission records may retain a household field.  An
+        # in-force Mission Target, when present, is the canonical binding.
+        bound_household = target.household_id if target is not None else mission.household_id
+        if bound_household != household_id:
             raise MissionAssumptionError("mission is not authorised for this household")
         schema = _schema(mission.assessment_policy_id or "")
         return core, finance, mission, schema

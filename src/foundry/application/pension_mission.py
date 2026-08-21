@@ -14,6 +14,8 @@ from typing import Any
 from foundry.core.entities import EntityProjection
 from foundry.core.metrics import MetricRegistry, MetricResult
 from foundry.core.mission_assessment import MissionAssessment, MissionAssessmentRequest
+from foundry.core.mission_assessment import MissionAssessmentRegistry
+from foundry.core.mission_targets import MissionTargetProjection
 from foundry.core.scope import Subject
 from foundry.eventlog import EventLog
 from foundry.finance.entities import FinanceEntityProjection
@@ -25,6 +27,8 @@ from foundry.finance.pension_assessment import (
 from foundry.finance.pension_evidence import PensionEvidenceProjection
 from foundry.finance.pension_metrics import FinancePensionMetricProvider
 from foundry.finance.pension_projection import PensionProviderProjectionProjection
+from foundry.finance.mission_targets import FinanceTargetMetricResolver
+from foundry.finance.missions import register_finance_mission_definitions
 
 from .mission_assumptions import MissionAssumptionService
 
@@ -90,22 +94,45 @@ class PensionMissionQueryService:
             evidence,
             provider_projections=PensionProviderProjectionProjection(self.log),
         )
-        return core, finance, assessor
+        definitions = MissionAssessmentRegistry()
+        register_finance_mission_definitions(definitions)
+        targets = MissionTargetProjection(
+            self.log, core, definitions, FinanceTargetMetricResolver())
+        return core, finance, assessor, targets
 
-    def _mission(self, core: EntityProjection, mission_id: str | None):
+    def _mission(self, core: EntityProjection, targets: MissionTargetProjection,
+                 mission_id: str | None, assessed_at: float):
+        """Resolve household scope from an in-force Mission Target.
+
+        A Mission is programme metadata, not a household-owned entity.  The
+        target is the canonical household binding; ``Mission.household_id`` is
+        retained only to replay pre-RFC-016 history and must not gate reads.
+        """
         candidates = tuple(
-            mission for mission in core.missions.values()
-            if mission.household_id == self.household_id
-            and mission.status == "active"
+            (mission, target) for mission in core.missions.values()
+            if mission.status == "active"
             and mission.assessment_policy_id == POLICY_ID
+            and (target := targets.in_force(mission.id, assessed_at)) is not None
+            and target.household_id == self.household_id
         )
         if mission_id is not None:
-            mission = core.missions.get(mission_id)
-            if mission not in candidates:
-                raise PensionMissionQueryError("Pension Independence Mission not found")
-            return mission
+            candidate = next((item for item in candidates if item[0].id == mission_id), None)
+            if candidate is None:
+                raise PensionMissionQueryError("Pension Independence Mission is not authorised for this household")
+            return candidate
         if not candidates:
-            raise PensionMissionQueryError("Pension Independence Mission not found")
+            missions = tuple(mission for mission in core.missions.values()
+                             if mission.assessment_policy_id == POLICY_ID)
+            if not missions:
+                raise PensionMissionQueryError("Pension Independence Mission is not declared")
+            if any(mission.id in targets.conflicts for mission in missions):
+                raise PensionMissionQueryError(
+                    "Pension Independence Mission has ambiguous canonical Mission Target state")
+            if any(targets.in_force(mission.id, assessed_at) is not None for mission in missions):
+                raise PensionMissionQueryError(
+                    "Pension Independence Mission is not authorised for this household")
+            raise PensionMissionQueryError(
+                "Pension Independence Mission has no active canonical Mission Target")
         if len(candidates) != 1:
             raise PensionMissionQueryError(
                 "multiple active Pension Independence Missions require an explicit mission_id")
@@ -121,8 +148,8 @@ class PensionMissionQueryService:
     def evaluate(self, mission_id: str | None = None,
                  as_of: str | None = None) -> dict[str, Any]:
         assessed_at = _timestamp(as_of)
-        core, finance, assessor = self._composition()
-        mission = self._mission(core, mission_id)
+        core, finance, assessor, targets = self._composition()
+        mission, target_binding = self._mission(core, targets, mission_id, assessed_at)
         request = MissionAssessmentRequest(
             mission.id, POLICY_ID, Subject("party", self.household_id), assessed_at)
         assessment = assessor.assess(request)
@@ -145,7 +172,8 @@ class PensionMissionQueryService:
                 "name": mission.name,
                 "lifecycle_status": mission.status,
                 "policy_id": mission.assessment_policy_id,
-                "subject": {"kind": "party", "id": self.household_id},
+                "subject": {"kind": "party", "id": target_binding.subject_id},
+                "authorising_household": self.household_id,
                 "target_metric": mission.target_metric,
             },
             "evaluable": assessment.status != "unavailable",

@@ -15,7 +15,10 @@ from mcp import ClientSession, StdioServerParameters  # noqa: E402
 from mcp.client.stdio import stdio_client  # noqa: E402
 
 from foundry import webauth  # noqa: E402
+from foundry.application.pension_mission import PensionMissionQueryService  # noqa: E402
+from foundry.core import grammar  # noqa: E402
 from foundry.core.entities import EntityProjection  # noqa: E402
+from foundry.core.mission_targets import TargetQuantity  # noqa: E402
 from foundry.core.principal_authority import grant_principal_household_authority  # noqa: E402
 from foundry.demo_data import build  # noqa: E402
 from foundry.eventlog import EventLog  # noqa: E402
@@ -33,6 +36,18 @@ def test_mcp_commissions_and_evaluates_pension_independence(tmp_path):
     mission = next(
         item for item in EntityProjection(log).missions.values()
         if item.assessment_policy_id == POLICY_ID)
+    # Production's RFC-016 declaration binds a household through its Mission
+    # Target, not the retired Mission.household_id convenience field.
+    grammar.update(log, "core", "mission", mission.id, {"household_id": None},
+                   "exercise canonical target binding", actor="test")
+    _, _, _, targets = PensionMissionQueryService(log, household.household_id)._composition()
+    descriptor = targets.metric_resolver.describe(mission.target_metric)
+    targets.declare(
+        household_id=household.household_id, subject_id=household.household_id,
+        mission_id=mission.id, metric_id=mission.target_metric,
+        destination=TargetQuantity(735_000, descriptor.unit_or_currency, descriptor.dimension),
+        destination_direction=descriptor.destination_direction, horizon_kind="derived",
+        horizon_at=None, effective_from=log.get(mission.provenance[0])["ts"], actor="test")
     existing = FinanceEntityProjection(log).assumption_sets[mission.assumption_set_id]
     assumptions = {
         key: value for key, value in existing.assumptions.items()
@@ -54,7 +69,7 @@ def test_mcp_commissions_and_evaluates_pension_independence(tmp_path):
         ALLOWED, webauth.AuthConfig(
             "test", "test", ALLOWED,
             env["SESSION_SECRET"].encode(), "", False))
-    as_of = datetime.fromtimestamp(household.as_of, tz=timezone.utc).isoformat()
+    as_of = datetime.now(timezone.utc).isoformat()
     server = StdioServerParameters(
         command=sys.executable, args=["-m", "foundry.mcp_server"], env=env)
 
