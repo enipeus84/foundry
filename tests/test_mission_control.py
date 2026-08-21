@@ -658,11 +658,12 @@ def test_pension_independence_route_renders_approved_policy(tmp_path):
     assert "PLANNED" not in response.text
     assert "CURRENT PENSION" in response.text
     assert "£62,000" in response.text
-    assert "EXPECTED PATH" in response.text
+    assert "EXPECTED OUTCOME" in response.text
     assert "CONSERVATIVE CASE" in response.text
     assert "OPTIMISTIC CASE" in response.text
     assert "£785,000" in response.text
-    assert "EXPECTED PATH · DEFAULT VIEW · NOT A GUARANTEE" in response.text
+    assert "AT PLANNING POINT · PROJECTED · EXPECTED PATH · NOT A GUARANTEE" in response.text
+    assert "Trajectory compares the expected outcome at the planning point with the required destination." in response.text
     assert "STATE PENSION · PER YEAR" in response.text
     assert "£10,600" in response.text
     assert "ESTIMATED RETIREMENT INCOME" in response.text
@@ -881,7 +882,7 @@ def test_rfc010_phase_2_route_goldens_are_pinned_for_all_four_missions(
         "financial-independence":
             "52c9c6e5fe2485c2878c1509fb47eadf474e3751f0a6608c9dbdeb7abbe1de29",
         "pension-independence":
-            "88657b6ef61fc45f8b5a29d32d38fc18b713d3ab693932d0a40dd53f06484138",
+            "c1694554084dc1bfae538823393f2cc487cdcfdafa1d20cbbe226f1331851d6a",
         "mortgage-freedom":
             "df06e6acbe81b3f3af2788a8f61625202a160091bde4509f45a830070b673eed",
     }

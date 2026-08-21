@@ -61,6 +61,7 @@ class MissionHeroView:
     current: MetricResult
     current_label: str
     current_format_kind: str
+    expected_outcome: TelemetryItem | None
     milestone: MissionMilestone | None
     destination: MissionMilestone | None
     milestones: tuple[MissionMilestone, ...]
@@ -77,6 +78,7 @@ class FlightAnalysisView:
     current: MetricResult
     current_label: str
     current_format_kind: str
+    expected_outcome: TelemetryItem | None
     destination: MissionMilestone | None
     supporting: tuple[ConsoleInstrumentView, ...]
     evidence_note: str
@@ -158,11 +160,19 @@ class MissionConsoleModel:
             evidence_note=self._trajectory_evidence_note(assessment),
         )
         next_burn = self._next_burn(assessment, confidence)
+        outcomes = tuple(
+            item for item in assessment.telemetry
+            if item.display_region == "outcome"
+        )
+        if len(outcomes) > 1:
+            raise ValueError("Mission Console accepts at most one expected outcome")
+        expected_outcome = outcomes[0] if outcomes else None
         hero = MissionHeroView(
             definition=definition,
             current=assessment.current_value,
             current_label=current_label,
             current_format_kind=current_format,
+            expected_outcome=expected_outcome,
             milestone=assessment.current_milestone,
             destination=destination,
             milestones=milestones,
@@ -216,6 +226,7 @@ class MissionConsoleModel:
             current=assessment.current_value,
             current_label=current_label,
             current_format_kind=current_format,
+            expected_outcome=expected_outcome,
             destination=destination,
             supporting=tuple(supporting[:3]),
             evidence_note=trajectory.evidence_note,
@@ -315,7 +326,7 @@ class MissionConsoleModel:
         groups: list[tuple[str, list[TelemetryItem]]] = []
         indexes: dict[str, int] = {}
         for item in assessment.telemetry:
-            if item.display_region == "essential":
+            if item.display_region in ("essential", "outcome"):
                 continue
             title = item.display_group or f"{definition.label} telemetry"
             if title not in indexes:
