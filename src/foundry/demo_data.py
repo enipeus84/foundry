@@ -32,7 +32,7 @@ import os
 import random
 import time
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 from foundry.core import grammar as core_grammar
@@ -44,6 +44,7 @@ from foundry.core.decisions import (
 from foundry.core.entities import (
     declare_employer, declare_mission, declare_party, employ, join_household, update_party,
 )
+from foundry.core.identity import declare_person_date_of_birth
 from foundry.core.evidence import concern, derive_claim_directly, tag_claim
 from foundry.eventlog import EventLog
 from foundry.finance import entities as fin
@@ -122,20 +123,17 @@ def build_morgan_household(log: EventLog, as_of: float | None = None) -> MorganH
     update_party(
         log,
         household.id,
-        {
-            "reporting_currency": "GBP",
-            "member_ages": {
-                alex.id: 42.0,
-                sam.id: 40.0,
-                emily.id: 12.0,
-                oliver.id: 9.0,
-            },
-        },
-        reason="V1 default (001 §9) and synthetic planning-point evidence",
+        {"reporting_currency": "GBP"},
+        reason="V1 default (001 §9)",
         actor="synthetic_demo",
     )
     for member in (alex, sam, emily, oliver):
         join_household(log, member.id, household.id)
+    # Calendar identity, not mutable current-age state.  These dates retain
+    # the synthetic household's intended ages at its reference assessment.
+    for member, dob in ((alex, date(1984, 1, 1)), (sam, date(1986, 1, 1)),
+                        (emily, date(2014, 1, 1)), (oliver, date(2017, 1, 1))):
+        declare_person_date_of_birth(log, member.id, dob, actor="synthetic_demo")
 
     nimbus = declare_employer(log, "Nimbus Robotics", industry="robotics")
     bellwether = declare_employer(log, "Bellwether Health Partners", industry="healthcare")

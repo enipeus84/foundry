@@ -65,9 +65,9 @@ class FinancePensionMetricProvider:
                 request,
                 "pension metrics do not support horizon or scenario requests",
             )
-        if request.parameters:
+        if set(request.parameters) - {"pension_participant_ids"}:
             return self._unsupported(
-                request, "pension metrics do not accept parameters")
+                request, "pension metrics do not accept these parameters")
         if request.requested_calculation_version not in (
             None, CALCULATION_VERSION
         ):
@@ -82,6 +82,7 @@ class FinancePensionMetricProvider:
             request.scope.id,
             request.as_of,
             request.assumption_set_id,
+            tuple(request.parameters.get("pension_participant_ids", ())),
         )
         if key in self._cache:
             return self._cache[key]
@@ -516,6 +517,15 @@ class FinancePensionMetricProvider:
         people = self.basis.persons_for_scope(request.scope)
         if not people:
             return None
+        participants = request.parameters.get("pension_participant_ids")
+        if participants is not None:
+            if (not isinstance(participants, (tuple, list)) or not participants
+                    or any(not isinstance(person_id, str) or not person_id
+                           for person_id in participants)
+                    or len(set(participants)) != len(participants)
+                    or not set(participants) <= set(people)):
+                return None
+            people = list(participants)
         return set(people), self.basis.attribute_to(request.scope)
 
     def _pension_accounts(self, person_ids: set[str]):

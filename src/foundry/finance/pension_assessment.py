@@ -14,6 +14,7 @@ import math
 from numbers import Real
 
 from foundry.core.entities import EntityProjection
+from foundry.core.identity import age_years
 from foundry.core.metrics import MetricRegistry, MetricRequest, MetricResult
 from foundry.core.mission_assessment import (
     DeltaV,
@@ -244,10 +245,9 @@ class PensionIndependenceAssessor:
                 "Pension Independence derives its destination and planning "
                 "point from declared evidence, not Mission scalar targets.",
             )
-        household, members = self._household(request)
-        if household is None:
-            return self._unavailable(
-                request, "active household scope not found")
+        members, scope_error = self._participants(request)
+        if scope_error is not None:
+            return self._unavailable(request, scope_error)
         assumption_set = self.finance.assumption_sets.get(
             mission.assumption_set_id or "")
         if assumption_set is None or assumption_set.status != "active":
@@ -258,14 +258,11 @@ class PensionIndependenceAssessor:
                 assumption_set)
         except (TypeError, ValueError) as exc:
             return self._unavailable(request, str(exc))
-        planning = self._planning_point(
-            household, members, request.as_of, inputs)
-        if planning is None:
-            return self._unavailable(
-                request,
-                "planning point cannot be resolved from member ages and "
-                "State Pension age declarations",
-            )
+        planning, planning_error = self._planning_point(
+            members, request.as_of, inputs)
+        if planning_error is not None:
+            return self._unavailable(request, planning_error)
+        assert planning is not None
         planning_at, planning_label = planning
 
         results = {
@@ -274,6 +271,10 @@ class PensionIndependenceAssessor:
                 request.scope,
                 request.as_of,
                 assumption_set_id=assumption_set.id,
+                parameters={
+                    "pension_participant_ids": tuple(
+                        member.id for member in members),
+                },
             ))
             for metric_id in (
                 "finance.pension_wealth",
@@ -507,51 +508,54 @@ class PensionIndependenceAssessor:
             ),
         )
 
-    def _household(self, request):
+    def _participants(self, request):
         if request.scope.kind != "party":
-            return None, ()
-        household = self.core.parties.get(request.scope.id)
-        if household is None or household.party_type != "household" \
-                or household.status != "active":
-            return None, ()
-        members = tuple(
-            member for member in self.core.members_of(household.id)
-            if member.status == "active"
-        )
+            return (), "Pension Independence requires a Party subject"
+        subject = self.core.parties.get(request.scope.id)
+        if subject is None or subject.status != "active":
+            return (), "Pension Independence subject is not active canonical state"
+        if subject.party_type == "person":
+            if subject.date_of_birth is None:
+                return (), f"active pension participant {subject.id} lacks canonical date_of_birth"
+            return (subject,), None
+        if subject.party_type != "household":
+            return (), "Pension Independence subject must be a Person or household"
+        active = tuple(member for member in self.core.members_of(subject.id)
+                       if member.status == "active")
+        missing = tuple(member.id for member in active if member.date_of_birth is None)
+        if missing:
+            return (), "active household member(s) lack canonical date_of_birth: " + ", ".join(sorted(missing))
+        members = tuple(member for member in active
+                        if age_years(member.date_of_birth, request.as_of) >= 18)
         if not members:
-            return None, ()
-        return household, members
+            return (), "household has no active adult pension participants"
+        return members, None
 
-    def _planning_point(self, household, members, as_of, inputs):
+    def _planning_point(self, members, as_of, inputs):
         horizons = []
-        household_ages = household.attributes.get("member_ages", {})
-        if not isinstance(household_ages, dict):
-            household_ages = {}
+        missing = []
         for member in members:
-            current_age = member.attributes.get(
-                "age", household_ages.get(member.id))
-            if isinstance(current_age, bool) \
-                    or not isinstance(current_age, Real) \
-                    or not math.isfinite(float(current_age)):
-                continue
+            assert member.date_of_birth is not None
+            current_age = age_years(member.date_of_birth, as_of)
             target_age = inputs.planning_age
             if target_age is None:
                 record = self.evidence.latest(
                     member.id, "state_pension_age", as_of)
                 if record is None:
+                    missing.append(member.id)
                     continue
                 target_age = float(record.value)
-            remaining = target_age - float(current_age)
-            if remaining >= 0:
-                horizons.append(remaining)
+            horizons.append(max(0.0, target_age - float(current_age)))
+        if missing:
+            return None, "State Pension age evidence is missing for adult participant(s): " + ", ".join(sorted(missing))
         if not horizons:
-            return None
+            return None, "planning point has no adult pension participants"
         months = max(1, math.ceil(max(horizons) * 12))
         return (
             self._add_months(as_of, months),
             "PLANNED RETIREMENT" if inputs.planning_age is not None
             else "STATE PENSION AGE",
-        )
+        ), None
 
     def _pension_account_ids(self, person_ids):
         owned = self.basis.owned_entities(
@@ -1142,7 +1146,7 @@ class PensionIndependenceAssessor:
                 "RETIREMENT INCOME COMPOSITION",
             ),
             *self._contribution_items(
-                request, assumption_set, p7),
+                members, request, assumption_set, p7),
             TelemetryItem(
                 replace(
                     results["finance.retirement_income_required"],
@@ -1214,11 +1218,8 @@ class PensionIndependenceAssessor:
             ))
         return tuple(items)
 
-    def _contribution_items(self, request, assumption_set, p7):
-        person_ids = {
-            member.id for member in self.core.members_of(request.scope.id)
-            if member.status == "active"
-        }
+    def _contribution_items(self, members, request, assumption_set, p7):
+        person_ids = {member.id for member in members}
         employee = employer = sacrifice = 0.0
         refs = []
         for account_id in self._pension_account_ids(person_ids):
