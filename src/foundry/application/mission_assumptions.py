@@ -179,14 +179,18 @@ class MissionAssumptionService:
                 assumptions: dict[str, Any], principal: str, command_id: str) -> dict[str, Any]:
         if not command_id.strip():
             raise MissionAssumptionError("command_id is required")
+        expected = {"mission_id": mission_id, "household_id": household_id,
+                    "assumptions": assumptions, "principal": principal}
+        digest = _digest(expected)
         for event in self.log.events():
             if (event["kind"] == "application.mission_assumption.executed"
                     and event["payload"].get("household_id") == household_id
                     and event["payload"].get("command_id") == command_id):
+                if (event["payload"].get("proposal_id") != proposal_id
+                        or event["payload"].get("request_digest", digest) != digest):
+                    raise MissionAssumptionError(
+                        "command_id was already used for a different operation")
                 return event["payload"]["result"]
-        expected = {"mission_id": mission_id, "household_id": household_id,
-                    "assumptions": assumptions, "principal": principal}
-        digest = _digest(expected)
         match = next((e["payload"] for e in self.log.events()
                       if e["kind"] == "application.mission_assumption.proposed"
                       and e["payload"].get("proposal_id") == proposal_id), None)
@@ -196,6 +200,7 @@ class MissionAssumptionService:
                               assumptions=assumptions, actor=f"mcp:{principal}")
         self.log.append("application.mission_assumption.executed",
                         {"household_id": household_id, "command_id": command_id,
-                         "proposal_id": proposal_id, "result": result},
+                         "proposal_id": proposal_id, "request_digest": digest,
+                         "result": result},
                         actor=f"mcp:{principal}")
         return result
