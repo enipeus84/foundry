@@ -2088,6 +2088,18 @@ def _render_console_hero(
         view.destination.label if view.destination is not None
         else "Destination not declared"
     )
+    expected_outcome = view.expected_outcome
+    expected_value, expected_detail = (
+        _telemetry_presentation(expected_outcome)
+        if expected_outcome is not None else ("", "")
+    )
+    expected_instrument = (
+        f'''\n      <div class="console-instrument"><p class="k">EXPECTED OUTCOME</p>
+        <p class="v num">{html.escape(expected_value)}</p>
+        <p class="sub">{html.escape(expected_detail)}</p>
+      </div>'''
+        if expected_outcome is not None else ""
+    )
     trajectory_state = _trajectory_state_label(view.trajectory.state)
     trajectory_tone = (
         view.trajectory.tone
@@ -2101,7 +2113,11 @@ def _render_console_hero(
     )
     summary = (
         f"Current position is {view.current_label} {current}. "
-        f"Destination is {destination_label} {destination}. "
+        + (
+            f"Expected outcome at the planning point is {expected_value}. "
+            if expected_outcome is not None else ""
+        )
+        + f"Destination is {destination_label} {destination}. "
         f"Trajectory is {trajectory_state}. "
         + (f"Next burn is {view.burn_preview}." if view.burn_preview
            else "No primary burn is declared.")
@@ -2123,7 +2139,7 @@ def _render_console_hero(
       <div class="console-instrument"><p class="k">CURRENT POSITION</p>
         <p class="v num">{html.escape(current)}</p>
         <p class="sub">{html.escape(view.current_label)} · {html.escape(view.milestone.label if view.milestone else "NOT EVALUABLE")}</p>
-      </div>
+      </div>{expected_instrument}
       <div class="console-instrument"><p class="k">DESTINATION</p>
         <p class="v num">{html.escape(destination)}</p>
         <p class="sub">{html.escape(destination_label)}</p>
@@ -2159,6 +2175,17 @@ def _render_console_analysis(view: ConsoleFlightAnalysisView) -> str:
     )
     tone = view.trajectory.tone \
         if view.trajectory.tone in ("green", "amber", "red") else "none"
+    expected_outcome = view.expected_outcome
+    expected_value, expected_detail = (
+        _telemetry_presentation(expected_outcome)
+        if expected_outcome is not None else ("", "")
+    )
+    expected_endpoint = (
+        f'''\n    <div class="endpoint"><p class="label">EXPECTED OUTCOME</p>
+      <p class="value num">{html.escape(expected_value)}</p>
+      <p class="sub">{html.escape(expected_detail)}</p></div>'''
+        if expected_outcome is not None else ""
+    )
     instruments = []
     for instrument in view.supporting:
         if instrument.kind == "recent-movement":
@@ -2190,13 +2217,16 @@ def _render_console_analysis(view: ConsoleFlightAnalysisView) -> str:
   <h2 id="analysis-heading">FLIGHT ANALYSIS</h2>
   <div class="console-trajectory-panel">
     <div class="endpoint"><p class="label">CURRENT POSITION</p>
-      <p class="value num">{html.escape(current)}</p></div>
+      <p class="value num">{html.escape(current)}</p></div>{expected_endpoint}
     <div class="endpoint"><p class="label">DECLARED DESTINATION</p>
       <p class="value num">{html.escape(destination)}</p></div>
     <div class="trajectory-readout">
       <p class="state {tone}">{html.escape(state)}</p>
       <p class="mono">FORECAST {html.escape(view.trajectory.forecast.upper())}</p>
-      <p class="note">{html.escape(note)}</p>
+      <p class="note">{html.escape(
+          ("Trajectory compares the expected outcome at the planning point "
+           "with the required destination. " if expected_outcome is not None else "")
+          + note)}</p>
     </div>
   </div>
   <div class="console-rail">{"".join(instruments)}</div>

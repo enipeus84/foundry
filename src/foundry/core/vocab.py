@@ -193,7 +193,7 @@ TELEMETRY_FORMAT = ClosedVocabulary(
 
 TELEMETRY_REGION = ClosedVocabulary(
     "telemetry_region",
-    {"drilldown", "essential"},
+    {"drilldown", "essential", "outcome"},
 )
 
 TRAJECTORY_MOVEMENT = ClosedVocabulary(

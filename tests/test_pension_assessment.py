@@ -120,6 +120,42 @@ def test_governor_worked_shape_separates_completion_from_projection(tmp_path):
     assert assessment.trajectory == ()
 
 
+def test_expected_outcome_drives_trajectory_while_funding_uses_current_pot(
+        monkeypatch, tmp_path):
+    log, household = _seed(tmp_path)
+    assessor, core, _ = _assessor(log)
+    mission = next(
+        mission for mission in core.missions.values()
+        if mission.assessment_policy_id == POLICY_ID)
+    baseline = _assessment(log, household)
+
+    # Keep the observed £62k pot intact but substitute an Expected planning
+    # outcome above the divergent floor. A current-pot comparison would still
+    # call this Critical; the forecast comparison must call it Divergent.
+    projected = tuple(
+        ForecastPoint(point.at, 400_000.0, 600_000.0, 600_000.0)
+        for point in baseline.forecast
+    )
+    monkeypatch.setattr(assessor, "_project", lambda *args, **kwargs: projected)
+
+    assessment = assessor.assess(MissionAssessmentRequest(
+        mission.id, POLICY_ID, Subject("party", household.household_id),
+        household.as_of,
+    ))
+    telemetry = {item.label: item for item in assessment.telemetry}
+
+    assert assessment.current_value.value == 62_000.0
+    assert telemetry["FUNDING RATIO"].result.value == pytest.approx(
+        62_000.0 / 735_000.0)
+    assert telemetry["EXPECTED OUTCOME"].result.value == 600_000.0
+    assert telemetry["EXPECTED OUTCOME"].display_region == "outcome"
+    assert assessment.trajectory_state == "Divergent"
+    assert telemetry["REQUIRED RETIREMENT WEALTH"].result.value == 735_000.0
+    assert assessment.mission_margin.description.startswith(
+        "£") and "projected shortfall at the planning point" \
+        in assessment.mission_margin.description
+
+
 def test_return_changes_never_change_observed_value_or_completion(tmp_path):
     log, household = _seed(tmp_path)
     original = _assessment(log, household)
@@ -571,7 +607,6 @@ def test_telemetry_hierarchy_has_three_essential_items_and_per_year_labels(
         if item.display_group == "PROJECTION SCENARIOS"
     ]
     assert scenarios == [
-        "EXPECTED PATH",
         "CONSERVATIVE CASE",
         "OPTIMISTIC CASE",
     ]
