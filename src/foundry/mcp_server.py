@@ -12,6 +12,7 @@ from foundry.application.mcp_writes import (
 )
 from foundry.application.mission_assumptions import MissionAssumptionError, MissionAssumptionService
 from foundry.application.pension_mission import PensionMissionQueryError, PensionMissionQueryService
+from foundry.application.pension_timing import PensionTimingError, PensionTimingService
 from foundry.application.resources import FinancialResourceQuery, ResourceNotFound
 
 
@@ -40,6 +41,7 @@ def create_mcp_server(query: FinancialResourceQuery | None = None,
         active_principal.client, active_principal.witness_model)
     mission_assumptions = MissionAssumptionService(query.log)
     pension_mission = PensionMissionQueryService(query.log, active_principal.household_id)
+    pension_timing = PensionTimingService(query.log, active_principal.household_id)
     server = FastMCP("Foundry", instructions="Governed household finance and Mission access.",
                      streamable_http_path=streamable_http_path, host=host,
                      transport_security=transport_security, auth=auth,
@@ -70,6 +72,57 @@ def create_mcp_server(query: FinancialResourceQuery | None = None,
         try:
             return pension_mission.evaluate(mission_id, as_of)
         except PensionMissionQueryError as exc:
+            raise ValueError(str(exc)) from exc
+
+    @server.tool()
+    def propose_person_date_of_birth(person_id: str, date_of_birth: str) -> dict:
+        """Propose one authorised Person DOB declaration; this never writes identity state."""
+        try:
+            return {"state": "proposed", "requires_execution": True,
+                    **pension_timing.propose_person_date_of_birth(
+                        person_id=person_id, date_of_birth=date_of_birth,
+                        principal=active_principal.email)}
+        except PensionTimingError as exc:
+            raise ValueError(str(exc)) from exc
+
+    @server.tool()
+    def declare_person_date_of_birth(person_id: str, date_of_birth: str,
+                                     proposal_id: str, command_id: str) -> dict:
+        """Execute only the exact authorised DOB proposal, idempotently."""
+        try:
+            return pension_timing.declare_person_date_of_birth(
+                person_id=person_id, date_of_birth=date_of_birth, proposal_id=proposal_id,
+                command_id=command_id, principal=active_principal.email)
+        except PensionTimingError as exc:
+            raise ValueError(str(exc)) from exc
+
+    @server.tool()
+    def propose_state_pension_age(person_id: str, state_pension_age: float,
+                                  effective_at: str, source: str, lineage: str,
+                                  confidence: float) -> dict:
+        """Propose one authorised person-scoped State Pension age declaration."""
+        try:
+            return {"state": "proposed", "requires_execution": True,
+                    **pension_timing.propose_state_pension_age(
+                        person_id=person_id, state_pension_age=state_pension_age,
+                        effective_at=effective_at, source=source, lineage=lineage,
+                        confidence=confidence, principal=active_principal.email)}
+        except PensionTimingError as exc:
+            raise ValueError(str(exc)) from exc
+
+    @server.tool()
+    def declare_state_pension_age(person_id: str, state_pension_age: float,
+                                  effective_at: str, source: str, lineage: str,
+                                  confidence: float, proposal_id: str,
+                                  command_id: str) -> dict:
+        """Execute only the exact authorised State Pension age proposal, idempotently."""
+        try:
+            return pension_timing.declare_state_pension_age(
+                person_id=person_id, state_pension_age=state_pension_age,
+                effective_at=effective_at, source=source, lineage=lineage,
+                confidence=confidence, proposal_id=proposal_id, command_id=command_id,
+                principal=active_principal.email)
+        except PensionTimingError as exc:
             raise ValueError(str(exc)) from exc
 
     @server.tool()

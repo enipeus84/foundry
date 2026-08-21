@@ -119,7 +119,7 @@ class PensionMissionQueryService:
             candidate = next((item for item in candidates if item[0].id == mission_id), None)
             if candidate is None:
                 raise PensionMissionQueryError("Pension Independence Mission is not authorised for this household")
-            return candidate
+            return self._require_subject(candidate)
         if not candidates:
             missions = tuple(mission for mission in core.missions.values()
                              if mission.assessment_policy_id == POLICY_ID)
@@ -136,7 +136,15 @@ class PensionMissionQueryService:
         if len(candidates) != 1:
             raise PensionMissionQueryError(
                 "multiple active Pension Independence Missions require an explicit mission_id")
-        return candidates[0]
+        return self._require_subject(candidates[0])
+
+    @staticmethod
+    def _require_subject(candidate):
+        """Legacy null-target subjects are not a household-scope shorthand."""
+        if candidate[1].subject_id is None:
+            raise PensionMissionQueryError(
+                "Pension Independence Mission Target has no canonical subject")
+        return candidate
 
     @staticmethod
     def _target(assessment: MissionAssessment) -> MetricResult | None:
@@ -151,7 +159,7 @@ class PensionMissionQueryService:
         core, finance, assessor, targets = self._composition()
         mission, target_binding = self._mission(core, targets, mission_id, assessed_at)
         request = MissionAssessmentRequest(
-            mission.id, POLICY_ID, Subject("party", self.household_id), assessed_at)
+            mission.id, POLICY_ID, Subject("party", target_binding.subject_id), assessed_at)
         assessment = assessor.assess(request)
         readiness = MissionAssumptionService(self.log).readiness(
             mission.id, self.household_id)

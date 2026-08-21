@@ -18,6 +18,7 @@ domain-prefixed shadow to create.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import date
 from typing import Any
 
 from foundry.eventlog import EventLog
@@ -37,6 +38,8 @@ class Party:
     asserted_by: str = ""
     history: list[str] = field(default_factory=list)
     attributes: dict[str, Any] = field(default_factory=dict)
+    date_of_birth: date | None = None
+    date_of_birth_provenance: list[str] = field(default_factory=list)
     memberships: list[str] = field(default_factory=list)   # household Party ids
     employers: list[str] = field(default_factory=list)      # Employer ids, most recent last
 
@@ -202,6 +205,8 @@ class EntityProjection:
         kind = e["kind"]
         if kind.startswith("core.party."):
             self._apply_party(e)
+        elif kind == "core.person.date_of_birth.declared":
+            self._apply_person_date_of_birth(e)
         elif kind.startswith("core.employer."):
             self._apply_employer(e)
         elif kind.startswith("core.mission."):
@@ -242,6 +247,27 @@ class EntityProjection:
                 elif p["relation"] == "employed_by":
                     party.employers.append(p["target"])
                 party.history.append(e["id"])
+
+    def _apply_person_date_of_birth(self, e: dict) -> None:
+        """Fold only well-formed typed DOB declarations into Person state."""
+        payload = e["payload"]
+        person = self.parties.get(payload.get("person_id"))
+        value = payload.get("date_of_birth")
+        if person is None or person.party_type != "person" or not isinstance(value, str):
+            return
+        try:
+            from .identity import parse_date_of_birth
+            parsed = parse_date_of_birth(value)
+        except ValueError:
+            return
+        supersedes = payload.get("supersedes")
+        if person.date_of_birth_provenance and supersedes != person.date_of_birth_provenance[-1]:
+            return
+        if not person.date_of_birth_provenance and supersedes is not None:
+            return
+        person.date_of_birth = parsed
+        person.date_of_birth_provenance.append(e["id"])
+        person.history.append(e["id"])
 
     def _apply_employer(self, e: dict) -> None:
         verb = grammar.verb(e["kind"])

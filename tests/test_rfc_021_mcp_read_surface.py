@@ -17,9 +17,10 @@ from mcp.client.stdio import stdio_client  # noqa: E402
 from foundry import webauth  # noqa: E402
 from foundry.application.resources import FinancialResourceQuery, ResourceNotFound  # noqa: E402
 from foundry.core.acquisition import AssetRegistration, TelemetryStream, TelemetryStreamRegistry  # noqa: E402
-from foundry.core.entities import declare_party, join_household  # noqa: E402
+from foundry.core.entities import EntityProjection, declare_party, join_household  # noqa: E402
 from foundry.eventlog import EventLog  # noqa: E402
 from foundry.finance import entities as finance  # noqa: E402
+from foundry.finance.pension_evidence import PensionEvidenceProjection  # noqa: E402
 from foundry.finance.capture_targets import finance_asset_registry  # noqa: E402
 from foundry.application.mcp_context import authenticated_principal_from_environment  # noqa: E402
 from foundry.application.capture import CaptureService  # noqa: E402
@@ -124,7 +125,9 @@ def test_mcp_client_connects_and_cannot_cross_household(environment):
                     "close_financial_resource", "execute_close_financial_resource",
                     "get_mission_assumption_readiness", "propose_mission_assumption_set",
                     "execute_mission_assumption_set", "inspect_pension_independence",
-                    "get_current_pension_value", "evaluate_pension_independence"}
+                    "get_current_pension_value", "evaluate_pension_independence",
+                    "propose_person_date_of_birth", "declare_person_date_of_birth",
+                    "propose_state_pension_age", "declare_state_pension_age"}
                 listed = await session.call_tool("list_financial_resources", {})
                 assert account.id in listed.content[0].text
                 available = await session.call_tool("explain_capture_availability", {"resource_id": account.id})
@@ -197,6 +200,46 @@ def test_mcp_client_connects_and_cannot_cross_household(environment):
     gate.confirm(proposal.id, actor="human-reviewer")
     assert any(event["kind"] == "finance.account.reconciliation_observed" for event in log.events())
     assert any(event["actor"] == f"mcp:{ALLOWED}" for event in log.events())
+
+
+def test_mcp_pension_timing_commands_are_narrow_and_receipt_bound(environment):
+    log, household, _, _ = _world(environment)
+    person = next(member for member in EntityProjection(log).members_of(household.id))
+    grant_principal_household_authority(log, ALLOWED, household.id, actor="test")
+    token = webauth.session_token(ALLOWED, webauth.load_config())
+    server = StdioServerParameters(
+        command=sys.executable, args=["-m", "foundry.mcp_server"],
+        env={**os.environ, "FOUNDRY_DATA_PATH": str(log.path),
+             "FOUNDRY_MCP_SESSION_TOKEN": token, "FOUNDRY_MCP_HOUSEHOLD_ID": household.id},
+    )
+
+    async def exercise():
+        async with stdio_client(server) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                proposed = await session.call_tool("propose_person_date_of_birth", {
+                    "person_id": person.id, "date_of_birth": "1980-01-01"})
+                receipt = json.loads(proposed.content[0].text)
+                declared = await session.call_tool("declare_person_date_of_birth", {
+                    "person_id": person.id, "date_of_birth": "1980-01-01",
+                    "proposal_id": receipt["proposal_id"], "command_id": "dob-command-1"})
+                assert not declared.isError
+                state = await session.call_tool("propose_state_pension_age", {
+                    "person_id": person.id, "state_pension_age": 67,
+                    "effective_at": "2026-08-21T00:00:00Z", "source": "DWP forecast",
+                    "lineage": "authorised statement", "confidence": .9})
+                state_receipt = json.loads(state.content[0].text)
+                mismatch = await session.call_tool("declare_state_pension_age", {
+                    "person_id": person.id, "state_pension_age": 68,
+                    "effective_at": "2026-08-21T00:00:00Z", "source": "DWP forecast",
+                    "lineage": "authorised statement", "confidence": .9,
+                    "proposal_id": state_receipt["proposal_id"], "command_id": "spa-command-1"})
+                assert mismatch.isError
+                assert "proposal does not match" in mismatch.content[0].text
+
+    asyncio.run(exercise())
+    assert EntityProjection(log).parties[person.id].date_of_birth.isoformat() == "1980-01-01"
+    assert not PensionEvidenceProjection(log).latest(person.id, "state_pension_age", 2_000_000_000.0)
 
 
 @pytest.mark.parametrize("exception_type", ["RuntimeError", "OSError"])
