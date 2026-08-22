@@ -1,6 +1,7 @@
 """Steve Recovery Burn 06: canonical pension timing and adult scope."""
 
 from datetime import date, datetime, timezone
+from itertools import count
 
 import pytest
 
@@ -25,6 +26,13 @@ from foundry.core.mission_assessment import MissionAssessmentRegistry
 
 
 AS_OF = datetime(2026, 8, 21, 23, tzinfo=timezone.utc).timestamp()
+
+
+@pytest.fixture(autouse=True)
+def deterministic_event_clock(monkeypatch):
+    """Keep fixture declarations before their fixed assessment time."""
+    event_clock = count(AS_OF - 10_000, step=.001)
+    monkeypatch.setattr("foundry.eventlog.time.time", event_clock.__next__)
 
 
 def _world(tmp_path):
