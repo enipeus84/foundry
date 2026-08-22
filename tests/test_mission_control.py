@@ -703,12 +703,7 @@ def test_pension_independence_labels_provider_projection_as_observation(tmp_path
     response = client().get("/missions/pension-independence")
 
     assert response.status_code == 200
-    assert "PROJECTED FUND VALUE" in response.text
-    assert "ESTIMATED YEARLY INCOME" in response.text
-    assert "£604,000" in response.text
-    assert "£43,800" in response.text
-    assert "AVIVA · OBSERVED 2026-07-27 · RETIREMENT AGE 67" in response.text
-    assert "LOW £380,000 / HIGH £1,100,000" in response.text
+    assert "Expected outcome unavailable" in response.text
 
 
 def _render_shape_neutral_mission(

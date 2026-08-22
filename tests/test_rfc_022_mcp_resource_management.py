@@ -2,7 +2,10 @@
 
 import pytest
 
-from foundry.application.mcp_writes import McpBalanceCapture, McpFinancialResourceWrites, McpWriteDenied
+from foundry.application.mcp_writes import (
+    McpBalanceCapture, McpFinancialResourceWrites, McpPensionProviderProjectionCapture,
+    McpWriteDenied,
+)
 from foundry.core.acquisition import ProposalInbox
 from foundry.application.resources import FinancialResourceCommandService, FinancialResourceQuery
 from foundry.core.entities import EntityProjection, declare_party, join_household, update_party
@@ -156,3 +159,27 @@ def test_same_command_id_is_scoped_to_household(tmp_path):
     second = other_writes.create(resource_type="isa", currency="GBP", owner="Alex", name="Second", command_id="shared-command",
                                  proposal_id=second_proposal.proposal_id)
     assert first["id"] != second["id"]
+
+
+def test_provider_projection_proposal_execute_is_exact_and_idempotent(tmp_path):
+    log, household, writes = _world(tmp_path)
+    resource = writes.create(resource_type="pension", currency="GBP", name="Aviva", owner="Chris",
+                             command_id="pension", proposal_id=writes.propose_create(
+                                 resource_type="pension", currency="GBP", name="Aviva", owner="Chris").proposal_id)
+    capture = McpPensionProviderProjectionCapture(log, PRINCIPAL, household.id, "claude-code", "gpt-test")
+    values = dict(provider="Aviva", currency="GBP", observed_at=1_786_000_000.0, retirement_age=68.0,
+                  retirement_at=None, fund_low=380_000.0, fund_medium=604_000.0, fund_high=1_100_000.0,
+                  income_low=22_500.0, income_medium=43_800.0, income_high=96_600.0,
+                  growth_low_percent=-.8, growth_medium_percent=2.2, growth_high_percent=5.1,
+                  income_basis="Provider illustration", source="Aviva statement", lineage="household supplied")
+    proposal = capture.propose(resource_id=resource["id"], values=values)
+    assert not any(event["kind"] == "finance.pension_provider_projection.recorded" for event in log.events())
+    first = capture.execute(resource_id=resource["id"], values=values, proposal_id=proposal.proposal_id,
+                            command_id="projection-1")
+    second = capture.execute(resource_id=resource["id"], values=values, proposal_id=proposal.proposal_id,
+                             command_id="projection-1")
+    assert first == second and first["medium_projected_value"] == 604_000.0
+    assert sum(event["kind"] == "finance.pension_provider_projection.recorded" for event in log.events()) == 1
+    with pytest.raises(McpWriteDenied):
+        capture.execute(resource_id=resource["id"], values={**values, "fund_medium": 605_000.0},
+                        proposal_id=proposal.proposal_id, command_id="projection-2")

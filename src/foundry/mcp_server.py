@@ -8,7 +8,8 @@ from foundry.application.mcp_context import (
     McpPrincipal, authenticated_principal_from_environment, query_for_mcp_principal,
 )
 from foundry.application.mcp_writes import (
-    McpBalanceCapture, McpClientSafeDenied, McpFinancialResourceWrites, McpWriteDenied,
+    McpBalanceCapture, McpClientSafeDenied, McpFinancialResourceWrites,
+    McpPensionProviderProjectionCapture, McpWriteDenied,
 )
 from foundry.application.mission_assumptions import MissionAssumptionError, MissionAssumptionService
 from foundry.application.pension_mission import PensionMissionQueryError, PensionMissionQueryService
@@ -37,6 +38,9 @@ def create_mcp_server(query: FinancialResourceQuery | None = None,
         query.log, active_principal.email, active_principal.household_id,
         active_principal.client, active_principal.witness_model)
     resource_writes = McpFinancialResourceWrites(
+        query.log, active_principal.email, active_principal.household_id,
+        active_principal.client, active_principal.witness_model)
+    pension_projection_capture = McpPensionProviderProjectionCapture(
         query.log, active_principal.email, active_principal.household_id,
         active_principal.client, active_principal.witness_model)
     mission_assumptions = MissionAssumptionService(query.log)
@@ -290,6 +294,44 @@ def create_mcp_server(query: FinancialResourceQuery | None = None,
             "requires_confirmation": True,
             "confirmation_surface": "Foundry acquisition review",
         }
+
+    @server.tool()
+    def propose_pension_provider_projection(
+            resource_id: str, provider: str, observed_at: float, currency: str,
+            retirement_age: float | None, retirement_at: float | None,
+            fund_low: float, fund_medium: float, fund_high: float,
+            income_low: float, income_medium: float, income_high: float,
+            growth_low_percent: float, growth_medium_percent: float, growth_high_percent: float,
+            income_basis: str, source: str, lineage: str) -> dict:
+        """Propose one complete provider-issued pension illustration; no state is changed."""
+        values = locals().copy()
+        values.pop("resource_id")
+        try:
+            receipt = pension_projection_capture.propose(resource_id=resource_id, values=values)
+        except McpWriteDenied as exc:
+            raise ValueError("provider projection proposal refused") from exc
+        return {"operation": "record_pension_provider_projection", "state": "proposed",
+                "proposal_id": receipt.proposal_id, "resource_id": receipt.resource_id,
+                "summary": receipt.summary, "requires_execution": True}
+
+    @server.tool()
+    def execute_pension_provider_projection(
+            resource_id: str, proposal_id: str, command_id: str, provider: str,
+            observed_at: float, currency: str, retirement_age: float | None,
+            retirement_at: float | None, fund_low: float, fund_medium: float, fund_high: float,
+            income_low: float, income_medium: float, income_high: float,
+            growth_low_percent: float, growth_medium_percent: float, growth_high_percent: float,
+            income_basis: str, source: str, lineage: str) -> dict:
+        """Record only the exact provider illustration represented by a proposal receipt."""
+        values = locals().copy()
+        for key in ("resource_id", "proposal_id", "command_id"):
+            values.pop(key)
+        try:
+            return pension_projection_capture.execute(
+                resource_id=resource_id, values=values, proposal_id=proposal_id,
+                command_id=command_id)
+        except McpWriteDenied as exc:
+            raise ValueError("provider projection execution refused") from exc
 
     return server
 

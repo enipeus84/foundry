@@ -351,23 +351,30 @@ class PensionIndependenceAssessor:
                 "excluded from this assessment.")
 
         accounts, fee_defaulted = self._projection_accounts(
-            {member.id for member in members},
-            request.as_of,
-            inputs,
-        )
+            {member.id for member in members}, request.as_of, inputs)
         if not accounts:
-            return self._unavailable(
-                request, "no projectable DC pension account is available")
-        if fee_defaulted:
+            return self._unavailable(request, "no projectable DC pension account is available")
+        provider_forecast, provider_error = self._provider_forecast(
+            accounts, request, inputs, planning_at)
+        if provider_error is not None:
+            return self._unavailable(request, provider_error)
+        if provider_forecast is not None:
+            # The provider issued these numbers.  Foundry only supplies the
+            # Mission comparison; it must never reproduce their forecast.
+            forecast = provider_forecast
+            fee_defaulted = False
             limitations.append(
-                "One or more schemes have no fee declaration; the declared "
-                "assumed annual fee is used.")
-        forecast = self._project(
-            accounts,
-            request.as_of,
-            planning_at,
-            inputs,
-        )
+                "Expected Outcome is dated provider projection evidence, not a Foundry forecast.")
+            provider_evidence_refs = tuple(
+                self.provider_projections.latest(account[0], request.as_of).event_id
+                for account in accounts)
+        else:
+            provider_evidence_refs = ()
+            if fee_defaulted:
+                limitations.append(
+                    "One or more schemes have no fee declaration; the declared "
+                    "assumed annual fee is used.")
+            forecast = self._project(accounts, request.as_of, planning_at, inputs)
         terminal = forecast[-1]
         eta = self._first_crossing(forecast, required_wealth, "base")
         low_eta = self._first_crossing(forecast, required_wealth, "low")
@@ -422,14 +429,12 @@ class PensionIndependenceAssessor:
             request,
             limitations,
         )
-        delta_v, delta_applicability = self._delta_v(
-            mission,
-            {member.id for member in members},
-            request,
-            planning_at,
-            required_wealth,
-            inputs,
-        )
+        if provider_forecast is not None:
+            delta_v, delta_applicability = None, "unavailable"
+        else:
+            delta_v, delta_applicability = self._delta_v(
+                mission, {member.id for member in members}, request,
+                planning_at, required_wealth, inputs)
 
         telemetry = self._telemetry(
             results,
@@ -447,21 +452,12 @@ class PensionIndependenceAssessor:
             request,
             factor_items,
             members,
+            provider_evidence_refs,
         )
-        recommendations = self._recommendations(
-            request,
-            assumption_set,
-            accounts,
-            planning_at,
-            required_wealth,
-            required_income,
-            state_income,
-            db_income,
-            combined_income,
-            eta,
-            confidence,
-            inputs,
-        )
+        recommendations = () if provider_forecast is not None else self._recommendations(
+            request, assumption_set, accounts, planning_at, required_wealth,
+            required_income, state_income, db_income, combined_income, eta,
+            confidence, inputs)
 
         input_refs = tuple(sorted({
             reference
@@ -472,7 +468,7 @@ class PensionIndependenceAssessor:
             reference
             for result in results.values()
             for reference in result.evidence_references
-        }))
+        } | set(provider_evidence_refs)))
         limitation_values = tuple(dict.fromkeys(limitations))
         return MissionAssessment(
             mission_id=request.mission_id,
@@ -604,8 +600,49 @@ class PensionIndependenceAssessor:
                 defaulted = True
             else:
                 annual_fee = float(fee.value)
-            accounts.append((converted, contribution, annual_fee))
+            accounts.append((account_id, converted, contribution, annual_fee))
         return tuple(accounts), defaulted
+
+    def _provider_forecast(self, accounts, request, inputs, planning_at):
+        """Return the provider terminal scenarios, or a closed failure.
+
+        An account becomes provider-managed when its canonical provider
+        illustration exists.  A mixed set cannot be economically composed:
+        Foundry may not fill the missing member with its own forecast.
+        """
+        if self.provider_projections is None:
+            return None, None
+        records = [self.provider_projections.latest(account[0], request.as_of)
+                   for account in accounts]
+        if not any(records):
+            return None, None
+        if any(record is None for record in records):
+            return None, "Expected outcome unavailable — current provider projection required for every included pension"
+        assert all(record is not None for record in records)
+        records = tuple(records)
+        if any(request.as_of - record.observed_at > inputs.valuation_stale_after_days * DAY
+               for record in records):
+            return None, "Expected outcome unavailable — current provider projection required"
+        for account, record in zip(accounts, records):
+            if record.currency != "GBP":
+                return None, "Expected outcome unavailable — provider projection currency is not supported"
+            owners = {link.target for link in self.finance.accounts[account[0]].ownership
+                      if link.relation in vocab.VALUE_OWNERSHIP_RELATIONS}
+            target_ages = {
+                inputs.planning_age if inputs.planning_age is not None else float(
+                    self.evidence.latest(owner, "state_pension_age", request.as_of).value)
+                for owner in owners
+                if inputs.planning_age is not None or self.evidence.latest(
+                    owner, "state_pension_age", request.as_of) is not None
+            }
+            if (record.retirement_age is not None
+                    and (len(target_ages) != 1 or record.retirement_age not in target_ages)):
+                return None, "Expected outcome unavailable — provider projection planning point does not match the Mission"
+            if record.retirement_at is not None and abs(record.retirement_at - planning_at) > DAY:
+                return None, "Expected outcome unavailable — provider projection planning point does not match the Mission"
+        return (ForecastPoint(planning_at, sum(record.fund_low for record in records),
+                              sum(record.fund_medium for record in records),
+                              sum(record.fund_high for record in records)),), None
 
     def _project(
         self,
@@ -617,9 +654,13 @@ class PensionIndependenceAssessor:
         monthly_delta=0.0,
     ):
         months = max(0, self._months_between(as_at, planning_at))
+        # Keep this calculation seam backward compatible for its focused
+        # deterministic tests; production account tuples retain an id so the
+        # provider-evidence path can address the canonical resource.
+        account_values = [account[-3:] for account in accounts]
         balances = [
             [float(balance), float(balance), float(balance)]
-            for balance, _, _ in accounts
+            for balance, _, _ in account_values
         ]
         annual_returns = (
             inputs.low_real_return,
@@ -636,7 +677,7 @@ class PensionIndependenceAssessor:
         ]
         for month in range(1, months + 1):
             for account_index, (_, annual_contribution, fee) in enumerate(
-                    accounts):
+                    account_values):
                 contribution = annual_contribution / 12
                 if account_index == 0:
                     contribution += monthly_delta
@@ -1005,9 +1046,10 @@ class PensionIndependenceAssessor:
         request,
         factor_items,
         members,
+        provider_evidence_refs,
     ):
         derived = lambda metric_id, value, unit, label, format_kind, qualifier, \
-            region="drilldown", group="": self._derived_item(
+            region="drilldown", group="", evidence_references=(): self._derived_item(
                 metric_id,
                 value,
                 unit,
@@ -1018,6 +1060,7 @@ class PensionIndependenceAssessor:
                 assumption_set,
                 region,
                 group,
+                evidence_references,
             )
         annual = "PER YEAR"
         p7 = replace(
@@ -1041,6 +1084,7 @@ class PensionIndependenceAssessor:
                 "currency",
                 "AT PLANNING POINT · PROJECTED · EXPECTED PATH · NOT A GUARANTEE",
                 "outcome",
+                evidence_references=provider_evidence_refs,
             ),
             derived(
                 "finance.estimated_retirement_income",
@@ -1294,6 +1338,7 @@ class PensionIndependenceAssessor:
         assumption_set,
         region="drilldown",
         group="",
+        evidence_references=(),
     ):
         result = MetricResult(
             metric_id,
@@ -1304,6 +1349,7 @@ class PensionIndependenceAssessor:
             "available",
             CALCULATION_VERSION,
             assumption_references=tuple(assumption_set.provenance),
+            evidence_references=tuple(evidence_references),
             generated_at=request.as_of,
             confidence_or_quality="derived",
         )

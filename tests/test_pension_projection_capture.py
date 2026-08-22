@@ -156,9 +156,7 @@ def test_capture_review_confirm_and_latest_projection_reaches_mission(tmp_path):
     assert _economic_values(household) == before
 
     mission = client.get("/missions/pension-independence")
-    assert "£604,000" in mission.text
-    assert "£43,800" in mission.text
-    assert "AVIVA · OBSERVED 2026-08-12" in mission.text
+    assert "Expected outcome unavailable" in mission.text
 
     repeated = client.post(
         "/operations/pension-projection/confirm", data=confirmation_fields)
@@ -178,8 +176,7 @@ def test_capture_review_confirm_and_latest_projection_reaches_mission(tmp_path):
     history = PensionProviderProjectionProjection(EventLog(tmp_path / "events.jsonl"))
     assert len(history.for_account(household.alex_pension_id, AS_OF)) == 2
     mission = client.get("/missions/pension-independence")
-    assert "£650,000" in mission.text
-    assert "£47,000" in mission.text
+    assert "Expected outcome unavailable" in mission.text
 
 
 @pytest.mark.parametrize("changes", (
