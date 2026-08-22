@@ -626,20 +626,24 @@ class PensionIndependenceAssessor:
         for account, record in zip(accounts, records):
             if record.currency != "GBP":
                 return None, "Expected outcome unavailable — provider projection currency is not supported"
-            owners = {link.target for link in self.finance.accounts[account[0]].ownership
-                      if link.relation in vocab.VALUE_OWNERSHIP_RELATIONS}
-            target_ages = {
-                inputs.planning_age if inputs.planning_age is not None else float(
-                    self.evidence.latest(owner, "state_pension_age", request.as_of).value)
-                for owner in owners
-                if inputs.planning_age is not None or self.evidence.latest(
-                    owner, "state_pension_age", request.as_of) is not None
-            }
-            if (record.retirement_age is not None
-                    and (len(target_ages) != 1 or record.retirement_age not in target_ages)):
-                return None, "Expected outcome unavailable — provider projection planning point does not match the Mission"
-            if record.retirement_at is not None and abs(record.retirement_at - planning_at) > DAY:
-                return None, "Expected outcome unavailable — provider projection planning point does not match the Mission"
+            if record.retirement_at is not None:
+                record_planning_at = record.retirement_at
+            else:
+                owners = {link.target for link in self.finance.accounts[account[0]].ownership
+                          if link.relation in vocab.VALUE_OWNERSHIP_RELATIONS}
+                owner_points = []
+                for owner in owners:
+                    person = self.core.parties.get(owner)
+                    if person is None or person.date_of_birth is None:
+                        return None, "Expected outcome unavailable — provider projection planning point cannot be resolved"
+                    months = max(0, math.ceil((record.retirement_age - age_years(
+                        person.date_of_birth, request.as_of)) * 12))
+                    owner_points.append(self._add_months(request.as_of, months))
+                if len(set(owner_points)) != 1:
+                    return None, "Expected outcome unavailable — provider projection planning point is incompatible"
+                record_planning_at = owner_points[0]
+            if abs(record_planning_at - planning_at) > DAY:
+                return None, "Expected outcome unavailable — provider projection planning point is incompatible with the Mission planning point"
         return (ForecastPoint(planning_at, sum(record.fund_low for record in records),
                               sum(record.fund_medium for record in records),
                               sum(record.fund_high for record in records)),), None
@@ -1252,12 +1256,12 @@ class PensionIndependenceAssessor:
                     "finance.provider_projected_fund_value_medium", projection.fund_medium,
                     "GBP", request, "PROJECTED FUND VALUE", "currency",
                     f"{context} · MEDIUM {projection.growth_medium_percent:g}% · LOW £{projection.fund_low:,.0f} / HIGH £{projection.fund_high:,.0f}",
-                    assumption_set, "essential"),
+                    assumption_set, "drilldown", "PROVIDER ILLUSTRATIONS"),
                 self._derived_item(
                     "finance.provider_estimated_yearly_income_medium", projection.income_medium,
                     "GBP", request, "ESTIMATED YEARLY INCOME", "currency",
                     f"{context} · MEDIUM · LOW £{projection.income_low:,.0f} / HIGH £{projection.income_high:,.0f} · {projection.income_basis}",
-                    assumption_set, "essential"),
+                    assumption_set, "drilldown", "PROVIDER ILLUSTRATIONS"),
             ))
         return tuple(items)
 

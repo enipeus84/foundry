@@ -32,6 +32,9 @@ from foundry.finance.pension_evidence import (
     record_pension_evidence,
 )
 from foundry.finance.pension_metrics import FinancePensionMetricProvider
+from foundry.finance.pension_projection import (
+    PensionProviderProjectionProjection, record_pension_provider_projection,
+)
 
 PENSION_FIXTURE_AS_OF = 1_785_170_000.0
 
@@ -50,7 +53,8 @@ def _assessor(log):
     metrics.register(FinanceMetricProvider(finance, core))
     metrics.register(FinancePensionMetricProvider(finance, core, evidence))
     return PensionIndependenceAssessor(
-        metrics, finance, core, evidence), core, finance
+        metrics, finance, core, evidence,
+        provider_projections=PensionProviderProjectionProjection(log)), core, finance
 
 
 def _assessment(log, household, *, mission_id=None, as_of=None):
@@ -564,6 +568,48 @@ def test_future_evidence_is_excluded_with_visible_limitation(tmp_path):
         "1 future-dated pension declaration(s) are excluded" in limitation
         for limitation in after.limitations
     )
+
+
+def _record_provider(log, account_id, planning_at, medium):
+    return record_pension_provider_projection(
+        log, account_id, provider="Aviva", currency="GBP", observed_at=PENSION_FIXTURE_AS_OF,
+        retirement_at=planning_at, fund_low=medium - 100_000, fund_medium=medium,
+        fund_high=medium + 100_000, income_low=20_000, income_medium=30_000,
+        income_high=40_000, growth_low_percent=1.0, growth_medium_percent=2.0,
+        growth_high_percent=3.0, income_basis="Provider illustration",
+        source="Aviva statement", lineage="household supplied statement")
+
+
+def test_compatible_provider_projections_aggregate_below_essential_summary(tmp_path):
+    log, household = _seed(tmp_path)
+    planning_at = _assessment(log, household).forecast[-1].at
+    first = _record_provider(log, household.alex_pension_id, planning_at, 604_000)
+    second = _record_provider(log, household.sam_pension_id, planning_at, 401_000)
+
+    assessment = _assessment(log, household)
+
+    assert assessment.status != "unavailable"
+    assert assessment.forecast[-1].base == 1_005_000
+    assert assessment.forecast[-1].low == 805_000
+    assert assessment.forecast[-1].high == 1_205_000
+    assert len([item for item in assessment.telemetry if item.display_region == "essential"]) <= 6
+    expected = next(item for item in assessment.telemetry if item.label == "EXPECTED OUTCOME")
+    assert expected.result.value == 1_005_000
+    assert set(expected.result.evidence_references) == {first.event_id, second.event_id}
+    assert len([item for item in assessment.telemetry
+                if item.display_group == "PROVIDER ILLUSTRATIONS"]) == 4
+
+
+def test_incompatible_provider_projection_planning_points_fail_closed(tmp_path):
+    log, household = _seed(tmp_path)
+    planning_at = _assessment(log, household).forecast[-1].at
+    _record_provider(log, household.alex_pension_id, planning_at, 604_000)
+    _record_provider(log, household.sam_pension_id, planning_at - 31 * 86_400, 401_000)
+
+    assessment = _assessment(log, household)
+
+    assert assessment.status == "unavailable"
+    assert any("planning point is incompatible" in value for value in assessment.limitations)
 
 
 def test_telemetry_hierarchy_has_three_essential_items_and_per_year_labels(

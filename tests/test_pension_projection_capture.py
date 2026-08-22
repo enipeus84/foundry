@@ -12,12 +12,14 @@ from fastapi.testclient import TestClient  # noqa: E402
 
 from foundry import webauth  # noqa: E402
 from foundry.core.metrics import MetricRequest  # noqa: E402
+from foundry.core.mission_assessment import MissionAssessmentRequest  # noqa: E402
 from foundry.core.scope import Subject  # noqa: E402
 from foundry.demo_data import build  # noqa: E402
 from foundry.eventlog import EventLog  # noqa: E402
 from foundry.finance.pension_projection import (  # noqa: E402
     EVENT_KIND,
     PensionProviderProjectionProjection,
+    record_pension_provider_projection,
 )
 from foundry.web import app, _build_console  # noqa: E402
 
@@ -102,6 +104,12 @@ def test_capture_review_confirm_and_latest_projection_reaches_mission(tmp_path):
     household = _seed(tmp_path)
     client = _client()
     before = _economic_values(household)
+    console = _build_console()
+    mission_definition = next(item for item in console.entities.missions.values()
+                              if item.assessment_policy_id == "finance.pension_independence.v1")
+    planning_at = console.assessments.dispatch(MissionAssessmentRequest(
+        mission_definition.id, mission_definition.assessment_policy_id,
+        Subject("party", household.household_id), AS_OF)).forecast[-1].at
 
     chooser = client.get("/operations/capture")
     assert "Pension Projection Update" in chooser.text
@@ -113,7 +121,8 @@ def test_capture_review_confirm_and_latest_projection_reaches_mission(tmp_path):
     assert 'value="Aviva"' in form.text
     assert "Unix timestamp" not in form.text
 
-    values = _values(household.alex_pension_id)
+    values = _values(household.alex_pension_id, retirement_age="",
+                     retirement_at=time.strftime("%Y-%m-%d", time.gmtime(planning_at)))
     review = client.post("/operations/pension-projection/review", data=values)
     assert review.status_code == 200
     assert "Review Aviva pension projection" in review.text
@@ -140,7 +149,7 @@ def test_capture_review_confirm_and_latest_projection_reaches_mission(tmp_path):
         "/operations/pension-projection/confirm", data=confirmation_fields)
     assert confirmation.status_code == 200
     assert "Aviva pension projection recorded" in confirmation.text
-    assert "Retirement age: 68" in confirmation.text
+    assert "Retirement date:" in confirmation.text
     assert "Medium £604,000" in confirmation.text
     assert "Medium £43,800" in confirmation.text
     assert 'href="/missions/pension-independence"' in confirmation.text
@@ -155,17 +164,27 @@ def test_capture_review_confirm_and_latest_projection_reaches_mission(tmp_path):
     assert projection_events[0]["payload"]["growth_low_percent"] == -.8
     assert _economic_values(household) == before
 
+    record_pension_provider_projection(
+        log, household.sam_pension_id, provider="Aviva", currency="GBP", observed_at=AS_OF,
+        retirement_at=planning_at, fund_low=200_000, fund_medium=401_000, fund_high=700_000,
+        income_low=10_000, income_medium=20_000, income_high=30_000,
+        growth_low_percent=-.8, growth_medium_percent=2.2, growth_high_percent=5.1,
+        income_basis="Provider-stated income basis", source="Aviva statement",
+        lineage="household supplied statement")
+
     mission = client.get("/missions/pension-independence")
-    assert "Expected outcome unavailable" in mission.text
+    assert "£1,005,000" in mission.text
+    assert "PROJECTED FUND VALUE" in mission.text
 
     repeated = client.post(
         "/operations/pension-projection/confirm", data=confirmation_fields)
     assert repeated.status_code == 403
     assert len([event for event in EventLog(tmp_path / "events.jsonl").events()
-                if event["kind"] == EVENT_KIND]) == 1
+                if event["kind"] == EVENT_KIND]) == 2
 
     newer = _values(
         household.alex_pension_id, observed_at="2026-08-13T10:30",
+        retirement_age="", retirement_at=time.strftime("%Y-%m-%d", time.gmtime(planning_at)),
         fund_medium="650000", fund_high="1150000",
         income_medium="47000", income_high="99000",
         growth_medium_percent="2.5", growth_high_percent="5.4")
@@ -176,7 +195,7 @@ def test_capture_review_confirm_and_latest_projection_reaches_mission(tmp_path):
     history = PensionProviderProjectionProjection(EventLog(tmp_path / "events.jsonl"))
     assert len(history.for_account(household.alex_pension_id, AS_OF)) == 2
     mission = client.get("/missions/pension-independence")
-    assert "Expected outcome unavailable" in mission.text
+    assert "£1,051,000" in mission.text
 
 
 @pytest.mark.parametrize("changes", (

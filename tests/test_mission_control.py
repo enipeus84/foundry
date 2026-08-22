@@ -687,15 +687,31 @@ def test_pension_independence_route_renders_approved_policy(tmp_path):
 
 def test_pension_independence_labels_provider_projection_as_observation(tmp_path):
     from foundry.demo_data import build
+    from foundry.core.mission_assessment import MissionAssessmentRequest
+    from foundry.core.scope import Subject
     from foundry.finance.pension_projection import record_pension_provider_projection
 
     log = EventLog(tmp_path / "events.jsonl")
     household = build(log, as_of=MISSION_CONTROL_FIXTURE_AS_OF)
+    console = _build_console()
+    mission = next(item for item in console.entities.missions.values()
+                   if item.assessment_policy_id == "finance.pension_independence.v1")
+    planning_at = console.assessments.dispatch(MissionAssessmentRequest(
+        mission.id, mission.assessment_policy_id, Subject("party", household.household_id),
+        MISSION_CONTROL_FIXTURE_AS_OF)).forecast[-1].at
     record_pension_provider_projection(
         log, household.alex_pension_id, provider="Aviva",
-        observed_at=MISSION_CONTROL_FIXTURE_AS_OF, retirement_age=67,
+        observed_at=MISSION_CONTROL_FIXTURE_AS_OF, retirement_at=planning_at,
         fund_low=380_000, fund_medium=604_000, fund_high=1_100_000,
         income_low=22_500, income_medium=43_800, income_high=96_600,
+        growth_low_percent=-.8, growth_medium_percent=2.2, growth_high_percent=5.1,
+        income_basis="Provider-stated income basis", source="Aviva statement",
+        lineage="household supplied statement")
+    record_pension_provider_projection(
+        log, household.sam_pension_id, provider="Aviva",
+        observed_at=MISSION_CONTROL_FIXTURE_AS_OF, retirement_at=planning_at,
+        fund_low=200_000, fund_medium=401_000, fund_high=700_000,
+        income_low=10_000, income_medium=20_000, income_high=30_000,
         growth_low_percent=-.8, growth_medium_percent=2.2, growth_high_percent=5.1,
         income_basis="Provider-stated income basis", source="Aviva statement",
         lineage="household supplied statement")
@@ -703,7 +719,9 @@ def test_pension_independence_labels_provider_projection_as_observation(tmp_path
     response = client().get("/missions/pension-independence")
 
     assert response.status_code == 200
-    assert "Expected outcome unavailable" in response.text
+    assert "£1,005,000" in response.text
+    assert "PROJECTED FUND VALUE" in response.text
+    assert "PROVIDER ILLUSTRATIONS" in response.text
 
 
 def _render_shape_neutral_mission(
