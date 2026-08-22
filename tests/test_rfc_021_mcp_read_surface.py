@@ -128,7 +128,9 @@ def test_mcp_client_connects_and_cannot_cross_household(environment):
                     "get_current_pension_value", "evaluate_pension_independence",
                     "propose_person_date_of_birth", "declare_person_date_of_birth",
                     "propose_state_pension_age", "declare_state_pension_age",
-                    "propose_pension_provider_projection", "execute_pension_provider_projection"}
+                    "propose_pension_provider_projection", "execute_pension_provider_projection",
+                    "declare_pension_projection_authority",
+                    "execute_declare_pension_projection_authority"}
                 listed = await session.call_tool("list_financial_resources", {})
                 assert account.id in listed.content[0].text
                 available = await session.call_tool("explain_capture_availability", {"resource_id": account.id})

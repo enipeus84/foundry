@@ -183,32 +183,73 @@ def create_mcp_server(query: FinancialResourceQuery | None = None,
     def create_financial_resource(resource_type: str, currency: str, owner: str | None = None,
                                   name: str | None = None, provider: str | None = None,
                                   owners: list[str] | None = None,
-                                  liquidity_classification: str | None = None) -> dict:
-        """Propose creation; this tool never mutates canonical financial state."""
+                                  liquidity_classification: str | None = None,
+                                  projection_authority: str | None = None) -> dict:
+        """Propose creation; this tool never mutates canonical financial state.
+
+        `projection_authority` ("provider_managed" or "foundry_modelled")
+        is pension-only and must come from the household's explicit
+        statement — never from the provider name or any other string."""
         receipt = resource_writes.propose_create(
             resource_type=resource_type, currency=currency, owner=owner, owners=owners,
-            name=name, provider=provider, liquidity_classification=liquidity_classification)
+            name=name, provider=provider, liquidity_classification=liquidity_classification,
+            projection_authority=projection_authority)
         return {"operation": "create_financial_resource", "state": "proposed",
                 "proposal_id": receipt.proposal_id, "requires_execution": True,
                 "resource_type": resource_type, "currency": currency,
                 "owner": owner, "owners": owners, "name": name, "provider": provider,
-                "liquidity_classification": liquidity_classification}
+                "liquidity_classification": liquidity_classification,
+                "projection_authority": projection_authority}
 
     @server.tool()
     def execute_create_financial_resource(resource_type: str, currency: str, command_id: str,
                                           proposal_id: str, owner: str | None = None,
                                           name: str | None = None, provider: str | None = None,
                                           owners: list[str] | None = None,
-                                          liquidity_classification: str | None = None) -> dict:
+                                          liquidity_classification: str | None = None,
+                                          projection_authority: str | None = None) -> dict:
         """Execute a previously proposed creation by its proposal receipt."""
         try:
             return resource_writes.create(resource_type=resource_type, currency=currency,
                                           owner=owner, owners=owners, command_id=command_id,
                                           proposal_id=proposal_id,
                                           name=name, provider=provider,
-                                          liquidity_classification=liquidity_classification)
+                                          liquidity_classification=liquidity_classification,
+                                          projection_authority=projection_authority)
         except McpWriteDenied as exc:
             raise ValueError("financial resource creation refused") from exc
+
+    @server.tool()
+    def declare_pension_projection_authority(resource_id: str, projection_authority: str,
+                                             reason: str,
+                                             provider_name: str | None = None) -> dict:
+        """Propose which authority may forecast an existing pension.
+
+        "provider_managed" means the provider's own illustration is the
+        only admissible Expected Outcome: while none is current, the
+        Mission reports no Expected Outcome rather than substituting
+        Foundry's internal forecast. Declare it only on the household's
+        explicit instruction."""
+        receipt = resource_writes.propose_pension_projection_authority(
+            resource_id=resource_id, projection_authority=projection_authority,
+            reason=reason, provider_name=provider_name)
+        return {"operation": "declare_pension_projection_authority", "state": "proposed",
+                "proposal_id": receipt.proposal_id, "requires_execution": True,
+                "resource_id": resource_id, "projection_authority": projection_authority,
+                "provider_name": provider_name, "reason": reason}
+
+    @server.tool()
+    def execute_declare_pension_projection_authority(
+            resource_id: str, projection_authority: str, reason: str, command_id: str,
+            proposal_id: str, provider_name: str | None = None) -> dict:
+        """Execute a previously proposed projection-authority declaration."""
+        try:
+            return resource_writes.declare_pension_projection_authority(
+                resource_id=resource_id, projection_authority=projection_authority,
+                reason=reason, provider_name=provider_name,
+                command_id=command_id, proposal_id=proposal_id)
+        except McpWriteDenied as exc:
+            raise ValueError("pension projection authority declaration refused") from exc
 
     @server.tool()
     def update_financial_resource(resource_id: str, name: str, reason: str = "metadata update") -> dict:

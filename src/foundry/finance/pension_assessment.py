@@ -350,14 +350,21 @@ class PensionIndependenceAssessor:
                 f"{len(future)} future-dated pension declaration(s) are "
                 "excluded from this assessment.")
 
+        member_ids = {member.id for member in members}
         accounts, fee_defaulted = self._projection_accounts(
-            {member.id for member in members}, request.as_of, inputs)
-        if not accounts:
-            return self._unavailable(request, "no projectable DC pension account is available")
+            member_ids, request.as_of, inputs)
+        # The authority question is asked across every owned pension, not
+        # only those Foundry can internally model.  A provider-managed
+        # pension Foundry cannot value must still demand its provider
+        # illustration; otherwise it would vanish from the assessment and
+        # an Expected Outcome would be stated as though it did not exist.
         provider_forecast, provider_error = self._provider_forecast(
-            accounts, request, inputs, planning_at)
+            self._provider_evaluation_ids(accounts, member_ids),
+            request, inputs, planning_at)
         if provider_error is not None:
             return self._unavailable(request, provider_error)
+        if provider_forecast is None and not accounts:
+            return self._unavailable(request, "no projectable DC pension account is available")
         if provider_forecast is not None:
             # The provider issued these numbers.  Foundry only supplies the
             # Mission comparison; it must never reproduce their forecast.
@@ -366,8 +373,8 @@ class PensionIndependenceAssessor:
             limitations.append(
                 "Expected Outcome is dated provider projection evidence, not a Foundry forecast.")
             provider_evidence_refs = tuple(
-                self.provider_projections.latest(account[0], request.as_of).event_id
-                for account in accounts)
+                self.provider_projections.latest(account_id, request.as_of).event_id
+                for account_id in self._provider_evaluation_ids(accounts, member_ids))
         else:
             provider_evidence_refs = ()
             if fee_defaulted:
@@ -603,18 +610,54 @@ class PensionIndependenceAssessor:
             accounts.append((account_id, converted, contribution, annual_fee))
         return tuple(accounts), defaulted
 
-    def _provider_forecast(self, accounts, request, inputs, planning_at):
+    def _provider_evaluation_ids(self, accounts, person_ids):
+        """The pensions the provider-evidence rule must range over.
+
+        Deliberately a *union* of two independent questions.  Foundry's
+        projectability filter answers "what can Foundry model?" and is
+        allowed to drop a pension it cannot value.  Projection authority
+        answers "who is permitted to forecast this?" and must not be
+        silenced by that filter, so any owned pension declared
+        provider-managed is appended even when it carries no valuation.
+        """
+        ids = [account[0] for account in accounts]
+        seen = set(ids)
+        for account_id in self._pension_account_ids(person_ids):
+            if account_id not in seen and self._requires_provider_projection(account_id):
+                ids.append(account_id)
+                seen.add(account_id)
+        return tuple(ids)
+
+    def _requires_provider_projection(self, account_id):
+        """Is provider projection evidence *required* for this pension?
+
+        Answered from the resource's declared projection authority
+        alone, so the question is decidable before any evidence is
+        read.  This is the seam the whole burn turns on: a
+        provider-managed pension with no illustration must withhold the
+        Expected Outcome, never fall back to Foundry's own forecast.
+        """
+        account = self.finance.accounts.get(account_id)
+        return account is not None and account.projection_authority == "provider_managed"
+
+    def _provider_forecast(self, account_ids, request, inputs, planning_at):
         """Return the provider terminal scenarios, or a closed failure.
 
-        An account becomes provider-managed when its canonical provider
-        illustration exists.  A mixed set cannot be economically composed:
+        A pension is provider-managed because it has been *declared*
+        so, not because an illustration happens to exist.  Observed
+        provider evidence still forces the provider path, which keeps
+        resources declared before the classification existed behaving
+        as they do today.  A mixed set cannot be economically composed:
         Foundry may not fill the missing member with its own forecast.
         """
+        required = [self._requires_provider_projection(account_id) for account_id in account_ids]
         if self.provider_projections is None:
+            if any(required):
+                return None, "Expected outcome unavailable — current provider projection required for every included pension"
             return None, None
-        records = [self.provider_projections.latest(account[0], request.as_of)
-                   for account in accounts]
-        if not any(records):
+        records = [self.provider_projections.latest(account_id, request.as_of)
+                   for account_id in account_ids]
+        if not any(required) and not any(records):
             return None, None
         if any(record is None for record in records):
             return None, "Expected outcome unavailable — current provider projection required for every included pension"
@@ -623,13 +666,13 @@ class PensionIndependenceAssessor:
         if any(request.as_of - record.observed_at > inputs.valuation_stale_after_days * DAY
                for record in records):
             return None, "Expected outcome unavailable — current provider projection required"
-        for account, record in zip(accounts, records):
+        for account_id, record in zip(account_ids, records):
             if record.currency != "GBP":
                 return None, "Expected outcome unavailable — provider projection currency is not supported"
             if record.retirement_at is not None:
                 record_planning_at = record.retirement_at
             else:
-                owners = {link.target for link in self.finance.accounts[account[0]].ownership
+                owners = {link.target for link in self.finance.accounts[account_id].ownership
                           if link.relation in vocab.VALUE_OWNERSHIP_RELATIONS}
                 owner_points = []
                 for owner in owners:
