@@ -15,6 +15,9 @@ from foundry.application.resources import (
 )
 from foundry.core.principal_authority import PrincipalHouseholdAuthority
 from foundry.eventlog import EventLog
+from foundry.finance.pension_projection import (
+    record_pension_provider_projection, validate_pension_provider_projection,
+)
 
 
 class McpWriteDenied(PermissionError):
@@ -42,6 +45,88 @@ class FinancialObservationProposalReceipt:
     resource_id: str
     review_summary: str
     command_id: str
+
+
+@dataclass(frozen=True)
+class PensionProviderProjectionProposalReceipt:
+    proposal_id: str
+    resource_id: str
+    summary: str
+
+
+@dataclass(frozen=True)
+class McpPensionProviderProjectionCapture:
+    """The sole MCP path for provider-issued pension forecast evidence."""
+
+    log: EventLog
+    principal: str
+    household_id: str
+    client: str
+    witness_model: str
+
+    def _request(self, resource_id: str, values: dict[str, Any]) -> dict[str, Any]:
+        if not PrincipalHouseholdAuthority(self.log).permits_write(self.principal, self.household_id):
+            raise McpClientSafeDenied("principal is not authorised to mutate this household")
+        try:
+            resource = FinancialResourceQuery(self.log, self.household_id).get_financial_resource(resource_id)
+        except ResourceNotFound as exc:
+            raise McpClientSafeDenied("pension resource is unavailable") from exc
+        if resource["resource_type"] != "pension" or resource["status"] != "active":
+            raise McpClientSafeDenied("resource is not an active pension")
+        try:
+            record = validate_pension_provider_projection(resource_id, **values)
+        except (KeyError, TypeError, ValueError) as exc:
+            raise McpClientSafeDenied(str(exc)) from exc
+        if record.currency != resource["currency"]:
+            raise McpClientSafeDenied("provider projection currency must match pension currency")
+        return {"resource_id": resource_id, "values": values}
+
+    def propose(self, *, resource_id: str, values: dict[str, Any]) -> PensionProviderProjectionProposalReceipt:
+        request = self._request(resource_id, values)
+        digest = _proposal_digest(request)
+        proposal_id = f"pension-provider-projection-{digest[:24]}"
+        for event in self.log.events():
+            if event["kind"] == "application.mcp_pension_provider_projection.proposed" and event["payload"].get("proposal_id") == proposal_id:
+                return PensionProviderProjectionProposalReceipt(proposal_id, resource_id, event["payload"]["summary"])
+        record = validate_pension_provider_projection(resource_id, **values)
+        planning = f"age {record.retirement_age:g}" if record.retirement_age is not None else "stated retirement date"
+        summary = f"{record.provider} Medium £{record.fund_medium:,.0f}; {planning}; dated provider forecast evidence"
+        self.log.append("application.mcp_pension_provider_projection.proposed", {
+            "proposal_id": proposal_id, "request_digest": digest, "household_id": self.household_id,
+            "resource_id": resource_id, "request": request, "summary": summary,
+            "principal": self.principal, "client": self.client, "witness_model": self.witness_model,
+        }, actor=f"mcp:{self.principal}")
+        return PensionProviderProjectionProposalReceipt(proposal_id, resource_id, summary)
+
+    def execute(self, *, resource_id: str, values: dict[str, Any], proposal_id: str,
+                command_id: str) -> dict[str, Any]:
+        if not isinstance(command_id, str) or not command_id.strip():
+            raise McpClientSafeDenied("command_id is required for idempotent execution")
+        request = self._request(resource_id, values)
+        digest = _proposal_digest(request)
+        for event in self.log.events():
+            if event["kind"] == "application.mcp_pension_provider_projection.executed":
+                payload = event["payload"]
+                if payload.get("household_id") == self.household_id and payload.get("command_id") == command_id:
+                    if payload.get("request_digest") != digest:
+                        raise McpClientSafeDenied("command id was already used for a different projection")
+                    return dict(payload["result"])
+        proposal = next((event["payload"] for event in self.log.events()
+                         if event["kind"] == "application.mcp_pension_provider_projection.proposed"
+                         and event["payload"].get("proposal_id") == proposal_id), None)
+        if proposal is None or proposal.get("household_id") != self.household_id or proposal.get("request_digest") != digest:
+            raise McpClientSafeDenied("proposal does not match the provider projection")
+        record = record_pension_provider_projection(
+            self.log, resource_id, actor=f"mcp:{self.principal}", **values)
+        result = {"resource_id": resource_id, "provider": record.provider, "currency": record.currency,
+                  "projection_as_of": record.observed_at, "planning_age": record.retirement_age,
+                  "medium_projected_value": record.fund_medium, "event_id": record.event_id}
+        self.log.append("application.mcp_pension_provider_projection.executed", {
+            "proposal_id": proposal_id, "command_id": command_id, "request_digest": digest,
+            "household_id": self.household_id, "result": result, "principal": self.principal,
+            "client": self.client, "witness_model": self.witness_model,
+        }, actor=f"mcp:{self.principal}")
+        return result
 
 
 def _proposal_digest(values: dict[str, Any]) -> str:

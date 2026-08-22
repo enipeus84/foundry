@@ -16,6 +16,7 @@ EVENT_KIND = "finance.pension_provider_projection.recorded"
 class PensionProviderProjection:
     account_id: str
     provider: str
+    currency: str
     observed_at: float
     retirement_age: float | None
     retirement_at: float | None
@@ -65,6 +66,9 @@ def _scenarios(low, medium, high, field: str, *, money: bool) -> tuple[float, fl
 def _from_payload(payload: dict, event_id: str) -> PensionProviderProjection:
     account_id = _text(payload["account_id"], "account_id")
     provider = _text(payload["provider"], "provider")
+    currency = _text(payload.get("currency", "GBP"), "currency").upper()
+    if len(currency) != 3 or not currency.isalpha():
+        raise ValueError("currency must be a three-letter code")
     observed_at = _finite(payload["observed_at"], "observed_at")
     fund_low, fund_medium, fund_high = _scenarios(
         payload["fund_low"], payload["fund_medium"], payload["fund_high"], "fund", money=True)
@@ -83,7 +87,7 @@ def _from_payload(payload: dict, event_id: str) -> PensionProviderProjection:
     if retirement_at is not None:
         retirement_at = _finite(retirement_at, "retirement_at")
     return PensionProviderProjection(
-        account_id, provider, observed_at, retirement_age, retirement_at,
+        account_id, provider, currency, observed_at, retirement_age, retirement_at,
         fund_low, fund_medium, fund_high, income_low, income_medium, income_high,
         growth_low_percent, growth_medium_percent, growth_high_percent,
         _text(payload["income_basis"], "income_basis"), _text(payload["source"], "source"),
@@ -96,12 +100,14 @@ def record_pension_provider_projection(log: EventLog, account_id: str, *, provid
                                        income_high: float, growth_low_percent: float,
                                        growth_medium_percent: float, growth_high_percent: float,
                                        income_basis: str, source: str, lineage: str,
+                                       currency: str = "GBP",
                                        retirement_age: float | None = None,
                                        retirement_at: float | None = None,
                                        actor: str = "user") -> PensionProviderProjection:
     """Append one complete provider illustration; no observation is overwritten."""
     payload = {
-        "account_id": account_id, "provider": provider, "observed_at": observed_at,
+        "account_id": account_id, "provider": provider, "currency": currency,
+        "observed_at": observed_at,
         "fund_low": fund_low, "fund_medium": fund_medium, "fund_high": fund_high,
         "income_low": income_low, "income_medium": income_medium, "income_high": income_high,
         "growth_low_percent": growth_low_percent, "growth_medium_percent": growth_medium_percent,
@@ -115,6 +121,12 @@ def record_pension_provider_projection(log: EventLog, account_id: str, *, provid
     _from_payload(payload, "validated")
     event = log.append(EVENT_KIND, payload, actor=actor)
     return _from_payload(event["payload"], event["id"])
+
+
+def validate_pension_provider_projection(account_id: str, **values) -> PensionProviderProjection:
+    """Validate the complete provider-issued illustration without recording it."""
+    payload = {"account_id": account_id, **values}
+    return _from_payload(payload, "validated")
 
 
 class PensionProviderProjectionProjection:
