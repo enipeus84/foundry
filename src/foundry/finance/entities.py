@@ -90,6 +90,14 @@ class Account:
     name: str | None = None
     tax_wrapper: str = "none"
     liquidity_classification: str | None = None
+    # Which authority may forecast this pension (001 §6). `None` means
+    # the resource has never been classified and Foundry's own
+    # modelling remains permitted; `provider_managed` means a current
+    # provider illustration is *required* before an expected outcome
+    # may be stated. `provider_name` is descriptive identity only and
+    # carries no projection semantics whatsoever.
+    projection_authority: str | None = None
+    provider_name: str | None = None
     status: str = "active"
     provenance: list[str] = field(default_factory=list)
     asserted_by: str = ""
@@ -297,8 +305,32 @@ def link_ownership(log: EventLog, type_: str, entity_id: str, relation: str, tar
 
 # ----------------------------------------------------------------- account
 
+def _validated_projection_authority(projection_authority: str | None) -> str | None:
+    """Vocabulary check for a pension's declared projection authority.
+
+    Validated *before* the append, for the same reason `relate()` gives:
+    an ungoverned value can never be un-written from an append-only log.
+    Whether the subject is actually a pension is a question about
+    resource state, so it is asked by the application command that
+    already resolved the resource, not here."""
+    if projection_authority is not None and projection_authority not in vocab.PENSION_PROJECTION_AUTHORITY:
+        raise VocabularyError(
+            f"{projection_authority!r} is not a valid pension_projection_authority "
+            f"(known: {sorted(vocab.PENSION_PROJECTION_AUTHORITY.values)})")
+    return projection_authority
+
+
+def _validated_provider_name(provider_name: str | None) -> str | None:
+    if provider_name is None:
+        return None
+    if not isinstance(provider_name, str) or not provider_name.strip():
+        raise ValueError("provider_name must be a non-empty string")
+    return provider_name.strip()
+
+
 def declare_account(log: EventLog, account_type: str, currency: str, name: str | None = None,
                      tax_wrapper: str = "none", liquidity_classification: str | None = None,
+                     projection_authority: str | None = None, provider_name: str | None = None,
                      actor: str = "user") -> Account:
     if account_type not in vocab.ACCOUNT_TYPE:
         raise VocabularyError(f"{account_type!r} is not a valid account_type")
@@ -306,16 +338,51 @@ def declare_account(log: EventLog, account_type: str, currency: str, name: str |
         raise VocabularyError(f"{tax_wrapper!r} is not a valid tax_wrapper")
     if liquidity_classification is not None and liquidity_classification not in vocab.LIQUIDITY_CLASSIFICATION:
         raise VocabularyError(f"{liquidity_classification!r} is not a valid liquidity_classification")
+    projection_authority = _validated_projection_authority(projection_authority)
+    provider_name = _validated_provider_name(provider_name)
+    if projection_authority is not None and account_type != "pension":
+        raise ValueError("projection_authority applies only to pension accounts")
     account_id = grammar.new_id()
     attrs: dict[str, Any] = {"account_type": account_type, "currency": currency, "tax_wrapper": tax_wrapper}
     if name is not None:
         attrs["name"] = name
     if liquidity_classification is not None:
         attrs["liquidity_classification"] = liquidity_classification
+    if projection_authority is not None:
+        attrs["projection_authority"] = projection_authority
+    if provider_name is not None:
+        attrs["provider_name"] = provider_name
     e = grammar.declare(log, PREFIX, "account", account_id, attrs, actor=actor)
     return Account(id=account_id, account_type=account_type, currency=currency, name=name,
                    tax_wrapper=tax_wrapper, liquidity_classification=liquidity_classification,
+                   projection_authority=projection_authority, provider_name=provider_name,
                    asserted_by=actor, provenance=[e["id"]], history=[e["id"]])
+
+
+def declare_pension_projection_authority(log: EventLog, account_id: str, *,
+                                          projection_authority: str, reason: str,
+                                          provider_name: str | None = None,
+                                          actor: str = "user") -> dict:
+    """`finance.account.updated` carrying the projection-authority
+    declaration — the one governed way an existing pension becomes
+    provider-managed.
+
+    This is a reclassification of the resource, not an observation, so
+    it uses the `updated` verb with its mandatory reason and leaves the
+    declaring event in the account's history. No provider illustration
+    is read, written or implied: declaring a pension provider-managed
+    without evidence is exactly the state that must withhold an
+    expected outcome."""
+    projection_authority = _validated_projection_authority(projection_authority)
+    if projection_authority is None:
+        raise ValueError("projection_authority is required")
+    if not isinstance(reason, str) or not reason.strip():
+        raise ValueError("a reason is required to reclassify a pension")
+    changes: dict[str, Any] = {"projection_authority": projection_authority}
+    provider_name = _validated_provider_name(provider_name)
+    if provider_name is not None:
+        changes["provider_name"] = provider_name
+    return grammar.update(log, PREFIX, "account", account_id, changes, reason.strip(), actor=actor)
 
 
 def close_account(log: EventLog, account_id: str, reason: str, actor: str = "user") -> dict:
@@ -788,7 +855,8 @@ class FinanceEntityProjection:
 
     def _apply_account(self, e: dict) -> None:
         self._apply_ownership_entity(e, self.accounts, Account, {
-            "account_type", "currency", "name", "tax_wrapper", "liquidity_classification"})
+            "account_type", "currency", "name", "tax_wrapper", "liquidity_classification",
+            "projection_authority", "provider_name"})
 
     def _apply_asset(self, e: dict) -> None:
         self._apply_ownership_entity(e, self.assets, Asset, {

@@ -173,33 +173,74 @@ class McpFinancialResourceWrites:
     def propose_create(self, *, resource_type: str, currency: str, name: str | None = None,
                        provider: str | None = None, owner: str | None = None,
                        owners: list[str] | None = None,
-                       liquidity_classification: str | None = None) -> ResourceProposalReceipt:
+                       liquidity_classification: str | None = None,
+                       projection_authority: str | None = None) -> ResourceProposalReceipt:
         return self._propose("create_financial_resource", {
             "household_id": self.household_id, "resource_type": resource_type,
             "currency": currency, "name": name, "provider": provider,
             "owner": owner, "owners": owners,
             "liquidity_classification": liquidity_classification,
+            "projection_authority": projection_authority,
         })
 
     def create(self, *, resource_type: str, currency: str, name: str | None = None,
                provider: str | None = None, owner: str | None = None,
                owners: list[str] | None = None, liquidity_classification: str | None = None,
+               projection_authority: str | None = None,
                command_id: str, proposal_id: str | None = None) -> dict[str, Any]:
         if not command_id.strip():
             raise McpWriteDenied("command_id is required for idempotent execution")
         values = {"household_id": self.household_id, "resource_type": resource_type,
                   "currency": currency, "name": name, "provider": provider,
                   "owner": owner, "owners": owners,
-                  "liquidity_classification": liquidity_classification}
+                  "liquidity_classification": liquidity_classification,
+                  "projection_authority": projection_authority}
         self._proposal(proposal_id or "", "create_financial_resource", values)
         try:
             return FinancialResourceCommandService(self.log).create_financial_resource(
                 household_id=self.household_id, resource_type=resource_type, currency=currency,
                 name=name, provider=provider, owner=owner, owners=owners,
                 liquidity_classification=liquidity_classification,
+                projection_authority=projection_authority,
                 actor=f"mcp:{self.principal}", principal=self.principal, command_id=command_id,
                 client=self.client, witness_model=self.witness_model)
         except ResourceCommandDenied as exc:
+            raise McpWriteDenied(str(exc)) from exc
+
+    def propose_pension_projection_authority(
+            self, *, resource_id: str, projection_authority: str,
+            reason: str, provider_name: str | None = None) -> ResourceProposalReceipt:
+        return self._propose("declare_pension_projection_authority", {
+            "household_id": self.household_id, "resource_id": resource_id,
+            "projection_authority": projection_authority,
+            "provider_name": provider_name, "reason": reason,
+        })
+
+    def declare_pension_projection_authority(
+            self, *, resource_id: str, projection_authority: str, reason: str,
+            command_id: str, provider_name: str | None = None,
+            proposal_id: str | None = None) -> dict[str, Any]:
+        """Execute a previously proposed projection-authority declaration.
+
+        Reclassification passes through the same propose/confirm gate
+        as every other resource mutation: it changes which authority may
+        forecast the household's retirement, so it is never a bare
+        MCP-side write."""
+        if not command_id.strip():
+            raise McpWriteDenied("command_id is required for idempotent execution")
+        self._proposal(proposal_id or "", "declare_pension_projection_authority", {
+            "household_id": self.household_id, "resource_id": resource_id,
+            "projection_authority": projection_authority,
+            "provider_name": provider_name, "reason": reason,
+        })
+        try:
+            return FinancialResourceCommandService(self.log).declare_pension_projection_authority(
+                household_id=self.household_id, resource_id=resource_id,
+                projection_authority=projection_authority, reason=reason,
+                provider_name=provider_name, actor=f"mcp:{self.principal}",
+                principal=self.principal, command_id=command_id,
+                client=self.client, witness_model=self.witness_model)
+        except (ResourceCommandDenied, ResourceNotFound) as exc:
             raise McpWriteDenied(str(exc)) from exc
 
     def propose_update(self, *, resource_id: str, name: str,

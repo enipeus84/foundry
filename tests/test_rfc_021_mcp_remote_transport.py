@@ -221,7 +221,7 @@ def test_google_login_resumes_mcp_consent_and_loads_existing_tools(monkeypatch, 
     assert tools.status_code == 200
     message = next(line.removeprefix("data: ") for line in tools.text.splitlines() if line.startswith("data: "))
     # OAuth exposes the same registry, including the Pension commissioning slice.
-    assert len(json.loads(message)["result"]["tools"]) == 23
+    assert len(json.loads(message)["result"]["tools"]) == 25
 
 
 def test_oauth_discovery_bypasses_static_bearer_guard_without_feature_flag(monkeypatch, tmp_path):

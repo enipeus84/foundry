@@ -98,6 +98,7 @@ class FinancialResourceCommandService:
                                   provider: str | None = None, owner: str | None = None,
                                   owners: list[str] | None = None,
                                   liquidity_classification: str | None = None,
+                                  projection_authority: str | None = None,
                                   actor: str, principal: str | None = None,
                                   command_id: str | None = None,
                                   client: str | None = None, witness_model: str | None = None,
@@ -105,7 +106,8 @@ class FinancialResourceCommandService:
         values = {"household_id": household_id, "resource_type": resource_type,
                   "currency": currency, "name": name, "provider": provider,
                   "owner": owner, "owners": owners,
-                  "liquidity_classification": liquidity_classification}
+                  "liquidity_classification": liquidity_classification,
+                  "projection_authority": projection_authority}
         digest = _command_digest(values)
         self._authorise(principal, household_id, require_authority)
         if command_id:
@@ -121,10 +123,14 @@ class FinancialResourceCommandService:
             raise ResourceCommandDenied("name or provider is required")
         owner_ids = self._owner_ids(household_id, owner, owners)
         entity_kind, finance_type, tax_wrapper = _RESOURCE_TYPES[resource_type]
+        if projection_authority is not None and finance_type != "pension":
+            raise ResourceCommandDenied("projection authority applies only to pension resources")
         try:
             resource = (finance_entities.declare_account(
                 self.log, finance_type, currency.upper(), name=display_name,
                 tax_wrapper=tax_wrapper or "none", liquidity_classification=liquidity_classification,
+                projection_authority=projection_authority,
+                provider_name=(provider.strip() or None) if provider else None,
                 actor=actor) if entity_kind == "account" else finance_entities.declare_asset(
                     self.log, finance_type, currency.upper(), name=display_name,
                     liquidity_classification=liquidity_classification, actor=actor))
@@ -167,6 +173,53 @@ class FinancialResourceCommandService:
         if command_id:
             self.log.append("application.mcp_command.executed", {
                 "operation": "update_financial_resource", "command_id": command_id,
+                "request_digest": digest, "household_id": household_id,
+                "resource_id": resource_id, "principal": principal,
+                "client": client, "witness_model": witness_model,
+            }, actor=actor)
+        return self.get_financial_resource(household_id, resource_id)
+
+    def declare_pension_projection_authority(self, *, household_id: str, resource_id: str,
+                                             projection_authority: str, reason: str, actor: str,
+                                             provider_name: str | None = None,
+                                             principal: str | None = None,
+                                             command_id: str | None = None,
+                                             client: str | None = None,
+                                             witness_model: str | None = None,
+                                             require_authority: bool = True) -> dict[str, Any]:
+        """Declare, once and explicitly, which authority may forecast a
+        pension.
+
+        This is the only governed path by which an existing pension —
+        the Aviva resource included — becomes provider-managed. It
+        asserts nothing about the provider's numbers: the declaration
+        stands on its own, which is precisely what lets Foundry refuse
+        an Expected Outcome while the illustration is missing."""
+        self._authorise(principal, household_id, require_authority)
+        resource = self.get_financial_resource(household_id, resource_id)
+        if resource["resource_kind"] != "account" or resource["resource_type"] != "pension":
+            raise ResourceCommandDenied("projection authority applies only to pension resources")
+        if resource["status"] != "active":
+            raise ResourceCommandDenied("a closed resource cannot be reclassified")
+        if not isinstance(reason, str) or not reason.strip():
+            raise ResourceCommandDenied("a reason is required to reclassify a pension")
+        digest = _command_digest({"operation": "declare_pension_projection_authority",
+                                  "household_id": household_id, "resource_id": resource_id,
+                                  "projection_authority": projection_authority,
+                                  "provider_name": provider_name, "reason": reason})
+        if command_id:
+            replay = self._audit_replay(command_id, digest, household_id)
+            if replay is not None:
+                return replay
+        try:
+            finance_entities.declare_pension_projection_authority(
+                self.log, resource_id, projection_authority=projection_authority,
+                reason=reason, provider_name=provider_name, actor=actor)
+        except (TypeError, ValueError) as exc:
+            raise ResourceCommandDenied(str(exc)) from exc
+        if command_id:
+            self.log.append("application.mcp_command.executed", {
+                "operation": "declare_pension_projection_authority", "command_id": command_id,
                 "request_digest": digest, "household_id": household_id,
                 "resource_id": resource_id, "principal": principal,
                 "client": client, "witness_model": witness_model,
@@ -277,6 +330,13 @@ class FinancialResourceQuery:
             "currency": resource.currency,
             "status": resource.status,
             "liquidity_classification": resource.liquidity_classification,
+            # Pension-only: projection authority answers "does this
+            # resource require provider projection evidence?", which is
+            # meaningless for a current account and would otherwise add
+            # a null to every resource in the read surface.
+            **({"projection_authority": resource.projection_authority,
+                "provider_name": resource.provider_name}
+               if is_account and resource.account_type == "pension" else {}),
             "ownership": [{"relation": link.relation, "subject_id": link.target,
                            **({"share": link.share} if link.share is not None else {})}
                           for link in resource.ownership],

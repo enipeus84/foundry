@@ -59,6 +59,17 @@ LIQUIDITY_CLASSIFICATION = ExtensibleVocabulary(
     {"liquid", "near_liquid", "illiquid_short", "illiquid_long"},
 )
 
+# Which authority may produce a pension's expected outcome. This is a
+# *declared* property of the resource, deliberately independent of
+# whether any provider illustration has been observed: Foundry must be
+# able to answer "does this pension require provider projection
+# evidence?" before it reads any evidence at all. It is never inferred
+# from a resource name, a display name or a provider-like string.
+PENSION_PROJECTION_AUTHORITY = ExtensibleVocabulary(
+    "pension_projection_authority",
+    {"foundry_modelled", "provider_managed"},
+)
+
 RECURRING_COMMITMENT_TYPE = ExtensibleVocabulary(
     "recurring_commitment_type",
     {"salary", "pension_contribution", "mortgage_payment", "regular_expense",
