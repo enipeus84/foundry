@@ -65,6 +65,58 @@ cookie-attribute and logout cases in `tests/test_webauth.py`.
 **Missing or future control.** No individual revocation exists and secret
 entropy is documented but not enforced.
 
+## Token authority separation
+
+**Objective.** Ensure a signed token confers authority only in the domain it
+was issued for.
+
+**Current implementation.** Every signed token carries a `typ` claim naming
+its domain: `session`, `csrf`, `pkce` and `projection-review`. Verification
+requires the caller to name the expected domain and fails closed on an absent
+or mismatched claim, so a token minted in one domain cannot be replayed in
+another.
+
+**Evidence.** `src/foundry/webauth.py`; cross-domain rejection cases in
+`tests/test_rfc_022_oauth_consent_and_token_domains.py`.
+
+**Maturity.** Beta.
+
+**Missing or future control.** Domains share one signing key; separation is
+enforced by claim rather than by key derivation.
+
+## MCP OAuth consent
+
+**Objective.** Ensure MCP authority is granted only by an explicit user
+action, not by navigation.
+
+**Current implementation.** `GET /mcp/consent` renders an approval surface
+naming the requesting client and its redirect URI, and issues nothing. Only
+`POST /mcp/consent`, carrying a CSRF token bound to the specific pending
+request identifier and read from the request body, consumes the pending
+request and issues an authorization code. Failed approvals do not consume it.
+
+Approval completes by offering the client's callback as a link rather than
+redirecting to it. Chromium and WebKit enforce the page's `form-action` policy
+across the entire navigation chain a form submission starts, including onward
+same-origin hops; Firefox does not. A redirect would therefore have been
+browser-dependent, so completion is deliberately not form-initiated.
+
+**Evidence.** `src/foundry/mcp_oauth.py`, `src/foundry/mcp_remote.py`, and
+`tests/test_rfc_022_oauth_consent_and_token_domains.py`, including an
+adversarial case for a dynamically registered client with an
+attacker-controlled redirect URI, and header and completion assertions made
+against the production-mounted application rather than the isolated transport
+harness.
+
+**Maturity.** Beta.
+
+**Missing or future control.** Dynamic client registration remains open and
+unauthenticated; approval is per-request with no durable record of which
+clients were granted access, and no revocation surface exists. `client_name`
+is attacker-choosable and is escaped but not otherwise trustworthy, so the
+redirect URI shown on the approval surface is the only reliable signal.
+Completion has been verified by automated test and not yet in a real browser.
+
 ## Event integrity
 
 **Objective.** Detect unintended modification of the ordered event

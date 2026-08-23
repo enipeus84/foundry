@@ -22,6 +22,21 @@ from foundry.mcp_remote import McpCanonicalPath, RemoteMcpApplication  # noqa: E
 from foundry import webauth  # noqa: E402
 
 
+def _approve(client, consent_url):
+    """Explicit approval: GET renders the form, POST returns the completion link.
+
+    Completion is a link rather than a redirect so that the page's CSP
+    `form-action` policy cannot block it in Chromium or WebKit.
+    """
+    rendered = client.get(consent_url, follow_redirects=False)
+    assert rendered.status_code == 200
+    fields = dict(re.findall(r'name="(\w+)" value="([^"]+)"', rendered.text))
+    approved = client.post("/mcp/consent", data=fields, follow_redirects=False)
+    assert approved.status_code == 200
+    assert "location" not in {key.lower() for key in approved.headers}
+    return re.search(r'<a href="([^"]+)">Return to', approved.text).group(1).replace("&amp;", "&")
+
+
 def _client(monkeypatch, tmp_path):
     log = EventLog(tmp_path / "events.jsonl")
     household = declare_party(log, "household")
@@ -115,9 +130,11 @@ def test_desktop_oauth_registration_pkce_and_mcp_access(monkeypatch, tmp_path):
             "state": "state-value",
         }, follow_redirects=False)
         assert authorize.status_code == 302
-        consent = client.get(authorize.headers["location"], follow_redirects=False)
-        assert consent.status_code == 302
-        callback = urlparse(consent.headers["location"])
+        # Navigation alone must not produce authority.
+        navigated = client.get(authorize.headers["location"], follow_redirects=False)
+        assert navigated.status_code == 200
+        assert "code=" not in navigated.text
+        callback = urlparse(_approve(client, authorize.headers["location"]))
         assert callback.hostname == "claude.ai"
         query = parse_qs(callback.query)
         assert query["state"] == ["state-value"]
@@ -130,8 +147,7 @@ def test_desktop_oauth_registration_pkce_and_mcp_access(monkeypatch, tmp_path):
             "client_id": client_id, "response_type": "code", "code_challenge": challenge,
             "code_challenge_method": "S256", "redirect_uri": "https://claude.ai/api/mcp/auth_callback",
         }, follow_redirects=False)
-        consent = client.get(authorize.headers["location"], follow_redirects=False)
-        code = parse_qs(urlparse(consent.headers["location"]).query)["code"][0]
+        code = parse_qs(urlparse(_approve(client, authorize.headers["location"])).query)["code"][0]
         token = client.post("/mcp/token", data={
             "grant_type": "authorization_code", "client_id": client_id, "code": code,
             "redirect_uri": "https://claude.ai/api/mcp/auth_callback", "code_verifier": verifier,
@@ -202,8 +218,7 @@ def test_google_login_resumes_mcp_consent_and_loads_existing_tools(monkeypatch, 
         auth_google = re.search(r'href="([^"]+)"', login.text).group(1).replace("&amp;", "&")
         client.get(auth_google, follow_redirects=False)
         callback = client.get("/auth/callback?code=fake", follow_redirects=False)
-        resumed = client.get(callback.headers["location"], follow_redirects=False)
-        redirect = resumed.headers["location"]
+        redirect = _approve(client, callback.headers["location"])
         code = parse_qs(urlparse(redirect).query)["code"][0]
         assert client.get(callback.headers["location"], follow_redirects=False).status_code == 400
         token = client.post("/mcp/token", data={"grant_type": "authorization_code", "client_id": client_id,

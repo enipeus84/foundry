@@ -83,7 +83,7 @@ def test_non_allowed_user_is_rejected_at_callback(monkeypatch):
     c = client()
     # Prime the PKCE verifier cookie as /auth/google would.
     cfg = webauth.load_config()
-    c.cookies.set(webauth.VERIFIER_COOKIE, webauth.sign(
+    c.cookies.set(webauth.VERIFIER_COOKIE, webauth.sign(webauth.TYP_PKCE,
         {"v": "verifier", "exp": int(time.time()) + 60}, cfg.session_secret))
     r = c.get("/auth/callback?code=fake")
     assert r.status_code == 403
@@ -96,7 +96,7 @@ def test_allowed_user_callback_sets_session_and_redirects(monkeypatch):
                         lambda cfg, code, verifier: ALLOWED)
     c = client()
     cfg = webauth.load_config()
-    c.cookies.set(webauth.VERIFIER_COOKIE, webauth.sign(
+    c.cookies.set(webauth.VERIFIER_COOKIE, webauth.sign(webauth.TYP_PKCE,
         {"v": "verifier", "exp": int(time.time()) + 60}, cfg.session_secret))
     r = c.get("/auth/callback?code=fake")
     assert r.status_code == 303

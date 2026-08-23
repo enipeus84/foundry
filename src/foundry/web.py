@@ -426,7 +426,8 @@ def auth_google(request: Request):
     payload = {"v": verifier, "exp": int(time.time()) + webauth.VERIFIER_TTL}
     if return_to:
         payload["return_to"] = return_to
-    _cookie(resp, webauth.VERIFIER_COOKIE, webauth.sign(payload, cfg.session_secret),
+    _cookie(resp, webauth.VERIFIER_COOKIE,
+            webauth.sign(webauth.TYP_PKCE, payload, cfg.session_secret),
             webauth.VERIFIER_TTL, cfg.secure_cookies)
     return resp
 
@@ -437,8 +438,9 @@ def auth_callback(request: Request, code: str | None = None):
     if not cfg.configured or code is None:
         return RedirectResponse("/login", status_code=303)
     packed = webauth.verify(
-        request.cookies.get(webauth.VERIFIER_COOKIE, ""), cfg.session_secret)
-    if not packed:
+        webauth.TYP_PKCE, request.cookies.get(webauth.VERIFIER_COOKIE, ""),
+        cfg.session_secret)
+    if not packed or not isinstance(packed.get("v"), str):
         return RedirectResponse("/login", status_code=303)
     email = webauth.exchange_code(cfg, code, packed["v"])
     resp: Response
