@@ -513,6 +513,7 @@ def test_absent_and_expired_csrf_are_refused(tmp_path):
     absent["csrf"] = ""
     expired = _declare_data(mission.id)
     expired["csrf"] = webauth.sign(
+            webauth.TYP_CSRF,
         {"email": ALLOWED, "purpose": _DECLARE_PURPOSE, "exp": 0},
         webauth.load_config().session_secret,
     )

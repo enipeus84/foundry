@@ -97,6 +97,10 @@ class RemoteMcpApplication:
             async def consent(request):
                 return await self._oauth_provider.consent(request)
 
+            @server.custom_route("/consent", methods=["POST"])
+            async def approve_consent(request):
+                return await self._oauth_provider.approve(request)
+
             application = server.streamable_http_app()
             self._oauth_lifespan_application = application
 

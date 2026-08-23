@@ -273,7 +273,7 @@ def _canonical_projection_payload(record) -> dict:
 
 
 def _projection_review_token(record, email: str, cfg) -> str:
-    return webauth.sign({
+    return webauth.sign(webauth.TYP_PROJECTION_REVIEW, {
         "email": email,
         "purpose": _PROJECTION_REVIEW_PURPOSE,
         "jti": secrets.token_urlsafe(24),
@@ -283,7 +283,7 @@ def _projection_review_token(record, email: str, cfg) -> str:
 
 
 def _verified_projection_review(token: str, email: str, cfg):
-    signed = webauth.verify(token, cfg.session_secret)
+    signed = webauth.verify(webauth.TYP_PROJECTION_REVIEW, token, cfg.session_secret)
     if (not signed or signed.get("email") != email
             or signed.get("purpose") != _PROJECTION_REVIEW_PURPOSE
             or not isinstance(signed.get("jti"), str)

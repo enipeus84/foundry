@@ -40,6 +40,13 @@ SESSION_TTL = 12 * 3600          # seconds
 VERIFIER_TTL = 10 * 60
 CSRF_TTL = 10 * 60
 
+# Token authority domains. One signing key, but a token is only ever valid in
+# the domain it was issued for. Add a constant here before minting a new class.
+TYP_SESSION = "session"
+TYP_CSRF = "csrf"
+TYP_PKCE = "pkce"
+TYP_PROJECTION_REVIEW = "projection-review"
+
 
 @dataclass(frozen=True)
 class AuthConfig:
@@ -90,14 +97,25 @@ def _unb64(data: str) -> bytes:
     return base64.urlsafe_b64decode(data + "=" * (-len(data) % 4))
 
 
-def sign(payload: dict, secret: bytes) -> str:
-    body = _b64(json.dumps(payload, separators=(",", ":")).encode())
+def sign(typ: str, payload: dict, secret: bytes) -> str:
+    """Sign a payload into a single token authority domain.
+
+    Every token carries its issuing domain in `typ`. A signature alone is not
+    authority: verification requires the caller to name the domain it expects,
+    so a token minted for one purpose cannot be replayed as another.
+    """
+    body = _b64(json.dumps({**payload, "typ": typ},
+                           separators=(",", ":"), sort_keys=True).encode())
     sig = _b64(hmac.new(secret, body.encode(), hashlib.sha256).digest())
     return f"{body}.{sig}"
 
 
-def verify(token: str, secret: bytes) -> dict | None:
-    """Return the payload if the signature is valid and unexpired."""
+def verify(typ: str, token: str, secret: bytes) -> dict | None:
+    """Return the payload if signature, domain and expiry all hold.
+
+    Fails closed on an absent or mismatched `typ`, so a token issued before
+    domain separation existed is not silently honoured.
+    """
     if not secret or not token or token.count(".") != 1:
         return None
     body, sig = token.split(".")
@@ -108,31 +126,35 @@ def verify(token: str, secret: bytes) -> dict | None:
         payload = json.loads(_unb64(body))
     except (ValueError, UnicodeDecodeError):
         return None
+    if not isinstance(payload, dict):
+        return None
+    if not hmac.compare_digest(str(payload.get("typ", "")), typ):
+        return None
     if payload.get("exp", 0) < time.time():
         return None
     return payload
 
 
 def session_token(email: str, cfg: AuthConfig) -> str:
-    return sign({"email": email, "exp": int(time.time()) + SESSION_TTL},
+    return sign(TYP_SESSION, {"email": email, "exp": int(time.time()) + SESSION_TTL},
                 cfg.session_secret)
 
 
 def session_email(token: str | None, cfg: AuthConfig) -> str | None:
     if token is None:
         return None
-    payload = verify(token, cfg.session_secret)
+    payload = verify(TYP_SESSION, token, cfg.session_secret)
     return payload.get("email") if payload else None
 
 
 def csrf_token(email: str, cfg: AuthConfig, purpose: str) -> str:
     """A short-lived, signed, same-user CSRF token for a state-changing form."""
-    return sign({"email": email, "purpose": purpose,
-                 "exp": int(time.time()) + CSRF_TTL}, cfg.session_secret)
+    return sign(TYP_CSRF, {"email": email, "purpose": purpose,
+                           "exp": int(time.time()) + CSRF_TTL}, cfg.session_secret)
 
 
 def verify_csrf(token: str | None, email: str, cfg: AuthConfig, purpose: str) -> bool:
-    payload = verify(token or "", cfg.session_secret)
+    payload = verify(TYP_CSRF, token or "", cfg.session_secret)
     return bool(payload and payload.get("email") == email and payload.get("purpose") == purpose)
 
 
