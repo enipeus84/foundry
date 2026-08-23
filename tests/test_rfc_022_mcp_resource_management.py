@@ -1,5 +1,7 @@
 """Burn 07: governed MCP financial-resource management."""
 
+import json
+
 import pytest
 
 from foundry.application.mcp_writes import (
@@ -7,7 +9,9 @@ from foundry.application.mcp_writes import (
     McpWriteDenied,
 )
 from foundry.core.acquisition import ProposalInbox
+from foundry.application.mcp_context import McpPrincipal
 from foundry.application.resources import FinancialResourceCommandService, FinancialResourceQuery
+from foundry.mcp_server import create_mcp_server
 from foundry.core.entities import EntityProjection, declare_party, join_household, update_party
 from foundry.core.principal_authority import grant_principal_household_authority
 from foundry.eventlog import EventLog
@@ -183,3 +187,73 @@ def test_provider_projection_proposal_execute_is_exact_and_idempotent(tmp_path):
     with pytest.raises(McpWriteDenied):
         capture.execute(resource_id=resource["id"], values={**values, "fund_medium": 605_000.0},
                         proposal_id=proposal.proposal_id, command_id="projection-2")
+
+
+def _projection_values():
+    """The exact evidenced Aviva age-67 illustration, as supplied by MyAviva."""
+    return dict(provider="Aviva", observed_at=1_787_443_200.0, currency="GBP",
+                retirement_age=67.0, retirement_at=None,
+                fund_low=590_240.0, fund_medium=660_256.0, fund_high=730_766.0,
+                income_low=35_774.0, income_medium=40_661.0, income_high=45_964.0,
+                growth_low_percent=1.5, growth_medium_percent=3.5, growth_high_percent=5.5,
+                income_basis="annuity", source="MyAviva",
+                lineage="MyAviva screenshot 2026-08-23")
+
+
+def _mcp_pension_world(tmp_path):
+    log, household, writes = _world(tmp_path)
+    resource = writes.create(resource_type="pension", currency="GBP", name="Aviva", owner="Chris",
+                             command_id="pension", proposal_id=writes.propose_create(
+                                 resource_type="pension", currency="GBP", name="Aviva",
+                                 owner="Chris").proposal_id)
+    principal = McpPrincipal(PRINCIPAL, household.id, "claude-code", "gpt-test")
+    server = create_mcp_server(FinancialResourceQuery(log, household.id), principal)
+    return log, resource, server
+
+
+def _tool(server, name):
+    return server._tool_manager.get_tool(name).fn
+
+
+def test_provider_projection_proposal_receipt_is_json_serializable(tmp_path):
+    """Regression: the MCP wrapper must not leak non-serializable objects into the request."""
+    log, resource, server = _mcp_pension_world(tmp_path)
+    before = list(log.events())
+
+    receipt = _tool(server, "propose_pension_provider_projection")(
+        resource_id=resource["id"], **_projection_values())
+
+    json.dumps(receipt)
+    assert receipt["state"] == "proposed" and receipt["requires_execution"] is True
+    assert receipt["resource_id"] == resource["id"]
+    assert receipt["proposal_id"].startswith("pension-provider-projection-")
+    assert "660,256" in receipt["summary"] and "age 67" in receipt["summary"]
+    appended = list(log.events())[len(before):]
+    assert [event["kind"] for event in appended] == [
+        "application.mcp_pension_provider_projection.proposed"]
+    assert not any(event["kind"] == "finance.pension_provider_projection.recorded"
+                   for event in log.events())
+
+
+def test_provider_projection_execute_requires_matching_proposal_and_is_idempotent(tmp_path):
+    log, resource, server = _mcp_pension_world(tmp_path)
+    values = _projection_values()
+    propose = _tool(server, "propose_pension_provider_projection")
+    execute = _tool(server, "execute_pension_provider_projection")
+
+    receipt = propose(resource_id=resource["id"], **values)
+
+    with pytest.raises(ValueError):
+        execute(resource_id=resource["id"], proposal_id="pension-provider-projection-bogus",
+                command_id="cmd-1", **values)
+
+    first = execute(resource_id=resource["id"], proposal_id=receipt["proposal_id"],
+                    command_id="cmd-1", **values)
+    second = execute(resource_id=resource["id"], proposal_id=receipt["proposal_id"],
+                     command_id="cmd-1", **values)
+    json.dumps(first)
+    assert first == second
+    assert first["medium_projected_value"] == 660_256.0
+    assert first["planning_age"] == 67.0
+    assert sum(event["kind"] == "finance.pension_provider_projection.recorded"
+               for event in log.events()) == 1

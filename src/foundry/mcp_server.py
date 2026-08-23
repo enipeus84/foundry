@@ -345,8 +345,16 @@ def create_mcp_server(query: FinancialResourceQuery | None = None,
             growth_low_percent: float, growth_medium_percent: float, growth_high_percent: float,
             income_basis: str, source: str, lineage: str) -> dict:
         """Propose one complete provider-issued pension illustration; no state is changed."""
-        values = locals().copy()
-        values.pop("resource_id")
+        values = {
+            "provider": provider, "observed_at": observed_at, "currency": currency,
+            "retirement_age": retirement_age, "retirement_at": retirement_at,
+            "fund_low": fund_low, "fund_medium": fund_medium, "fund_high": fund_high,
+            "income_low": income_low, "income_medium": income_medium, "income_high": income_high,
+            "growth_low_percent": growth_low_percent,
+            "growth_medium_percent": growth_medium_percent,
+            "growth_high_percent": growth_high_percent,
+            "income_basis": income_basis, "source": source, "lineage": lineage,
+        }
         try:
             receipt = pension_projection_capture.propose(resource_id=resource_id, values=values)
         except McpWriteDenied as exc:
@@ -364,9 +372,16 @@ def create_mcp_server(query: FinancialResourceQuery | None = None,
             growth_low_percent: float, growth_medium_percent: float, growth_high_percent: float,
             income_basis: str, source: str, lineage: str) -> dict:
         """Record only the exact provider illustration represented by a proposal receipt."""
-        values = locals().copy()
-        for key in ("resource_id", "proposal_id", "command_id"):
-            values.pop(key)
+        values = {
+            "provider": provider, "observed_at": observed_at, "currency": currency,
+            "retirement_age": retirement_age, "retirement_at": retirement_at,
+            "fund_low": fund_low, "fund_medium": fund_medium, "fund_high": fund_high,
+            "income_low": income_low, "income_medium": income_medium, "income_high": income_high,
+            "growth_low_percent": growth_low_percent,
+            "growth_medium_percent": growth_medium_percent,
+            "growth_high_percent": growth_high_percent,
+            "income_basis": income_basis, "source": source, "lineage": lineage,
+        }
         try:
             return pension_projection_capture.execute(
                 resource_id=resource_id, values=values, proposal_id=proposal_id,
