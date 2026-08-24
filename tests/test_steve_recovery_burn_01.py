@@ -116,4 +116,12 @@ def test_mcp_commissions_and_evaluates_pension_independence(tmp_path):
                 assert result["provenance"]["evidence_references"]
                 assert result["blockers"] == []
 
+                planning = await session.call_tool(
+                    "explain_pension_independence_planning_point", {"as_of": as_of})
+                explanation = json.loads(planning.content[0].text)
+                assert explanation["mission"]["id"] == mission.id
+                assert explanation["planning_point"]["planning_at"] is not None
+                assert explanation["planning_point"]["participants"]
+                assert explanation["compatibility"]["tolerance"] == "P1D"
+
     asyncio.run(exercise())

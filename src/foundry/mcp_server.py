@@ -61,6 +61,15 @@ def create_mcp_server(query: FinancialResourceQuery | None = None,
             raise ValueError(str(exc)) from exc
 
     @server.tool()
+    def explain_pension_independence_planning_point(
+            mission_id: str | None = None, as_of: str | None = None) -> dict:
+        """Explain this Mission's canonical planning point and provider-date compatibility."""
+        try:
+            return pension_mission.explain_planning_point(mission_id, as_of)
+        except PensionMissionQueryError as exc:
+            raise ValueError(str(exc)) from exc
+
+    @server.tool()
     def get_current_pension_value(mission_id: str | None = None,
                                   as_of: str | None = None) -> dict:
         """Return canonical aggregated pension wealth; clients need not replay history."""

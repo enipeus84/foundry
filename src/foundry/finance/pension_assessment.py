@@ -206,6 +206,29 @@ class PensionIndependencePolicy:
     unit_or_currency: str = "GBP"
 
 
+@dataclass(frozen=True)
+class PensionParticipantPlanningEvidence:
+    """The declared facts used to derive one participant's horizon."""
+
+    participant_id: str
+    date_of_birth: str
+    current_age: int
+    state_pension_age: float | None
+    state_pension_evidence_event_id: str | None
+    horizon_years: float | None
+
+
+@dataclass(frozen=True)
+class PensionPlanningPoint:
+    """Canonical planning-point calculation, including its evidence trace."""
+
+    planning_at: float | None
+    planning_label: str | None
+    participants: tuple[PensionParticipantPlanningEvidence, ...]
+    driving_participant_ids: tuple[str, ...]
+    error: str | None = None
+
+
 class PensionIndependenceAssessor:
     """Independent Finance provider for Pension Independence."""
 
@@ -535,30 +558,58 @@ class PensionIndependenceAssessor:
         return members, None
 
     def _planning_point(self, members, as_of, inputs):
-        horizons = []
+        detail = self._planning_point_detail(members, as_of, inputs)
+        if detail.error is not None:
+            return None, detail.error
+        assert detail.planning_at is not None and detail.planning_label is not None
+        return (detail.planning_at, detail.planning_label), None
+
+    def _planning_point_detail(self, members, as_of, inputs):
+        """Calculate the assessment planning point and retain its canonical trace."""
+        participants = []
         missing = []
         for member in members:
             assert member.date_of_birth is not None
             current_age = age_years(member.date_of_birth, as_of)
             target_age = inputs.planning_age
+            evidence_event_id = None
             if target_age is None:
                 record = self.evidence.latest(
                     member.id, "state_pension_age", as_of)
                 if record is None:
                     missing.append(member.id)
+                    participants.append(PensionParticipantPlanningEvidence(
+                        member.id, member.date_of_birth.isoformat(), current_age,
+                        None, None, None))
                     continue
                 target_age = float(record.value)
-            horizons.append(max(0.0, target_age - float(current_age)))
+                evidence_event_id = record.event_id
+            participants.append(PensionParticipantPlanningEvidence(
+                member.id, member.date_of_birth.isoformat(), current_age,
+                float(target_age), evidence_event_id,
+                max(0.0, float(target_age) - float(current_age))))
         if missing:
-            return None, "State Pension age evidence is missing for adult participant(s): " + ", ".join(sorted(missing))
+            return PensionPlanningPoint(
+                None, None, tuple(participants), (),
+                "State Pension age evidence is missing for adult participant(s): "
+                + ", ".join(sorted(missing)))
+        horizons = tuple(item.horizon_years for item in participants)
         if not horizons:
-            return None, "planning point has no adult pension participants"
-        months = max(1, math.ceil(max(horizons) * 12))
-        return (
+            return PensionPlanningPoint(
+                None, None, tuple(participants), (),
+                "planning point has no adult pension participants")
+        maximum = max(horizons)
+        assert maximum is not None
+        # Ties are semantically real: the assessment selects the shared latest
+        # horizon, rather than arbitrarily making one participant the driver.
+        drivers = tuple(item.participant_id for item in participants
+                        if item.horizon_years == maximum)
+        months = max(1, math.ceil(maximum * 12))
+        return PensionPlanningPoint(
             self._add_months(as_of, months),
             "PLANNED RETIREMENT" if inputs.planning_age is not None
             else "STATE PENSION AGE",
-        ), None
+            tuple(participants), drivers)
 
     def _pension_account_ids(self, person_ids):
         owned = self.basis.owned_entities(
@@ -669,27 +720,34 @@ class PensionIndependenceAssessor:
         for account_id, record in zip(account_ids, records):
             if record.currency != "GBP":
                 return None, "Expected outcome unavailable — provider projection currency is not supported"
-            if record.retirement_at is not None:
-                record_planning_at = record.retirement_at
-            else:
-                owners = {link.target for link in self.finance.accounts[account_id].ownership
-                          if link.relation in vocab.VALUE_OWNERSHIP_RELATIONS}
-                owner_points = []
-                for owner in owners:
-                    person = self.core.parties.get(owner)
-                    if person is None or person.date_of_birth is None:
-                        return None, "Expected outcome unavailable — provider projection planning point cannot be resolved"
-                    months = max(0, math.ceil((record.retirement_age - age_years(
-                        person.date_of_birth, request.as_of)) * 12))
-                    owner_points.append(self._add_months(request.as_of, months))
-                if len(set(owner_points)) != 1:
-                    return None, "Expected outcome unavailable — provider projection planning point is incompatible"
-                record_planning_at = owner_points[0]
+            record_planning_at, planning_error = self._provider_record_planning_at(
+                account_id, record, request.as_of)
+            if planning_error is not None:
+                return None, planning_error
+            assert record_planning_at is not None
             if abs(record_planning_at - planning_at) > DAY:
                 return None, "Expected outcome unavailable — provider projection planning point is incompatible with the Mission planning point"
         return (ForecastPoint(planning_at, sum(record.fund_low for record in records),
                               sum(record.fund_medium for record in records),
                               sum(record.fund_high for record in records)),), None
+
+    def _provider_record_planning_at(self, account_id, record, as_of):
+        """Resolve the provider illustration date using the assessment rule."""
+        if record.retirement_at is not None:
+            return record.retirement_at, None
+        owners = {link.target for link in self.finance.accounts[account_id].ownership
+                  if link.relation in vocab.VALUE_OWNERSHIP_RELATIONS}
+        owner_points = []
+        for owner in owners:
+            person = self.core.parties.get(owner)
+            if person is None or person.date_of_birth is None:
+                return None, "Expected outcome unavailable — provider projection planning point cannot be resolved"
+            months = max(0, math.ceil((record.retirement_age - age_years(
+                person.date_of_birth, as_of)) * 12))
+            owner_points.append(self._add_months(as_of, months))
+        if len(set(owner_points)) != 1:
+            return None, "Expected outcome unavailable — provider projection planning point is incompatible"
+        return owner_points[0], None
 
     def _project(
         self,
