@@ -1,5 +1,8 @@
 """Unit tests: the event log's core guarantees."""
 
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
+
 from foundry.eventlog import EventLog, GENESIS_HASH
 
 
@@ -47,3 +50,45 @@ def test_insertion_detection(tmp_path):
     lines = p.read_text().splitlines()
     p.write_text("\n".join([lines[0], lines[0], lines[1]]) + "\n")
     assert not log.verify()
+
+
+def test_append_uses_actual_tail_across_stale_instances(tmp_path):
+    path = tmp_path / "e.jsonl"
+    first = EventLog(path)
+    second = EventLog(path)
+
+    event_one = first.append("ingest", {"text": "one"})
+    event_two = second.append("ingest", {"text": "two"})
+
+    events = list(EventLog(path).events())
+    assert event_one["prev_hash"] == GENESIS_HASH
+    assert event_two["prev_hash"] == event_one["hash"]
+    assert [event["hash"] for event in events] == [event_one["hash"], event_two["hash"]]
+    assert EventLog(path).verify()
+
+
+def test_concurrent_writers_cannot_claim_same_parent(tmp_path):
+    path = tmp_path / "e.jsonl"
+    first = EventLog(path)
+    second = EventLog(path)
+    barrier = Barrier(2)
+
+    def append(log: EventLog, text: str) -> dict:
+        barrier.wait()
+        return log.append("ingest", {"text": text})
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        future_one = executor.submit(append, first, "one")
+        future_two = executor.submit(append, second, "two")
+        event_one = future_one.result()
+        event_two = future_two.result()
+
+    events = list(EventLog(path).events())
+    hashes = {event_one["hash"], event_two["hash"]}
+
+    assert len(events) == 2
+    assert {event["hash"] for event in events} == hashes
+    assert events[0]["prev_hash"] == GENESIS_HASH
+    assert events[1]["prev_hash"] == events[0]["hash"]
+    assert {event_one["prev_hash"], event_two["prev_hash"]} == {GENESIS_HASH, events[0]["hash"]}
+    assert EventLog(path).verify()

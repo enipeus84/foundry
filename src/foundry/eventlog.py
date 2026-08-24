@@ -20,11 +20,13 @@ Design decisions:
 
 from __future__ import annotations
 
+import fcntl
 import hashlib
 import json
 import logging
 import time
 import uuid
+from os import SEEK_END
 from pathlib import Path
 from typing import Iterator
 
@@ -61,20 +63,26 @@ class EventLog:
         named model. This matters: when a model derives a claim, the model's
         identity is part of the provenance, not an invisible substrate.
         """
-        prev = self._last
-        event = {
-            "id": str(uuid.uuid4()),
-            "ts": time.time(),
-            "kind": kind,
-            "actor": actor,
-            "payload": payload,
-            "prev_hash": prev,
-        }
-        event["hash"] = hashlib.sha256(
-            (_canonical({k: v for k, v in event.items() if k != "hash"})).encode()
-        ).hexdigest()
-        with self.path.open("a", encoding="utf-8") as f:
-            f.write(_canonical(event) + "\n")
+        with self.path.open("a+", encoding="utf-8") as f:
+            fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+            try:
+                prev = self._scan_last_hash_locked(f)
+                event = {
+                    "id": str(uuid.uuid4()),
+                    "ts": time.time(),
+                    "kind": kind,
+                    "actor": actor,
+                    "payload": payload,
+                    "prev_hash": prev,
+                }
+                event["hash"] = hashlib.sha256(
+                    (_canonical({k: v for k, v in event.items() if k != "hash"})).encode()
+                ).hexdigest()
+                f.seek(0, SEEK_END)
+                f.write(_canonical(event) + "\n")
+                f.flush()
+            finally:
+                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
         self._last = event["hash"]
         log.debug("appended %s event %s", kind, event["id"])
         return event
@@ -120,4 +128,13 @@ class EventLog:
         last = GENESIS_HASH
         for e in self.events():
             last = e["hash"]
+        return last
+
+    def _scan_last_hash_locked(self, handle) -> str:
+        handle.seek(0)
+        last = GENESIS_HASH
+        for line in handle:
+            line = line.strip()
+            if line:
+                last = json.loads(line)["hash"]
         return last
