@@ -21,7 +21,7 @@ from foundry.eventlog import EventLog
 from foundry.finance.entities import FinanceEntityProjection
 from foundry.finance.metrics import FinanceMetricProvider
 from foundry.finance.pension_assessment import (
-    POLICY_ID,
+    DAY, POLICY_ID, PensionIndependenceInputs,
     PensionIndependenceAssessor,
 )
 from foundry.finance.pension_evidence import PensionEvidenceProjection
@@ -234,4 +234,126 @@ class PensionMissionQueryService:
             "current_pension_value": result["current_relevant_value"],
             "evaluable": result["evaluable"],
             "blockers": result["blockers"],
+        }
+
+    def explain_planning_point(self, mission_id: str | None = None,
+                               as_of: str | None = None) -> dict[str, Any]:
+        """Explain the assessor-owned planning-point compatibility decision.
+
+        This deliberately serializes only the participant timing facts and
+        provider illustrations that can affect this one Mission calculation.
+        """
+        assessed_at = _timestamp(as_of)
+        core, finance, assessor, targets = self._composition()
+        mission, target_binding = self._mission(core, targets, mission_id, assessed_at)
+        request = MissionAssessmentRequest(
+            mission.id, POLICY_ID, Subject("party", target_binding.subject_id), assessed_at)
+        assessment = assessor.assess(request)
+        members, participant_error = assessor._participants(request)
+        assumption_set = finance.assumption_sets.get(mission.assumption_set_id or "")
+        input_error = participant_error
+        inputs = None
+        if input_error is None:
+            if assumption_set is None or assumption_set.status != "active":
+                input_error = "active pension Assumption Set not found"
+            else:
+                try:
+                    inputs = PensionIndependenceInputs.from_assumption_set(assumption_set)
+                except (TypeError, ValueError) as exc:
+                    input_error = str(exc)
+
+        detail = None
+        if input_error is None:
+            detail = assessor._planning_point_detail(members, assessed_at, inputs)
+            input_error = detail.error
+        participants = [] if detail is None else [{
+            "participant_id": item.participant_id,
+            "date_of_birth": item.date_of_birth,
+            "current_age": item.current_age,
+            "state_pension_age": item.state_pension_age,
+            "state_pension_age_evidence_reference": item.state_pension_evidence_event_id,
+            "derived_horizon_years": item.horizon_years,
+        } for item in detail.participants]
+        planning_at = None if detail is None else detail.planning_at
+
+        provider_records = []
+        if planning_at is not None:
+            accounts, _ = assessor._projection_accounts(
+                {member.id for member in members}, assessed_at, inputs)
+            account_ids = assessor._provider_evaluation_ids(
+                accounts, {member.id for member in members})
+            provider_evaluation = assessor._provider_projection_evaluation(
+                account_ids, assessed_at)
+            if provider_evaluation.provider_mode_active:
+                for account_id, required, record in zip(
+                        provider_evaluation.account_ids,
+                        provider_evaluation.required,
+                        provider_evaluation.records):
+                    account = finance.accounts[account_id]
+                    item = {
+                        "resource_id": account_id,
+                        "projection_authority": account.projection_authority,
+                        "provider_projection_required": required,
+                        "latest_provider_projection": None,
+                        "record_planning_at": None,
+                        "delta_seconds": None,
+                        "absolute_delta_seconds": None,
+                        "compatibility_result": None,
+                        "record_stale": None,
+                        "record_freshness_result": None,
+                        "resolution_error": None,
+                    }
+                    if record is not None:
+                        record_planning_at, record_error = assessor._provider_record_planning_at(
+                            account_id, record, assessed_at)
+                        delta = (record_planning_at - planning_at
+                                 if record_planning_at is not None else None)
+                        stale = assessed_at - record.observed_at > inputs.valuation_stale_after_days * DAY
+                        item.update({
+                            "latest_provider_projection": {
+                                "provider": record.provider,
+                                "observed_at": _iso(record.observed_at),
+                                "retirement_age": record.retirement_age,
+                                "retirement_at": _iso(record.retirement_at),
+                                "evidence_reference": record.event_id,
+                            },
+                            "record_planning_at": _iso(record_planning_at),
+                            "delta_seconds": delta,
+                            "absolute_delta_seconds": abs(delta) if delta is not None else None,
+                            "compatibility_result": (
+                                abs(delta) <= DAY if delta is not None else False),
+                            "record_stale": stale,
+                            "record_freshness_result": not stale,
+                            "resolution_error": record_error,
+                        })
+                    provider_records.append(item)
+
+        compatibility = [item["compatibility_result"] for item in provider_records]
+        return {
+            "mission": {
+                "id": mission.id,
+                "policy_id": mission.assessment_policy_id,
+                "subject": {"kind": "party", "id": target_binding.subject_id},
+            },
+            "assessment": {
+                "status": assessment.status,
+                "blocker": next(iter(assessment.limitations), None)
+                if assessment.status == "unavailable" else None,
+            },
+            "planning_point": {
+                "selection_rule": (
+                    "explicit planning_age" if inputs is not None and inputs.planning_age is not None
+                    else "latest active adult participant State Pension age"),
+                "planning_at": _iso(planning_at),
+                "participants": participants,
+                "driving_participant_ids": [] if detail is None else list(detail.driving_participant_ids),
+                "calculation_error": input_error,
+            },
+            "provider_projections": provider_records,
+            "compatibility": {
+                "tolerance_seconds": DAY,
+                "tolerance": "P1D",
+                "provider_mode_active": bool(provider_records),
+                "result": all(compatibility) if compatibility else None,
+            },
         }
