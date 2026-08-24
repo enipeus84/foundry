@@ -282,40 +282,51 @@ class PensionMissionQueryService:
                 {member.id for member in members}, assessed_at, inputs)
             account_ids = assessor._provider_evaluation_ids(
                 accounts, {member.id for member in members})
-            for account_id in account_ids:
-                if not assessor._requires_provider_projection(account_id):
-                    continue
-                record = assessor.provider_projections.latest(account_id, assessed_at)
-                item = {
-                    "resource_id": account_id,
-                    "projection_authority": "provider_managed",
-                    "latest_provider_projection": None,
-                    "record_planning_at": None,
-                    "delta_seconds": None,
-                    "absolute_delta_seconds": None,
-                    "compatibility_result": None,
-                }
-                if record is not None:
-                    record_planning_at, record_error = assessor._provider_record_planning_at(
-                        account_id, record, assessed_at)
-                    delta = (record_planning_at - planning_at
-                             if record_planning_at is not None else None)
-                    item.update({
-                        "latest_provider_projection": {
-                            "provider": record.provider,
-                            "observed_at": _iso(record.observed_at),
-                            "retirement_age": record.retirement_age,
-                            "retirement_at": _iso(record.retirement_at),
-                            "evidence_reference": record.event_id,
-                        },
-                        "record_planning_at": _iso(record_planning_at),
-                        "delta_seconds": delta,
-                        "absolute_delta_seconds": abs(delta) if delta is not None else None,
-                        "compatibility_result": (
-                            abs(delta) <= DAY if delta is not None else False),
-                        "resolution_error": record_error,
-                    })
-                provider_records.append(item)
+            provider_evaluation = assessor._provider_projection_evaluation(
+                account_ids, assessed_at)
+            if provider_evaluation.provider_mode_active:
+                for account_id, required, record in zip(
+                        provider_evaluation.account_ids,
+                        provider_evaluation.required,
+                        provider_evaluation.records):
+                    account = finance.accounts[account_id]
+                    item = {
+                        "resource_id": account_id,
+                        "projection_authority": account.projection_authority,
+                        "provider_projection_required": required,
+                        "latest_provider_projection": None,
+                        "record_planning_at": None,
+                        "delta_seconds": None,
+                        "absolute_delta_seconds": None,
+                        "compatibility_result": None,
+                        "record_stale": None,
+                        "record_freshness_result": None,
+                        "resolution_error": None,
+                    }
+                    if record is not None:
+                        record_planning_at, record_error = assessor._provider_record_planning_at(
+                            account_id, record, assessed_at)
+                        delta = (record_planning_at - planning_at
+                                 if record_planning_at is not None else None)
+                        stale = assessed_at - record.observed_at > inputs.valuation_stale_after_days * DAY
+                        item.update({
+                            "latest_provider_projection": {
+                                "provider": record.provider,
+                                "observed_at": _iso(record.observed_at),
+                                "retirement_age": record.retirement_age,
+                                "retirement_at": _iso(record.retirement_at),
+                                "evidence_reference": record.event_id,
+                            },
+                            "record_planning_at": _iso(record_planning_at),
+                            "delta_seconds": delta,
+                            "absolute_delta_seconds": abs(delta) if delta is not None else None,
+                            "compatibility_result": (
+                                abs(delta) <= DAY if delta is not None else False),
+                            "record_stale": stale,
+                            "record_freshness_result": not stale,
+                            "resolution_error": record_error,
+                        })
+                    provider_records.append(item)
 
         compatibility = [item["compatibility_result"] for item in provider_records]
         return {
@@ -342,6 +353,7 @@ class PensionMissionQueryService:
             "compatibility": {
                 "tolerance_seconds": DAY,
                 "tolerance": "P1D",
+                "provider_mode_active": bool(provider_records),
                 "result": all(compatibility) if compatibility else None,
             },
         }

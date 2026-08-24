@@ -55,9 +55,10 @@ def _world(tmp_path, *, person_target=False):
     return log, household, mission
 
 
-def _provider(log, account_id, *, retirement_at=None, retirement_age=None):
+def _provider(log, account_id, *, retirement_at=None, retirement_age=None,
+              observed_at=AS_OF - DAY):
     return record_pension_provider_projection(
-        log, account_id, provider="Aviva", currency="GBP", observed_at=AS_OF - DAY,
+        log, account_id, provider="Aviva", currency="GBP", observed_at=observed_at,
         retirement_at=retirement_at, retirement_age=retirement_age,
         fund_low=300_000, fund_medium=400_000, fund_high=500_000,
         income_low=20_000, income_medium=30_000, income_high=40_000,
@@ -91,7 +92,8 @@ def test_explanation_uses_assessor_horizon_and_reports_provider_delta(tmp_path):
     assert provider[0]["absolute_delta_seconds"] > DAY
     assert provider[0]["compatibility_result"] is False
     assert result["compatibility"] == {
-        "tolerance_seconds": DAY, "tolerance": "P1D", "result": False}
+        "tolerance_seconds": DAY, "tolerance": "P1D",
+        "provider_mode_active": True, "result": False}
     assert json.loads(json.dumps(result)) == result
     # The Mission-specific response exposes neither child nor generic resource state.
     rendered = json.dumps(result)
@@ -129,6 +131,55 @@ def test_explanation_preserves_one_day_provider_compatibility_boundary(
     assert result["compatibility"]["result"] is compatible
     # The actual assessor remains the authority for the same fail-closed result.
     assert (result["assessment"]["status"] != "unavailable") is compatible
+
+
+def test_explanation_includes_observed_provider_evidence_without_provider_authority(tmp_path):
+    log, household, mission = _world(tmp_path)
+    service = PensionMissionQueryService(log, household.household_id)
+    baseline = service.explain_planning_point(mission.id, "2026-08-21T23:00:00Z")
+    planning_at = datetime.fromisoformat(
+        baseline["planning_point"]["planning_at"].replace("Z", "+00:00")).timestamp()
+    incompatible = _provider(
+        log, household.alex_pension_id, retirement_at=planning_at - DAY - 1)
+    _provider(log, household.sam_pension_id, retirement_at=planning_at)
+
+    result = service.explain_planning_point(mission.id, "2026-08-21T23:00:00Z")
+
+    by_resource = {item["resource_id"]: item for item in result["provider_projections"]}
+    alex = by_resource[household.alex_pension_id]
+    assert alex["projection_authority"] is None
+    assert alex["provider_projection_required"] is False
+    assert alex["latest_provider_projection"]["evidence_reference"] == incompatible.event_id
+    assert alex["compatibility_result"] is False
+    assert alex["resolution_error"] is None
+    assert result["compatibility"]["provider_mode_active"] is True
+    assert result["compatibility"]["result"] is False
+    assert result["assessment"]["status"] == "unavailable"
+    assert "planning point is incompatible" in result["assessment"]["blocker"]
+
+
+def test_explanation_separates_date_compatibility_from_stale_record_usability(tmp_path):
+    log, household, mission = _world(tmp_path)
+    service = PensionMissionQueryService(log, household.household_id)
+    baseline = service.explain_planning_point(mission.id, "2026-08-21T23:00:00Z")
+    planning_at = datetime.fromisoformat(
+        baseline["planning_point"]["planning_at"].replace("Z", "+00:00")).timestamp()
+    finance.declare_pension_projection_authority(
+        log, household.alex_pension_id, projection_authority="provider_managed", reason="test")
+    finance.declare_pension_projection_authority(
+        log, household.sam_pension_id, projection_authority="provider_managed", reason="test")
+    stale_at = AS_OF - 551 * DAY
+    _provider(log, household.alex_pension_id, retirement_at=planning_at, observed_at=stale_at)
+    _provider(log, household.sam_pension_id, retirement_at=planning_at, observed_at=stale_at)
+
+    result = service.explain_planning_point(mission.id, "2026-08-21T23:00:00Z")
+
+    assert result["compatibility"]["result"] is True
+    assert all(item["record_stale"] is True for item in result["provider_projections"])
+    assert all(item["record_freshness_result"] is False
+               for item in result["provider_projections"])
+    assert result["assessment"]["status"] == "unavailable"
+    assert "current provider projection required" in result["assessment"]["blocker"]
 
 
 def test_explanation_fails_closed_when_participant_state_pension_evidence_is_missing(tmp_path):

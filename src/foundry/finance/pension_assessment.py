@@ -33,7 +33,7 @@ from . import vocab
 from .aggregation import FinanceAggregationService
 from .entities import AssumptionSet, FinanceEntityProjection
 from .pension_evidence import PensionEvidenceProjection, RATE_FIELDS
-from .pension_projection import PensionProviderProjectionProjection
+from .pension_projection import PensionProviderProjection, PensionProviderProjectionProjection
 
 
 POLICY_ID = "finance.pension_independence.v1"
@@ -227,6 +227,19 @@ class PensionPlanningPoint:
     participants: tuple[PensionParticipantPlanningEvidence, ...]
     driving_participant_ids: tuple[str, ...]
     error: str | None = None
+
+
+@dataclass(frozen=True)
+class ProviderProjectionEvaluation:
+    """The exact provider-mode gate shared by assessment and explanation."""
+
+    account_ids: tuple[str, ...]
+    required: tuple[bool, ...]
+    records: tuple[PensionProviderProjection | None, ...]
+
+    @property
+    def provider_mode_active(self) -> bool:
+        return any(self.required) or any(self.records)
 
 
 class PensionIndependenceAssessor:
@@ -701,15 +714,14 @@ class PensionIndependenceAssessor:
         as they do today.  A mixed set cannot be economically composed:
         Foundry may not fill the missing member with its own forecast.
         """
-        required = [self._requires_provider_projection(account_id) for account_id in account_ids]
+        evaluation = self._provider_projection_evaluation(account_ids, request.as_of)
         if self.provider_projections is None:
-            if any(required):
+            if any(evaluation.required):
                 return None, "Expected outcome unavailable — current provider projection required for every included pension"
             return None, None
-        records = [self.provider_projections.latest(account_id, request.as_of)
-                   for account_id in account_ids]
-        if not any(required) and not any(records):
+        if not evaluation.provider_mode_active:
             return None, None
+        records = evaluation.records
         if any(record is None for record in records):
             return None, "Expected outcome unavailable — current provider projection required for every included pension"
         assert all(record is not None for record in records)
@@ -730,6 +742,16 @@ class PensionIndependenceAssessor:
         return (ForecastPoint(planning_at, sum(record.fund_low for record in records),
                               sum(record.fund_medium for record in records),
                               sum(record.fund_high for record in records)),), None
+
+    def _provider_projection_evaluation(self, account_ids, as_of):
+        """Select records using the assessor's provider-mode admission rule."""
+        required = tuple(self._requires_provider_projection(account_id)
+                         for account_id in account_ids)
+        records = (tuple(self.provider_projections.latest(account_id, as_of)
+                         for account_id in account_ids)
+                   if self.provider_projections is not None
+                   else tuple(None for _ in account_ids))
+        return ProviderProjectionEvaluation(tuple(account_ids), required, records)
 
     def _provider_record_planning_at(self, account_id, record, as_of):
         """Resolve the provider illustration date using the assessment rule."""
