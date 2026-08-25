@@ -18,6 +18,7 @@ from foundry.eventlog import EventLog
 from foundry.finance.pension_projection import (
     record_pension_provider_projection, validate_pension_provider_projection,
 )
+from foundry.finance.mortgage_evidence import record_mortgage_evidence
 
 
 class McpWriteDenied(PermissionError):
@@ -52,6 +53,13 @@ class PensionProviderProjectionProposalReceipt:
     proposal_id: str
     resource_id: str
     summary: str
+
+
+@dataclass(frozen=True)
+class MortgageEvidenceProposalReceipt:
+    proposal_id: str
+    obligation_id: str
+    field: str
 
 
 @dataclass(frozen=True)
@@ -129,6 +137,82 @@ class McpPensionProviderProjectionCapture:
         return result
 
 
+@dataclass(frozen=True)
+class McpMortgageEvidenceCapture:
+    """Governed MCP exposure of Finance's existing mortgage evidence event."""
+
+    log: EventLog
+    principal: str
+    household_id: str
+    client: str
+    witness_model: str
+
+    def _request(self, *, obligation_id: str, field: str, value: str | float,
+                 effective_at: float, confidence: float, source: str, lineage: str,
+                 unit_or_currency: str | None = None) -> dict[str, Any]:
+        if not PrincipalHouseholdAuthority(self.log).permits_write(self.principal, self.household_id):
+            raise McpClientSafeDenied("principal is not authorised to mutate this household")
+        try:
+            resource = FinancialResourceQuery(self.log, self.household_id).get_financial_resource(obligation_id)
+        except ResourceNotFound as exc:
+            raise McpClientSafeDenied("mortgage obligation is unavailable") from exc
+        if (resource["resource_kind"] != "obligation" or resource["resource_type"] != "mortgage"
+                or resource["status"] != "active"):
+            raise McpClientSafeDenied("resource is not an active mortgage obligation")
+        return {"obligation_id": obligation_id, "field": field, "value": value,
+                "effective_at": effective_at, "confidence": confidence, "source": source,
+                "lineage": lineage, "unit_or_currency": unit_or_currency}
+
+    def propose(self, **values: Any) -> MortgageEvidenceProposalReceipt:
+        request = self._request(**values)
+        digest = _proposal_digest(request)
+        proposal_id = f"mortgage-evidence-{digest[:24]}"
+        for event in self.log.events():
+            if (event["kind"] == "application.mcp_mortgage_evidence.proposed"
+                    and event["payload"].get("proposal_id") == proposal_id):
+                return MortgageEvidenceProposalReceipt(proposal_id, request["obligation_id"], request["field"])
+        self.log.append("application.mcp_mortgage_evidence.proposed", {
+            "proposal_id": proposal_id, "request_digest": digest,
+            "household_id": self.household_id, "request": request,
+            "principal": self.principal, "client": self.client, "witness_model": self.witness_model,
+        }, actor=f"mcp:{self.principal}")
+        return MortgageEvidenceProposalReceipt(proposal_id, request["obligation_id"], request["field"])
+
+    def execute(self, *, proposal_id: str, command_id: str, **values: Any) -> dict[str, Any]:
+        if not isinstance(command_id, str) or not command_id.strip():
+            raise McpClientSafeDenied("command_id is required for idempotent execution")
+        request = self._request(**values)
+        digest = _proposal_digest(request)
+        for event in self.log.events():
+            if event["kind"] == "application.mcp_mortgage_evidence.executed":
+                payload = event["payload"]
+                if payload.get("household_id") == self.household_id and payload.get("command_id") == command_id:
+                    if payload.get("request_digest") != digest:
+                        raise McpClientSafeDenied("command id was already used for different mortgage evidence")
+                    return dict(payload["result"])
+        proposal = next((event["payload"] for event in self.log.events()
+                         if event["kind"] == "application.mcp_mortgage_evidence.proposed"
+                         and event["payload"].get("proposal_id") == proposal_id), None)
+        if proposal is None or proposal.get("household_id") != self.household_id \
+                or proposal.get("request_digest") != digest:
+            raise McpClientSafeDenied("proposal does not match the mortgage evidence")
+        try:
+            record = record_mortgage_evidence(self.log, actor=f"mcp:{self.principal}", **request)
+        except (TypeError, ValueError) as exc:
+            raise McpClientSafeDenied(str(exc)) from exc
+        result = {"obligation_id": record.obligation_id, "field": record.field,
+                  "value": record.value, "effective_at": record.effective_at,
+                  "confidence": record.confidence, "source": record.source,
+                  "lineage": record.lineage, "unit_or_currency": record.unit_or_currency,
+                  "event_id": record.event_id}
+        self.log.append("application.mcp_mortgage_evidence.executed", {
+            "proposal_id": proposal_id, "command_id": command_id, "request_digest": digest,
+            "household_id": self.household_id, "result": result, "principal": self.principal,
+            "client": self.client, "witness_model": self.witness_model,
+        }, actor=f"mcp:{self.principal}")
+        return result
+
+
 def _proposal_digest(values: dict[str, Any]) -> str:
     return sha256(json.dumps(values, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
@@ -174,19 +258,22 @@ class McpFinancialResourceWrites:
                        provider: str | None = None, owner: str | None = None,
                        owners: list[str] | None = None,
                        liquidity_classification: str | None = None,
-                       projection_authority: str | None = None) -> ResourceProposalReceipt:
+                       projection_authority: str | None = None,
+                       secured_property_id: str | None = None) -> ResourceProposalReceipt:
         return self._propose("create_financial_resource", {
             "household_id": self.household_id, "resource_type": resource_type,
             "currency": currency, "name": name, "provider": provider,
             "owner": owner, "owners": owners,
             "liquidity_classification": liquidity_classification,
             "projection_authority": projection_authority,
+            "secured_property_id": secured_property_id,
         })
 
     def create(self, *, resource_type: str, currency: str, name: str | None = None,
                provider: str | None = None, owner: str | None = None,
                owners: list[str] | None = None, liquidity_classification: str | None = None,
                projection_authority: str | None = None,
+               secured_property_id: str | None = None,
                command_id: str, proposal_id: str | None = None) -> dict[str, Any]:
         if not command_id.strip():
             raise McpWriteDenied("command_id is required for idempotent execution")
@@ -194,7 +281,8 @@ class McpFinancialResourceWrites:
                   "currency": currency, "name": name, "provider": provider,
                   "owner": owner, "owners": owners,
                   "liquidity_classification": liquidity_classification,
-                  "projection_authority": projection_authority}
+                  "projection_authority": projection_authority,
+                  "secured_property_id": secured_property_id}
         self._proposal(proposal_id or "", "create_financial_resource", values)
         try:
             return FinancialResourceCommandService(self.log).create_financial_resource(
@@ -202,6 +290,7 @@ class McpFinancialResourceWrites:
                 name=name, provider=provider, owner=owner, owners=owners,
                 liquidity_classification=liquidity_classification,
                 projection_authority=projection_authority,
+                secured_property_id=secured_property_id,
                 actor=f"mcp:{self.principal}", principal=self.principal, command_id=command_id,
                 client=self.client, witness_model=self.witness_model)
         except ResourceCommandDenied as exc:

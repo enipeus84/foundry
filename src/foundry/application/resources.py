@@ -16,7 +16,7 @@ from foundry.core.principal_authority import PrincipalHouseholdAuthority
 from foundry.eventlog import EventLog
 from foundry.finance.capture_targets import FinanceCaptureTargetResolver, finance_asset_registry
 from foundry.finance import entities as finance_entities
-from foundry.finance.entities import Account, Asset, FinanceEntityProjection
+from foundry.finance.entities import Account, Asset, Obligation, FinanceEntityProjection
 from foundry.finance.runtime_bootstrap import bootstrap_finance_capture_targets
 
 
@@ -33,7 +33,7 @@ _RESOURCE_TYPES = {
     "savings": ("account", "savings", "none"), "isa": ("account", "brokerage", "isa"),
     "brokerage": ("account", "brokerage", "none"), "pension": ("account", "pension", "pension_wrapper"),
     "credit_card": ("account", "credit_card", "none"), "loan": ("account", "loan", "none"),
-    "mortgage": ("account", "mortgage", "none"), "other": ("account", "other", "none"),
+    "mortgage": ("obligation", "mortgage", None), "other": ("account", "other", "none"),
     "property": ("asset", "property", None), "vehicle": ("asset", "vehicle", None),
     "collectible": ("asset", "collectible", None),
 }
@@ -99,6 +99,7 @@ class FinancialResourceCommandService:
                                   owners: list[str] | None = None,
                                   liquidity_classification: str | None = None,
                                   projection_authority: str | None = None,
+                                  secured_property_id: str | None = None,
                                   actor: str, principal: str | None = None,
                                   command_id: str | None = None,
                                   client: str | None = None, witness_model: str | None = None,
@@ -107,7 +108,8 @@ class FinancialResourceCommandService:
                   "currency": currency, "name": name, "provider": provider,
                   "owner": owner, "owners": owners,
                   "liquidity_classification": liquidity_classification,
-                  "projection_authority": projection_authority}
+                  "projection_authority": projection_authority,
+                  "secured_property_id": secured_property_id}
         digest = _command_digest(values)
         self._authorise(principal, household_id, require_authority)
         if command_id:
@@ -123,22 +125,49 @@ class FinancialResourceCommandService:
             raise ResourceCommandDenied("name or provider is required")
         owner_ids = self._owner_ids(household_id, owner, owners)
         entity_kind, finance_type, tax_wrapper = _RESOURCE_TYPES[resource_type]
+        if resource_type == "mortgage":
+            if not secured_property_id:
+                raise ResourceCommandDenied("an active household property is required to secure a mortgage")
+            try:
+                property_resource = self.get_financial_resource(household_id, secured_property_id)
+            except ResourceNotFound as exc:
+                raise ResourceCommandDenied("secured property is unavailable") from exc
+            if (property_resource["resource_kind"] != "asset"
+                    or property_resource["resource_type"] != "property"
+                    or property_resource["status"] != "active"):
+                raise ResourceCommandDenied("secured property must be an active property asset")
+            if property_resource["currency"] != currency.upper():
+                raise ResourceCommandDenied("secured property currency must match the mortgage currency")
+            property_owners = {
+                link["subject_id"] for link in property_resource["ownership"]
+                if link["relation"] in {"owner", "co_owner"}
+            }
+            if not property_owners or not property_owners <= set(owner_ids):
+                raise ResourceCommandDenied("secured property owners must be mortgage borrowers")
+        elif secured_property_id is not None:
+            raise ResourceCommandDenied("secured property applies only to mortgage resources")
         if projection_authority is not None and finance_type != "pension":
             raise ResourceCommandDenied("projection authority applies only to pension resources")
         try:
             resource = (finance_entities.declare_account(
                 self.log, finance_type, currency.upper(), name=display_name,
                 tax_wrapper=tax_wrapper or "none", liquidity_classification=liquidity_classification,
-                projection_authority=projection_authority,
+                    projection_authority=projection_authority,
                 provider_name=(provider.strip() or None) if provider else None,
                 actor=actor) if entity_kind == "account" else finance_entities.declare_asset(
                     self.log, finance_type, currency.upper(), name=display_name,
-                    liquidity_classification=liquidity_classification, actor=actor))
-            relation = "owner" if len(owner_ids) == 1 else "co_owner"
-            share = None if relation == "owner" else 100.0 / len(owner_ids)
+                    liquidity_classification=liquidity_classification, actor=actor)
+                if entity_kind == "asset" else finance_entities.declare_obligation(
+                    self.log, finance_type, currency.upper(), actor=actor))
+            relation = ("owes" if entity_kind == "obligation" else
+                        "owner" if len(owner_ids) == 1 else "co_owner")
+            share = None if relation in {"owner", "owes"} else 100.0 / len(owner_ids)
             for owner_id in owner_ids:
                 finance_entities.link_ownership(self.log, entity_kind, resource.id, relation,
                                                 owner_id, share=share, actor=actor)
+            if entity_kind == "obligation":
+                finance_entities.link_ownership(
+                    self.log, "obligation", resource.id, "secures", secured_property_id, actor=actor)
             finance_asset_registry(self.log).register(
                 AssetRegistration(resource.id, "finance", household_id), actor=actor)
             bootstrap_finance_capture_targets(self.log, household_id, actor=actor)
@@ -160,6 +189,8 @@ class FinancialResourceCommandService:
                                   require_authority: bool = True) -> dict[str, Any]:
         self._authorise(principal, household_id, require_authority)
         resource = self.get_financial_resource(household_id, resource_id)
+        if resource["resource_kind"] == "obligation":
+            raise ResourceCommandDenied("obligation metadata cannot be updated as a financial resource")
         if not name.strip():
             raise ResourceCommandDenied("display name cannot be empty")
         digest = _command_digest({"operation": "update_financial_resource", "household_id": household_id,
@@ -238,8 +269,11 @@ class FinancialResourceCommandService:
             replay = self._audit_replay(command_id, digest, household_id)
             if replay is not None:
                 return replay
-        if self.get_financial_resource(household_id, resource_id)["resource_kind"] == "account":
+        resource = self.get_financial_resource(household_id, resource_id)
+        if resource["resource_kind"] == "account":
             finance_entities.close_account(self.log, resource_id, reason, actor=actor)
+        elif resource["resource_kind"] == "obligation":
+            finance_entities.close_obligation(self.log, resource_id, reason, actor=actor)
         else:
             finance_entities.close_asset(self.log, resource_id, reason, actor=actor)
         if command_id:
@@ -275,7 +309,8 @@ class FinancialResourceQuery:
         for subject_id, registration in registry.registrations.items():
             if registration.household_id != self.household_id or registration.domain != "finance":
                 continue
-            resource = projection.accounts.get(subject_id) or projection.assets.get(subject_id)
+            resource = (projection.accounts.get(subject_id) or projection.assets.get(subject_id)
+                        or projection.obligations.get(subject_id))
             if resource is not None:
                 resources.append(self._summary(resource))
         return sorted(resources, key=lambda resource: resource["id"])
@@ -288,7 +323,8 @@ class FinancialResourceQuery:
         if (registration is None or registration.household_id != self.household_id
                 or registration.domain != "finance"):
             raise ResourceNotFound(resource_id)
-        resource = projection.accounts.get(resource_id) or projection.assets.get(resource_id)
+        resource = (projection.accounts.get(resource_id) or projection.assets.get(resource_id)
+                    or projection.obligations.get(resource_id))
         if resource is None:
             raise ResourceNotFound(resource_id)
         result = self._summary(resource)
@@ -318,18 +354,20 @@ class FinancialResourceQuery:
         return finance_asset_registry(self.log), FinanceEntityProjection(self.log)
 
     @staticmethod
-    def _summary(resource: Account | Asset) -> dict[str, Any]:
+    def _summary(resource: Account | Asset | Obligation) -> dict[str, Any]:
         is_account = isinstance(resource, Account)
+        is_obligation = isinstance(resource, Obligation)
         return {
             "id": resource.id,
-            "resource_kind": "account" if is_account else "asset",
+            "resource_kind": "obligation" if is_obligation else "account" if is_account else "asset",
             "resource_type": ("isa" if is_account and resource.account_type == "brokerage"
                               and resource.tax_wrapper == "isa"
-                              else resource.account_type if is_account else resource.asset_category),
-            "name": resource.name,
+                              else resource.account_type if is_account else
+                              resource.liability_category if is_obligation else resource.asset_category),
+            "name": getattr(resource, "name", None),
             "currency": resource.currency,
             "status": resource.status,
-            "liquidity_classification": resource.liquidity_classification,
+            "liquidity_classification": getattr(resource, "liquidity_classification", None),
             # Pension-only: projection authority answers "does this
             # resource require provider projection evidence?", which is
             # meaningless for a current account and would otherwise add

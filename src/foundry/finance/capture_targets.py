@@ -32,6 +32,11 @@ class FinanceCaptureTargetResolver:
         asset = self.finance.assets.get(subject_id)
         if asset is not None:
             return CaptureTargetEntity(asset.id, asset.name, f"asset:{asset.asset_category}", asset.status)
+        obligation = self.finance.obligations.get(subject_id)
+        if obligation is not None:
+            return CaptureTargetEntity(
+                obligation.id, obligation.liability_category.title(),
+                f"obligation:{obligation.liability_category}", obligation.status)
         return None
 
     def supports(self, entity: CaptureTargetEntity, property_name: str) -> bool:
