@@ -121,6 +121,7 @@ def test_mcp_client_connects_and_cannot_cross_household(environment):
                     "explain_capture_availability", "record_account_balance",
                     "propose_financial_observation",
                     "create_financial_resource", "execute_create_financial_resource",
+                    "propose_mortgage_evidence", "execute_mortgage_evidence",
                     "update_financial_resource", "execute_update_financial_resource",
                     "close_financial_resource", "execute_close_financial_resource",
                     "get_mission_assumption_readiness", "propose_mission_assumption_set",

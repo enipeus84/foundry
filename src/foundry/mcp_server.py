@@ -9,7 +9,7 @@ from foundry.application.mcp_context import (
 )
 from foundry.application.mcp_writes import (
     McpBalanceCapture, McpClientSafeDenied, McpFinancialResourceWrites,
-    McpPensionProviderProjectionCapture, McpWriteDenied,
+    McpMortgageEvidenceCapture, McpPensionProviderProjectionCapture, McpWriteDenied,
 )
 from foundry.application.mission_assumptions import MissionAssumptionError, MissionAssumptionService
 from foundry.application.pension_mission import PensionMissionQueryError, PensionMissionQueryService
@@ -41,6 +41,9 @@ def create_mcp_server(query: FinancialResourceQuery | None = None,
         query.log, active_principal.email, active_principal.household_id,
         active_principal.client, active_principal.witness_model)
     pension_projection_capture = McpPensionProviderProjectionCapture(
+        query.log, active_principal.email, active_principal.household_id,
+        active_principal.client, active_principal.witness_model)
+    mortgage_evidence_capture = McpMortgageEvidenceCapture(
         query.log, active_principal.email, active_principal.household_id,
         active_principal.client, active_principal.witness_model)
     mission_assumptions = MissionAssumptionService(query.log)
@@ -193,7 +196,8 @@ def create_mcp_server(query: FinancialResourceQuery | None = None,
                                   name: str | None = None, provider: str | None = None,
                                   owners: list[str] | None = None,
                                   liquidity_classification: str | None = None,
-                                  projection_authority: str | None = None) -> dict:
+                                  projection_authority: str | None = None,
+                                  secured_property_id: str | None = None) -> dict:
         """Propose creation; this tool never mutates canonical financial state.
 
         `projection_authority` ("provider_managed" or "foundry_modelled")
@@ -202,13 +206,14 @@ def create_mcp_server(query: FinancialResourceQuery | None = None,
         receipt = resource_writes.propose_create(
             resource_type=resource_type, currency=currency, owner=owner, owners=owners,
             name=name, provider=provider, liquidity_classification=liquidity_classification,
-            projection_authority=projection_authority)
+            projection_authority=projection_authority, secured_property_id=secured_property_id)
         return {"operation": "create_financial_resource", "state": "proposed",
                 "proposal_id": receipt.proposal_id, "requires_execution": True,
                 "resource_type": resource_type, "currency": currency,
                 "owner": owner, "owners": owners, "name": name, "provider": provider,
                 "liquidity_classification": liquidity_classification,
-                "projection_authority": projection_authority}
+                "projection_authority": projection_authority,
+                "secured_property_id": secured_property_id}
 
     @server.tool()
     def execute_create_financial_resource(resource_type: str, currency: str, command_id: str,
@@ -216,7 +221,8 @@ def create_mcp_server(query: FinancialResourceQuery | None = None,
                                           name: str | None = None, provider: str | None = None,
                                           owners: list[str] | None = None,
                                           liquidity_classification: str | None = None,
-                                          projection_authority: str | None = None) -> dict:
+                                          projection_authority: str | None = None,
+                                          secured_property_id: str | None = None) -> dict:
         """Execute a previously proposed creation by its proposal receipt."""
         try:
             return resource_writes.create(resource_type=resource_type, currency=currency,
@@ -224,9 +230,40 @@ def create_mcp_server(query: FinancialResourceQuery | None = None,
                                           proposal_id=proposal_id,
                                           name=name, provider=provider,
                                           liquidity_classification=liquidity_classification,
-                                          projection_authority=projection_authority)
+                                          projection_authority=projection_authority,
+                                          secured_property_id=secured_property_id)
         except McpWriteDenied as exc:
             raise ValueError("financial resource creation refused") from exc
+
+    @server.tool()
+    def propose_mortgage_evidence(obligation_id: str, field: str, value: str | float,
+                                  effective_at: float, confidence: float, source: str,
+                                  lineage: str, unit_or_currency: str | None = None) -> dict:
+        """Propose one attributed canonical mortgage-evidence observation."""
+        try:
+            receipt = mortgage_evidence_capture.propose(
+                obligation_id=obligation_id, field=field, value=value, effective_at=effective_at,
+                confidence=confidence, source=source, lineage=lineage,
+                unit_or_currency=unit_or_currency)
+            return {"operation": "record_mortgage_evidence", "state": "proposed",
+                    "proposal_id": receipt.proposal_id, "requires_execution": True,
+                    "obligation_id": receipt.obligation_id, "field": receipt.field}
+        except McpWriteDenied as exc:
+            raise ValueError("mortgage evidence proposal refused") from exc
+
+    @server.tool()
+    def execute_mortgage_evidence(obligation_id: str, field: str, value: str | float,
+                                  effective_at: float, confidence: float, source: str,
+                                  lineage: str, proposal_id: str, command_id: str,
+                                  unit_or_currency: str | None = None) -> dict:
+        """Execute only the exact previously proposed mortgage evidence."""
+        try:
+            return mortgage_evidence_capture.execute(
+                proposal_id=proposal_id, command_id=command_id, obligation_id=obligation_id,
+                field=field, value=value, effective_at=effective_at, confidence=confidence,
+                source=source, lineage=lineage, unit_or_currency=unit_or_currency)
+        except McpWriteDenied as exc:
+            raise ValueError("mortgage evidence execution refused") from exc
 
     @server.tool()
     def declare_pension_projection_authority(resource_id: str, projection_authority: str,

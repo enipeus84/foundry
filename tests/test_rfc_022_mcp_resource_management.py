@@ -5,7 +5,8 @@ import json
 import pytest
 
 from foundry.application.mcp_writes import (
-    McpBalanceCapture, McpFinancialResourceWrites, McpPensionProviderProjectionCapture,
+    McpBalanceCapture, McpFinancialResourceWrites, McpMortgageEvidenceCapture,
+    McpPensionProviderProjectionCapture,
     McpWriteDenied,
 )
 from foundry.core.acquisition import ProposalInbox
@@ -13,9 +14,13 @@ from foundry.application.mcp_context import McpPrincipal
 from foundry.application.resources import FinancialResourceCommandService, FinancialResourceQuery
 from foundry.mcp_server import create_mcp_server
 from foundry.core.entities import EntityProjection, declare_party, join_household, update_party
+from foundry.core.metrics import MetricRegistry
 from foundry.core.principal_authority import grant_principal_household_authority
 from foundry.eventlog import EventLog
 from foundry.finance import entities as finance
+from foundry.finance.entities import FinanceEntityProjection
+from foundry.finance.mortgage_evidence import MortgageEvidenceProjection
+from foundry.finance.mortgage_assessment import MortgageFreedomAssessor
 
 
 PRINCIPAL = "mcp@example.com"
@@ -132,6 +137,54 @@ def test_arbitrary_owner_ids_are_rejected(tmp_path):
         writes.create(resource_type="isa", currency="GBP", owner="not-a-household-member",
                       command_id="cmd-owner", proposal_id=writes.propose_create(
                           resource_type="isa", currency="GBP", owner="not-a-household-member").proposal_id)
+
+
+def test_mortgage_creation_is_a_governed_canonical_obligation_with_evidence(tmp_path):
+    log, household, writes = _world(tmp_path)
+    property_proposal = writes.propose_create(
+        resource_type="property", currency="GBP", name="Home", owner="Chris")
+    home = writes.create(resource_type="property", currency="GBP", name="Home", owner="Chris",
+                         command_id="property-create", proposal_id=property_proposal.proposal_id)
+    mortgage_proposal = writes.propose_create(
+        resource_type="mortgage", currency="GBP", name="Home mortgage", owner="Chris",
+        secured_property_id=home["id"])
+    mortgage = writes.create(
+        resource_type="mortgage", currency="GBP", name="Home mortgage", owner="Chris",
+        secured_property_id=home["id"], command_id="mortgage-create",
+        proposal_id=mortgage_proposal.proposal_id)
+
+    assert mortgage["resource_kind"] == "obligation"
+    assert mortgage["resource_type"] == "mortgage"
+    assert mortgage["ownership"] == [
+        {"relation": "owes", "subject_id": EntityProjection(log).members_of(household.id)[0].id},
+        {"relation": "secures", "subject_id": home["id"]},
+    ]
+    assert mortgage["id"] in FinanceEntityProjection(log).obligations
+    assert not FinanceEntityProjection(log).accounts.get(mortgage["id"])
+    scoped, secured, _, reason = MortgageFreedomAssessor(
+        FinanceEntityProjection(log), EntityProjection(log), MetricRegistry(),
+        MortgageEvidenceProjection(log))._scoped_mortgage(household.id)
+    assert scoped.id == mortgage["id"] and secured.id == home["id"] and reason == ""
+
+    capture = McpMortgageEvidenceCapture(log, PRINCIPAL, household.id, "claude-code", "gpt-test")
+    values = dict(obligation_id=mortgage["id"], field="balance", value=242_540.09,
+                  effective_at=1_785_170_000.0, confidence=.95, source="lender statement",
+                  lineage="household supplied", unit_or_currency="GBP")
+    receipt = capture.propose(**values)
+    first = capture.execute(**values, proposal_id=receipt.proposal_id, command_id="mortgage-evidence")
+    second = capture.execute(**values, proposal_id=receipt.proposal_id, command_id="mortgage-evidence")
+    assert first == second
+    assert MortgageEvidenceProjection(log).latest(mortgage["id"], "balance", values["effective_at"]) \
+        .value == 242_540.09
+
+
+def test_mortgage_rejects_unavailable_or_cross_household_collateral(tmp_path):
+    log, _, writes = _world(tmp_path)
+    with pytest.raises(McpWriteDenied, match="secured property"):
+        writes.create(resource_type="mortgage", currency="GBP", name="Mortgage", owner="Chris",
+                      secured_property_id="missing", command_id="bad-property", proposal_id=writes.propose_create(
+                          resource_type="mortgage", currency="GBP", name="Mortgage", owner="Chris",
+                          secured_property_id="missing").proposal_id)
 
 
 def test_execute_without_proposal_fails(tmp_path):
