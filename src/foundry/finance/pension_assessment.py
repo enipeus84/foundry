@@ -414,13 +414,14 @@ class PensionIndependenceAssessor:
         if provider_forecast is not None:
             forecast = provider_forecast
             if provider_carries:
-                fee_defaulted = fee_defaulted or any(
+                fee_defaulted = any(
                     carry["fee_defaulted"] for carry in provider_carries)
                 limitations.append(
                     "Provider terminal values were carried forward to the household "
                     "planning point using Foundry's declared real-return and fee "
                     "assumptions, with no further contributions.")
             else:
+                fee_defaulted = False
                 limitations.append(
                     "Expected Outcome is dated provider projection evidence, not a Foundry forecast.")
             if fee_defaulted:
