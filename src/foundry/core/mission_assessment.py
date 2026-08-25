@@ -408,6 +408,7 @@ class MissionAssessment:
     as_of: float
     status: str
     calculation_version: str
+    completeness: str = "complete"
     current_value: MetricResult | None = None
     mission_complete: bool = False
     eta: float | None = None
@@ -434,6 +435,13 @@ class MissionAssessment:
     applicability: InstrumentApplicability = InstrumentApplicability()
 
     def __post_init__(self) -> None:
+        _require_text(self.completeness, "assessment completeness")
+        if self.completeness not in ("complete", "partial", "unavailable"):
+            raise ValueError("unsupported assessment completeness")
+        if self.status == "unavailable" \
+                and self.completeness != "unavailable":
+            raise ValueError(
+                "unavailable assessment status requires unavailable completeness")
         if (
             self.trajectory_state is not None
             and self.trajectory_state not in MISSION_TRAJECTORY
@@ -450,6 +458,7 @@ class MissionAssessment:
         return cls(
             mission_id=request.mission_id, policy_id=request.policy_id,
             scope=request.scope, as_of=request.as_of, status="unavailable",
+            completeness="unavailable",
             calculation_version=calculation_version,
             confidence=MissionConfidence("Insufficient", reason),
             limitations=(reason,),
@@ -558,6 +567,7 @@ class MissionAssessmentRegistry:
         ):
             raise ValueError("provider result does not match its request envelope")
         _require_text(result.status, "assessment status")
+        _require_text(result.completeness, "assessment completeness")
         _require_text(
             result.calculation_version,
             "assessment calculation version",

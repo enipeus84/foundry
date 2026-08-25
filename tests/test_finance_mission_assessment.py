@@ -566,7 +566,35 @@ def test_stale_and_absent_current_evidence_are_not_treated_as_supported(
         Subject("party", household.household_id), as_of))
 
     assert result.status == assessment_status
+    assert result.completeness == (
+        "unavailable" if evidence_status == "unavailable" else "complete"
+    )
     assert result.confidence.state == confidence
+
+
+def test_financial_independence_never_emits_partial(tmp_path):
+    log = EventLog(tmp_path / "events.jsonl")
+    household = build(log, as_of=NOW)
+    core, finance, registry = _registry(log)
+    mission = _fi_mission(core)
+    as_of = max(event["ts"] for event in log.events())
+
+    complete = FinancialIndependenceAssessor(
+        finance, core, registry).assess(MissionAssessmentRequest(
+            mission.id, mission.assessment_policy_id,
+            Subject("party", household.household_id), as_of))
+    unavailable = FinancialIndependenceAssessor(
+        finance, core,
+        _CurrentEvidenceOverride(registry, as_of, "unavailable"),
+    ).assess(MissionAssessmentRequest(
+        mission.id, mission.assessment_policy_id,
+        Subject("party", household.household_id), as_of))
+
+    assert complete.completeness == "complete"
+    assert unavailable.completeness == "unavailable"
+    assert "partial" not in {
+        complete.completeness, unavailable.completeness,
+    }
 
 
 @pytest.mark.parametrize("pace,buffer,expected", [

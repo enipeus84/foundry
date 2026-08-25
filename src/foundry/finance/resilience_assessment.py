@@ -271,6 +271,16 @@ class FinancialResilienceAssessor:
             ))
             if self._metric_value(
                     result, metric_id, request, "GBP") is None:
+                if metric_id == "finance.deployable_surplus":
+                    return self._partial_assessment(
+                        request=request,
+                        assumption_set=assumption_set,
+                        current=current,
+                        outflow=metric_results["finance.essential_outflow_monthly"],
+                        target=metric_results["finance.emergency_reserve_target"],
+                        gap=metric_results["finance.emergency_reserve_gap"],
+                        reason=f"{label} is unavailable",
+                    )
                 return self._unavailable(
                     request, f"{label} is unavailable")
             metric_results[metric_id] = replace(
@@ -577,6 +587,85 @@ class FinancialResilienceAssessor:
             MissionAssessment.unavailable(
                 request, reason, CALCULATION_VERSION),
             applicability=APPLICABILITY,
+        )
+
+    def _partial_assessment(
+        self,
+        *,
+        request: MissionAssessmentRequest,
+        assumption_set,
+        current: MetricResult,
+        outflow: MetricResult,
+        target: MetricResult,
+        gap: MetricResult,
+        reason: str,
+    ) -> MissionAssessment:
+        runway_value = float(current.value)
+        milestones = self._milestones(runway_value)
+        current_milestone = next(
+            milestone for milestone in milestones
+            if milestone.is_current)
+        confidence = MissionConfidence("Provisional", reason)
+        return MissionAssessment(
+            mission_id=request.mission_id,
+            policy_id=request.policy_id,
+            scope=request.scope,
+            as_of=request.as_of,
+            status="none",
+            completeness="partial",
+            calculation_version=CALCULATION_VERSION,
+            current_value=current,
+            mission_complete=runway_value >= self.policy.destination_months,
+            eta=None,
+            trajectory_state=None,
+            trajectory_tone="none",
+            confidence=confidence,
+            current_milestone=current_milestone,
+            milestones=milestones,
+            mission_margin=None,
+            delta_v=None,
+            trajectory=(),
+            forecast=(),
+            telemetry=(
+                TelemetryItem(
+                    current, "RESERVE COVERAGE", "months",
+                    f"VISIBLE RUNWAY · {runway_value:.1f} MONTHS",
+                    display_region="essential",
+                ),
+                TelemetryItem(
+                    outflow, "ESSENTIAL OUTFLOW", "currency",
+                    "AVERAGE MONTHLY BASIS",
+                    display_group="RESERVE REQUIREMENTS",
+                ),
+                TelemetryItem(
+                    target, "EMERGENCY RESERVE TARGET", "currency",
+                    "FULL 18-MONTH DESTINATION",
+                    display_group="RESERVE REQUIREMENTS",
+                ),
+                TelemetryItem(
+                    gap, "EMERGENCY RESERVE GAP", "currency",
+                    "SIGNED SHORTFALL",
+                    display_region="essential",
+                ),
+            ),
+            recommendations=(),
+            input_references=tuple(sorted({
+                *current.input_references,
+                *outflow.input_references,
+                *target.input_references,
+                *gap.input_references,
+            })),
+            evidence_references=tuple(sorted({
+                *current.evidence_references,
+                *outflow.evidence_references,
+                *target.evidence_references,
+                *gap.evidence_references,
+            })),
+            assumption_references=tuple(assumption_set.provenance),
+            limitations=(reason,),
+            confidence_basis=reason,
+            forecast_resolution="month",
+            applicability=replace(APPLICABILITY, margin="unavailable"),
         )
 
     @staticmethod

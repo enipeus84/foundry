@@ -742,6 +742,51 @@ def test_fail_closed_assessment_declares_its_empty_instruments_unavailable():
     assert result.forecast == ()
 
 
+def test_invalid_completeness_is_rejected():
+    with pytest.raises(ValueError, match="unsupported assessment completeness"):
+        MissionAssessment(
+            mission_id="mission-1",
+            policy_id="alpha.mission.v1",
+            scope=Subject("party", "household-1"),
+            as_of=1.0,
+            status="green",
+            calculation_version="test-v1",
+            completeness="halfway",
+        )
+
+
+def test_unavailable_status_cannot_claim_complete_completeness():
+    with pytest.raises(ValueError, match="requires unavailable completeness"):
+        MissionAssessment(
+            mission_id="mission-1",
+            policy_id="alpha.mission.v1",
+            scope=Subject("party", "household-1"),
+            as_of=1.0,
+            status="unavailable",
+            calculation_version="",
+            completeness="complete",
+        )
+
+
+def test_unavailable_constructor_sets_unavailable_completeness():
+    result = MissionAssessment.unavailable(_request(), "no provider")
+
+    assert result.completeness == "unavailable"
+
+
+def test_default_successful_assessment_is_complete():
+    result = MissionAssessment(
+        mission_id="mission-1",
+        policy_id="alpha.mission.v1",
+        scope=Subject("party", "household-1"),
+        as_of=1.0,
+        status="green",
+        calculation_version="test-v1",
+    )
+
+    assert result.completeness == "complete"
+
+
 def test_applicability_metadata_does_not_mutate_assessment_state():
     from dataclasses import replace
 

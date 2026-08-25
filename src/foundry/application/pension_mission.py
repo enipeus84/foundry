@@ -153,6 +153,23 @@ class PensionMissionQueryService:
             if item.result.metric_id == "finance.retirement_wealth_required"
         ), None)
 
+    @staticmethod
+    def _assessment_blockers_and_limitations(
+        assessment: MissionAssessment,
+    ) -> tuple[list[str], list[str]]:
+        if assessment.completeness == "complete":
+            return [], list(assessment.limitations)
+        if assessment.completeness == "unavailable":
+            return list(assessment.limitations), []
+        blocker = assessment.confidence_basis or next(
+            iter(assessment.limitations), "")
+        blocking = [blocker] if blocker else []
+        non_blocking = [
+            note for note in assessment.limitations
+            if note != blocker
+        ]
+        return blocking, non_blocking
+
     def evaluate(self, mission_id: str | None = None,
                  as_of: str | None = None) -> dict[str, Any]:
         assessed_at = _timestamp(as_of)
@@ -170,9 +187,13 @@ class PensionMissionQueryService:
         if current is not None and current.value is not None \
                 and target is not None and target.value is not None:
             gap = float(target.value) - float(current.value)
-        blockers = (list(assessment.limitations)
-                    if assessment.status == "unavailable"
-                    else list(readiness.blockers))
+        blocking_limits, non_blocking_limits = \
+            self._assessment_blockers_and_limitations(assessment)
+        blockers = (
+            blocking_limits
+            if assessment.completeness != "complete"
+            else list(readiness.blockers)
+        )
         blockers = list(dict.fromkeys(blockers))
         return {
             "mission": {
@@ -184,7 +205,8 @@ class PensionMissionQueryService:
                 "authorising_household": self.household_id,
                 "target_metric": mission.target_metric,
             },
-            "evaluable": assessment.status != "unavailable",
+            "evaluable": assessment.completeness == "complete",
+            "completeness": assessment.completeness,
             "status": assessment.trajectory_state or assessment.status,
             "assessment_status": assessment.status,
             "mission_complete": assessment.mission_complete,
@@ -216,7 +238,11 @@ class PensionMissionQueryService:
                 "assumption_references": list(assessment.assumption_references),
             },
             "blockers": blockers,
-            "limitations": list(assessment.limitations) if assessment.status != "unavailable" else [],
+            "limitations": (
+                non_blocking_limits
+                if assessment.completeness != "unavailable"
+                else []
+            ),
         }
 
     def inspect(self, mission_id: str | None = None,
@@ -329,6 +355,8 @@ class PensionMissionQueryService:
                     provider_records.append(item)
 
         compatibility = [item["compatibility_result"] for item in provider_records]
+        assessment_blockers, _ = self._assessment_blockers_and_limitations(
+            assessment)
         return {
             "mission": {
                 "id": mission.id,
@@ -337,8 +365,13 @@ class PensionMissionQueryService:
             },
             "assessment": {
                 "status": assessment.status,
-                "blocker": next(iter(assessment.limitations), None)
-                if assessment.status == "unavailable" else None,
+                "completeness": assessment.completeness,
+                "blocker": (
+                    assessment_blockers[0]
+                    if assessment.completeness != "complete"
+                    and assessment_blockers
+                    else None
+                ),
             },
             "planning_point": {
                 "selection_rule": (

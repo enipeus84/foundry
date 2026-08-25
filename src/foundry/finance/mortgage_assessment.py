@@ -454,19 +454,6 @@ class MortgageFreedomAssessor:
             *scope_input_refs, *mission.provenance, *mission.history,
         }))
         assumption_refs = tuple(assumption_set.provenance)
-
-        try:
-            projected = self.projection.project(
-                balance, request.as_of, inputs,
-                current_rate=current_rate, monthly_payment=payment,
-                fixed_rate_expiry=fixed_expiry)
-        except ValueError as exc:
-            return self._unavailable(request, str(exc))
-
-        complete = balance == 0.0
-        status, trajectory_state, tone = self._schedule_assessment(
-            complete, projected.payoff_low, projected.payoff_base,
-            projected.payoff_high, original_contractual_eta)
         balance_status = (
             "stale" if self._is_stale(
                 request.as_of, records["balance"],
@@ -513,6 +500,58 @@ class MortgageFreedomAssessor:
             if record.field == "valuation_basis")
         valuation_basis_record = self.evidence.latest(
             obligation.id, "valuation_basis", request.as_of)
+
+        try:
+            projected = self.projection.project(
+                balance, request.as_of, inputs,
+                current_rate=current_rate, monthly_payment=payment,
+                fixed_rate_expiry=fixed_expiry)
+        except ValueError as exc:
+            return self._partial_projection_failure(
+                request=request,
+                mission=mission,
+                assumption_refs=assumption_refs,
+                mortgage_input_refs=mortgage_input_refs,
+                mortgage_evidence_refs=mortgage_evidence_refs,
+                valuation_evidence_refs=valuation_evidence_refs,
+                acquisition_history=acquisition_history,
+                valuation_basis_records=valuation_basis_records,
+                current=current,
+                balance=balance,
+                original=original,
+                valuation=valuation,
+                current_equity=current_equity,
+                principal_repaid=principal_repaid,
+                fixed_months=fixed_months,
+                purchase_price_record=purchase_price_record,
+                purchase_date_record=purchase_date_record,
+                initial_deposit_record=initial_deposit_record,
+                acquisition_costs_record=acquisition_costs_record,
+                valuation_basis_record=valuation_basis_record,
+                valuation_status=(
+                    "stale" if request.as_of - valuation_candidate.effective_at > (
+                        inputs.valuation_stale_after_days * DAY)
+                    else "available"
+                ),
+                balance_status=balance_status,
+                ltv=ltv,
+                text=text,
+                current_rate=current_rate,
+                payment=payment,
+                original_contractual_eta=original_contractual_eta,
+                confidence=self._confidence(
+                    request.as_of, records, inputs, overpayments,
+                    valuation_effective_at=valuation_candidate.effective_at,
+                    valuation_record=valuation_candidate.legacy_record),
+                valuation_effective_at=valuation_candidate.effective_at,
+                valuation_source=valuation_candidate.source,
+                reason=str(exc),
+            )
+
+        complete = balance == 0.0
+        status, trajectory_state, tone = self._schedule_assessment(
+            complete, projected.payoff_low, projected.payoff_base,
+            projected.payoff_high, original_contractual_eta)
 
         purchase_price = (
             self._numeric(purchase_price_record, "purchase_price")
@@ -1529,4 +1568,245 @@ class MortgageFreedomAssessor:
             assumption_references=assumption_refs,
             generated_at=request.as_of,
             limitations=(reason,),
+        )
+
+    def _partial_projection_failure(
+        self,
+        *,
+        request: MissionAssessmentRequest,
+        mission,
+        assumption_refs: tuple[str, ...],
+        mortgage_input_refs: tuple[str, ...],
+        mortgage_evidence_refs: tuple[str, ...],
+        valuation_evidence_refs: tuple[str, ...],
+        acquisition_history,
+        valuation_basis_records,
+        current: MetricResult,
+        balance: float,
+        original: float,
+        valuation: float,
+        current_equity: float,
+        principal_repaid: float,
+        fixed_months: float,
+        purchase_price_record,
+        purchase_date_record,
+        initial_deposit_record,
+        acquisition_costs_record,
+        valuation_basis_record,
+        valuation_status: str,
+        balance_status: str,
+        ltv: float,
+        text: dict[str, str],
+        current_rate: float,
+        payment: float,
+        original_contractual_eta: float,
+        confidence: MissionConfidence,
+        valuation_effective_at: float,
+        valuation_source: str,
+        reason: str,
+    ) -> MissionAssessment:
+        del valuation_basis_records
+        del purchase_price_record, purchase_date_record
+        del initial_deposit_record, acquisition_costs_record
+        projected = MortgageProjection(
+            points=(ForecastPoint(request.as_of, balance, balance, balance),),
+            payoff_low=None,
+            payoff_base=None,
+            payoff_high=None,
+            interest_low=0.0,
+            interest_base=0.0,
+            interest_high=0.0,
+        )
+        milestones = tuple(
+            replace(item, estimated_at=None)
+            for item in self._milestones(balance, original, projected)
+        )
+        current_milestone = next(
+            item for item in milestones if item.is_current)
+        valuation_month = _month_year(valuation_effective_at)
+        if valuation_basis_record is not None and valuation_basis_record.value is not None:
+            valuation_basis = str(
+                valuation_basis_record.value).replace("_", " ").capitalize()
+            valuation_reference = (
+                f"Estimated · {valuation_basis} · "
+                f"{valuation_source} · {valuation_month}"
+            )
+        else:
+            valuation_reference = (
+                "Estimated · Valuation basis: Not recorded; not inferred · "
+                f"{valuation_source} · {valuation_month}"
+            )
+        current_position_status = (
+            "stale"
+            if balance_status == "stale" or valuation_status == "stale"
+            else "available")
+        telemetry = (
+            TelemetryItem(
+                current,
+                "MORTGAGE BALANCE",
+                "currency",
+                f"OBSERVED · {_month_year(request.as_of).upper()}",
+                display_region="essential",
+            ),
+            TelemetryItem(
+                self._metric(
+                    "finance.property_current_equity",
+                    current_equity,
+                    self.policy.unit_or_currency,
+                    request,
+                    current_position_status,
+                    mortgage_input_refs,
+                    tuple(sorted({
+                        *valuation_evidence_refs,
+                        *current.evidence_references,
+                    })),
+                    assumption_refs,
+                ),
+                "CURRENT POSITION · CURRENT EQUITY",
+                "currency",
+                "PROPERTY VALUE - MORTGAGE BALANCE",
+                display_region="essential",
+            ),
+            TelemetryItem(
+                self._metric(
+                    "finance.property_valuation",
+                    valuation,
+                    self.policy.unit_or_currency,
+                    request,
+                    valuation_status,
+                    mortgage_input_refs,
+                    valuation_evidence_refs,
+                    assumption_refs,
+                ),
+                "CURRENT POSITION · PROPERTY VALUATION",
+                "currency",
+                valuation_reference,
+                display_group="CURRENT POSITION",
+            ),
+            TelemetryItem(
+                self._metric(
+                    "finance.mortgage_ltv",
+                    ltv,
+                    None,
+                    request,
+                    valuation_status,
+                    mortgage_input_refs,
+                    valuation_evidence_refs,
+                    assumption_refs,
+                ),
+                "CURRENT POSITION · CURRENT LTV",
+                "percent",
+                valuation_reference,
+                display_group="CURRENT POSITION",
+            ),
+            TelemetryItem(
+                self._metric(
+                    "finance.mortgage_interest_rate",
+                    current_rate,
+                    None,
+                    request,
+                    "available",
+                    mortgage_input_refs,
+                    mortgage_evidence_refs,
+                    assumption_refs,
+                ),
+                "CURRENT POSITION · INTEREST RATE",
+                "percent",
+                display_group="CURRENT POSITION",
+            ),
+            TelemetryItem(
+                self._metric(
+                    "finance.mortgage_payment",
+                    payment,
+                    self.policy.unit_or_currency,
+                    request,
+                    "available",
+                    mortgage_input_refs,
+                    mortgage_evidence_refs,
+                    assumption_refs,
+                ),
+                "CURRENT POSITION · MONTHLY PAYMENT",
+                "currency",
+                display_group="CURRENT POSITION",
+            ),
+            TelemetryItem(
+                self._metric(
+                    "finance.mortgage_fixed_protection",
+                    fixed_months,
+                    "months",
+                    request,
+                    "available",
+                    mortgage_input_refs,
+                    mortgage_evidence_refs,
+                    assumption_refs,
+                ),
+                "CURRENT POSITION · FIXED-RATE PROTECTION",
+                "months",
+                display_group="CURRENT POSITION",
+            ),
+            TelemetryItem(
+                self._metric(
+                    "finance.mortgage_principal_repaid",
+                    principal_repaid,
+                    self.policy.unit_or_currency,
+                    request,
+                    balance_status,
+                    mortgage_input_refs,
+                    tuple(sorted({
+                        *current.evidence_references,
+                        *tuple(record.event_id for record in
+                               acquisition_history["original_advance"]),
+                    })),
+                    assumption_refs,
+                ),
+                "EQUITY COMPOSITION · PRINCIPAL REPAID",
+                "currency",
+                "INITIAL MORTGAGE - CURRENT BALANCE",
+                display_group="EQUITY AND VALUATION ANALYSIS",
+            ),
+        )
+        return MissionAssessment(
+            mission_id=mission.id,
+            policy_id=request.policy_id,
+            scope=request.scope,
+            as_of=request.as_of,
+            status="none",
+            completeness="partial",
+            calculation_version=CALCULATION_VERSION,
+            current_value=current,
+            mission_complete=balance == 0.0,
+            eta=None,
+            applicability=InstrumentApplicability(
+                eta="unavailable",
+                delta_v="unavailable",
+                trajectory="unavailable",
+                forecast="unavailable",
+                margin="unavailable",
+            ),
+            trajectory_state=None,
+            trajectory_tone="none",
+            confidence=MissionConfidence("Provisional", reason),
+            current_milestone=current_milestone,
+            milestones=milestones,
+            mission_margin=None,
+            delta_v=None,
+            trajectory=(),
+            forecast=(),
+            telemetry=telemetry,
+            recommendations=(),
+            input_references=mortgage_input_refs,
+            evidence_references=tuple(sorted({
+                *mortgage_evidence_refs,
+                *valuation_evidence_refs,
+            })),
+            assumption_references=assumption_refs,
+            limitations=(
+                f"Original contractual mortgage-free date: "
+                f"{_month_year(original_contractual_eta)}.",
+                f"Mortgage contract: capital repayment, fixed "
+                f"{current_rate * 100:.2f}% with a £{payment:,.2f} monthly payment.",
+                reason,
+            ),
+            confidence_basis=reason,
+            forecast_resolution="month",
         )

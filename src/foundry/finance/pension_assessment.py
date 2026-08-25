@@ -398,7 +398,17 @@ class PensionIndependenceAssessor:
             self._provider_evaluation_ids(accounts, member_ids),
             request, inputs, planning_at)
         if provider_error is not None:
-            return self._unavailable(request, provider_error)
+            return self._partial_assessment(
+                request=request,
+                assumption_set=assumption_set,
+                results=results,
+                current=current,
+                required_wealth=required_wealth,
+                required_income=required_income,
+                members=members,
+                limitations=limitations,
+                reason=provider_error,
+            )
         if provider_forecast is None and not accounts:
             return self._unavailable(request, "no projectable DC pension account is available")
         if provider_forecast is not None:
@@ -544,6 +554,91 @@ class PensionIndependenceAssessor:
                 delta_v=delta_applicability,
                 trajectory="unavailable",
                 forecast="applicable",
+            ),
+        )
+
+    def _partial_assessment(
+        self,
+        *,
+        request,
+        assumption_set,
+        results,
+        current,
+        required_wealth,
+        required_income,
+        members,
+        limitations,
+        reason,
+    ):
+        mission_complete = float(current.value) >= required_wealth
+        milestones = tuple(
+            replace(item, estimated_at=None)
+            for item in self._milestones(
+                float(current.value),
+                required_wealth,
+                (ForecastPoint(request.as_of, float(current.value),
+                               float(current.value), float(current.value)),),
+            )
+        )
+        current_milestone = next(
+            item for item in milestones if item.is_current)
+        telemetry = self._partial_telemetry(
+            results=results,
+            current=current,
+            required_wealth=required_wealth,
+            required_income=required_income,
+            assumption_set=assumption_set,
+            request=request,
+            members=members,
+        )
+        input_refs = tuple(sorted({
+            reference
+            for result in results.values()
+            for reference in result.input_references
+        }))
+        evidence_refs = tuple(sorted({
+            reference
+            for result in results.values()
+            for reference in result.evidence_references
+        }))
+        limitation_values = tuple(dict.fromkeys((
+            *limitations,
+            reason,
+        )))
+        confidence = MissionConfidence("Provisional", reason)
+        return MissionAssessment(
+            mission_id=request.mission_id,
+            policy_id=request.policy_id,
+            scope=request.scope,
+            as_of=request.as_of,
+            status="none",
+            completeness="partial",
+            calculation_version=CALCULATION_VERSION,
+            current_value=current,
+            mission_complete=mission_complete,
+            eta=None,
+            trajectory_state=None,
+            trajectory_tone="none",
+            confidence=confidence,
+            current_milestone=current_milestone,
+            milestones=milestones,
+            mission_margin=None,
+            delta_v=None,
+            trajectory=(),
+            forecast=(),
+            telemetry=telemetry,
+            recommendations=(),
+            input_references=input_refs,
+            evidence_references=evidence_refs,
+            assumption_references=tuple(assumption_set.provenance),
+            limitations=limitation_values,
+            confidence_basis=reason,
+            applicability=InstrumentApplicability(
+                eta="unavailable",
+                delta_v="unavailable",
+                trajectory="unavailable",
+                forecast="unavailable",
+                margin="unavailable",
             ),
         )
 
@@ -1361,6 +1456,108 @@ class PensionIndependenceAssessor:
             for item in items
         )
 
+    def _partial_telemetry(
+        self,
+        *,
+        results,
+        current,
+        required_wealth,
+        required_income,
+        assumption_set,
+        request,
+        members,
+    ):
+        derived = lambda metric_id, value, unit, label, format_kind, qualifier, \
+            region="drilldown", group="": self._derived_item(
+                metric_id,
+                value,
+                unit,
+                request,
+                label,
+                format_kind,
+                qualifier,
+                assumption_set,
+                region,
+                group,
+            )
+        items = [
+            TelemetryItem(
+                current,
+                "CURRENT PENSION",
+                "currency",
+                "OBSERVED POT TODAY",
+                display_region="essential",
+            ),
+            TelemetryItem(
+                replace(
+                    results["finance.retirement_wealth_required"],
+                    generated_at=request.as_of),
+                "REQUIRED RETIREMENT WEALTH",
+                "currency",
+                "W* · DECLARED INCOME NEED AND WITHDRAWAL BASIS",
+                display_region="essential",
+            ),
+            derived(
+                "finance.pension_funding_ratio",
+                float(current.value) / required_wealth
+                if required_wealth > 0 else 1.0,
+                None,
+                "FUNDING RATIO",
+                "percent",
+                "CURRENT PENSION ÷ REQUIRED RETIREMENT WEALTH",
+                "essential",
+            ),
+            TelemetryItem(
+                replace(
+                    results["finance.retirement_income_required"],
+                    generated_at=request.as_of),
+                "REQUIRED RETIREMENT INCOME · PER YEAR",
+                "currency",
+                "DECLARED NEED",
+                display_group="RETIREMENT REQUIREMENTS",
+            ),
+            TelemetryItem(
+                replace(
+                    results["finance.pension_contributions_tax_year"],
+                    generated_at=request.as_of,
+                ),
+                "THIS TAX YEAR'S CONTRIBUTIONS",
+                "currency",
+                "DECLARED DATED PAYMENTS",
+                display_group="CONTRIBUTIONS",
+            ),
+            *self._contribution_items(
+                members, request, assumption_set,
+                replace(
+                    results["finance.pension_contributions_tax_year"],
+                    generated_at=request.as_of,
+                ),
+            ),
+        ]
+        if results["finance.state_pension_income_annual"].value is not None:
+            items.append(TelemetryItem(
+                replace(
+                    results["finance.state_pension_income_annual"],
+                    generated_at=request.as_of,
+                ),
+                "STATE PENSION · PER YEAR",
+                "currency",
+                "DECLARED COMPONENT",
+                display_group="RETIREMENT INCOME COMPOSITION",
+            ))
+        if results["finance.defined_benefit_income_annual"].value is not None:
+            items.append(TelemetryItem(
+                replace(
+                    results["finance.defined_benefit_income_annual"],
+                    generated_at=request.as_of,
+                ),
+                "DEFINED BENEFIT INCOME · PER YEAR",
+                "currency",
+                "DECLARED COMPONENT",
+                display_group="RETIREMENT INCOME COMPOSITION",
+            ))
+        return tuple(items)
+
     def _provider_projection_items(self, members, request, assumption_set):
         """Render provider illustrations without making them assessment inputs."""
         if self.provider_projections is None:
@@ -1635,6 +1832,7 @@ class PensionIndependenceAssessor:
             scope=request.scope,
             as_of=request.as_of,
             status="unavailable",
+            completeness="unavailable",
             calculation_version=CALCULATION_VERSION,
             confidence=MissionConfidence("Insufficient", reason),
             limitations=(reason, *extra),

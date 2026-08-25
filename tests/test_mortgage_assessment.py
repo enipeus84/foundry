@@ -1217,3 +1217,35 @@ def test_registry_isolates_malformed_mortgage_provider(tmp_path):
 
     assert mortgage.status == "unavailable"
     assert other.limitations == ("other",)
+
+
+def test_projection_failure_after_current_state_yields_partial_mortgage(
+        tmp_path, monkeypatch):
+    _, _, _, _, assessor, request = _fixture(tmp_path / "events.jsonl")
+
+    def fail_projection(*args, **kwargs):
+        raise ValueError("projection failed after current state")
+
+    monkeypatch.setattr(assessor.projection, "project", fail_projection)
+    result = assessor.assess(request)
+    telemetry = _telemetry_by_id(result)
+
+    assert result.completeness == "partial"
+    assert result.status == "none"
+    assert result.current_value.value is not None
+    assert telemetry["finance.property_current_equity"].result.value is not None
+    assert result.forecast == ()
+    assert result.eta is None
+    assert result.mission_margin is None
+    assert result.delta_v is None
+
+
+def test_missing_core_mortgage_evidence_remains_unavailable_not_partial(
+        tmp_path):
+    _, _, _, _, assessor, request = _fixture(
+        tmp_path / "events.jsonl", omit={"balance"})
+
+    result = assessor.assess(request)
+
+    assert result.completeness == "unavailable"
+    assert result.status == "unavailable"
