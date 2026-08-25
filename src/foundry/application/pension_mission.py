@@ -324,6 +324,7 @@ class PensionMissionQueryService:
                         "record_planning_at": None,
                         "delta_seconds": None,
                         "absolute_delta_seconds": None,
+                        "carry_months": None,
                         "compatibility_result": None,
                         "record_stale": None,
                         "record_freshness_result": None,
@@ -346,8 +347,12 @@ class PensionMissionQueryService:
                             "record_planning_at": _iso(record_planning_at),
                             "delta_seconds": delta,
                             "absolute_delta_seconds": abs(delta) if delta is not None else None,
+                            "carry_months": (
+                                assessor._months_between(record_planning_at, planning_at)
+                                if record_planning_at is not None
+                                and record_planning_at < planning_at - DAY else 0),
                             "compatibility_result": (
-                                abs(delta) <= DAY if delta is not None else False),
+                                delta <= DAY if delta is not None else False),
                             "record_stale": stale,
                             "record_freshness_result": not stale,
                             "resolution_error": record_error,

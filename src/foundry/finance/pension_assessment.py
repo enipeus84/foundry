@@ -394,7 +394,7 @@ class PensionIndependenceAssessor:
         # pension Foundry cannot value must still demand its provider
         # illustration; otherwise it would vanish from the assessment and
         # an Expected Outcome would be stated as though it did not exist.
-        provider_forecast, provider_error = self._provider_forecast(
+        provider_forecast, provider_error, provider_carries = self._provider_forecast(
             self._provider_evaluation_ids(accounts, member_ids),
             request, inputs, planning_at)
         if provider_error is not None:
@@ -412,12 +412,21 @@ class PensionIndependenceAssessor:
         if provider_forecast is None and not accounts:
             return self._unavailable(request, "no projectable DC pension account is available")
         if provider_forecast is not None:
-            # The provider issued these numbers.  Foundry only supplies the
-            # Mission comparison; it must never reproduce their forecast.
             forecast = provider_forecast
-            fee_defaulted = False
-            limitations.append(
-                "Expected Outcome is dated provider projection evidence, not a Foundry forecast.")
+            if provider_carries:
+                fee_defaulted = fee_defaulted or any(
+                    carry["fee_defaulted"] for carry in provider_carries)
+                limitations.append(
+                    "Provider terminal values were carried forward to the household "
+                    "planning point using Foundry's declared real-return and fee "
+                    "assumptions, with no further contributions.")
+            else:
+                limitations.append(
+                    "Expected Outcome is dated provider projection evidence, not a Foundry forecast.")
+            if fee_defaulted:
+                limitations.append(
+                    "One or more schemes have no fee declaration; the declared "
+                    "assumed annual fee is used.")
             provider_evidence_refs = tuple(
                 self.provider_projections.latest(account_id, request.as_of).event_id
                 for account_id in self._provider_evaluation_ids(accounts, member_ids))
@@ -800,7 +809,7 @@ class PensionIndependenceAssessor:
         return account is not None and account.projection_authority == "provider_managed"
 
     def _provider_forecast(self, account_ids, request, inputs, planning_at):
-        """Return the provider terminal scenarios, or a closed failure.
+        """Return provider scenarios carried to the Mission point, or a closed failure.
 
         A pension is provider-managed because it has been *declared*
         so, not because an illustration happens to exist.  Observed
@@ -812,31 +821,66 @@ class PensionIndependenceAssessor:
         evaluation = self._provider_projection_evaluation(account_ids, request.as_of)
         if self.provider_projections is None:
             if any(evaluation.required):
-                return None, "Expected outcome unavailable — current provider projection required for every included pension"
-            return None, None
+                return None, "Expected outcome unavailable — current provider projection required for every included pension", ()
+            return None, None, ()
         if not evaluation.provider_mode_active:
-            return None, None
+            return None, None, ()
         records = evaluation.records
         if any(record is None for record in records):
-            return None, "Expected outcome unavailable — current provider projection required for every included pension"
+            return None, "Expected outcome unavailable — current provider projection required for every included pension", ()
         assert all(record is not None for record in records)
         records = tuple(records)
         if any(request.as_of - record.observed_at > inputs.valuation_stale_after_days * DAY
                for record in records):
-            return None, "Expected outcome unavailable — current provider projection required"
+            return None, "Expected outcome unavailable — current provider projection required", ()
+        carried = []
+        carries = []
         for account_id, record in zip(account_ids, records):
             if record.currency != "GBP":
-                return None, "Expected outcome unavailable — provider projection currency is not supported"
+                return None, "Expected outcome unavailable — provider projection currency is not supported", ()
             record_planning_at, planning_error = self._provider_record_planning_at(
                 account_id, record, request.as_of)
             if planning_error is not None:
-                return None, planning_error
+                return None, planning_error, ()
             assert record_planning_at is not None
-            if abs(record_planning_at - planning_at) > DAY:
-                return None, "Expected outcome unavailable — provider projection planning point is incompatible with the Mission planning point"
-        return (ForecastPoint(planning_at, sum(record.fund_low for record in records),
-                              sum(record.fund_medium for record in records),
-                              sum(record.fund_high for record in records)),), None
+            if record_planning_at > planning_at + DAY:
+                return None, ("Expected outcome unavailable — provider projection is dated after "
+                              "the Mission planning point; Foundry cannot safely back-project it"), ()
+            values, carry = self._carry_provider_terminal_values(
+                account_id, record, record_planning_at, planning_at, inputs,
+                as_of=request.as_of)
+            carried.append(values)
+            if carry is not None:
+                carries.append(carry)
+        return (ForecastPoint(planning_at, *(sum(values[path] for values in carried)
+                                             for path in range(3))),), None, tuple(carries)
+
+    def _carry_provider_terminal_values(self, account_id, record, record_planning_at,
+                                        mission_planning_at, inputs, *, as_of=None):
+        """Carry one provider terminal scenario set forward under Mission assumptions."""
+        # P1D is the existing timestamp identity tolerance.  Preserve the
+        # old same-horizon behaviour even when that day crosses a month end.
+        if record_planning_at >= mission_planning_at - DAY:
+            return (record.fund_low, record.fund_medium, record.fund_high), None
+        months = max(0, self._months_between(record_planning_at, mission_planning_at))
+        if months == 0:
+            return (record.fund_low, record.fund_medium, record.fund_high), None
+        fee_record = self.evidence.latest(
+            account_id, "annual_fee_percent", record.observed_at if as_of is None else as_of)
+        fee_defaulted = fee_record is None
+        annual_fee = (inputs.assumed_annual_fee_percent if fee_defaulted
+                      else float(fee_record.value))
+        annual_returns = (inputs.low_real_return, inputs.base_real_return,
+                          inputs.high_real_return)
+        values = tuple(
+            float(value) * ((1 + annual_return - annual_fee) ** (months / 12))
+            for value, annual_return in zip(
+                (record.fund_low, record.fund_medium, record.fund_high), annual_returns))
+        return values, {
+            "account_id": account_id,
+            "months": months,
+            "fee_defaulted": fee_defaulted,
+        }
 
     def _provider_projection_evaluation(self, account_ids, as_of):
         """Select records using the assessor's provider-mode admission rule."""
