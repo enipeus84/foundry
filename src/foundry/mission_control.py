@@ -2398,7 +2398,7 @@ def mission_detail(request: Request, slug: str):
     assessment = console.assessments.dispatch(MissionAssessmentRequest(
         mission_id=mission.id, policy_id=definition.assessment_policy_id,
         scope=scope, as_of=as_of))
-    if assessment.status == "unavailable" or assessment.current_value is None:
+    if assessment.completeness == "unavailable" or assessment.current_value is None:
         missing_assumptions = any("Assumption Set not found" in note for note in assessment.limitations)
         setup = (f'<p><a href="/missions/{html.escape(mission.id, quote=True)}/assumptions">ASSUMPTIONS REQUIRED → CONFIGURE</a></p>'
                  if missing_assumptions else "")
@@ -2414,7 +2414,24 @@ def mission_detail(request: Request, slug: str):
         return _render(definition.label, body, as_of, "/missions")
 
     console_view = MissionConsoleModel().build(definition, assessment)
+    partial_notice = ""
+    if assessment.completeness == "partial":
+        notes = []
+        if assessment.confidence_basis:
+            notes.append(f"<p class=\"status-sub\">{html.escape(assessment.confidence_basis)}</p>")
+        if assessment.limitations:
+            limitations = "".join(
+                f"<li>{html.escape(note)}</li>" for note in assessment.limitations)
+            notes.append(
+                f"<ul style=\"margin:16px 0 0 18px;color:var(--muted);\">{limitations}</ul>")
+        partial_notice = f"""<section class="mission-empty-state" style="margin-bottom:24px;">
+  <div class="status-word amber">PARTIAL ASSESSMENT</div>
+  <p class="status-sub">Core mission position is available, but expected outcome is currently unavailable.</p>
+  {''.join(notes)}
+</section>"""
     body = (
+        partial_notice
+        +
         _render_mission_console(
             console_view,
             assessment,

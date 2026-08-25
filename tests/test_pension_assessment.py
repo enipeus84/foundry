@@ -608,7 +608,11 @@ def test_incompatible_provider_projection_planning_points_fail_closed(tmp_path):
 
     assessment = _assessment(log, household)
 
-    assert assessment.status == "unavailable"
+    assert assessment.status == "none"
+    assert assessment.completeness == "partial"
+    assert assessment.forecast == ()
+    assert assessment.eta is None
+    assert assessment.trajectory_state is None
     assert any("planning point is incompatible" in value for value in assessment.limitations)
 
 

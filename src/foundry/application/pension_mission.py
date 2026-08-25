@@ -171,7 +171,7 @@ class PensionMissionQueryService:
                 and target is not None and target.value is not None:
             gap = float(target.value) - float(current.value)
         blockers = (list(assessment.limitations)
-                    if assessment.status == "unavailable"
+                    if assessment.completeness != "complete"
                     else list(readiness.blockers))
         blockers = list(dict.fromkeys(blockers))
         return {
@@ -184,7 +184,8 @@ class PensionMissionQueryService:
                 "authorising_household": self.household_id,
                 "target_metric": mission.target_metric,
             },
-            "evaluable": assessment.status != "unavailable",
+            "evaluable": assessment.completeness == "complete",
+            "completeness": assessment.completeness,
             "status": assessment.trajectory_state or assessment.status,
             "assessment_status": assessment.status,
             "mission_complete": assessment.mission_complete,
@@ -216,7 +217,11 @@ class PensionMissionQueryService:
                 "assumption_references": list(assessment.assumption_references),
             },
             "blockers": blockers,
-            "limitations": list(assessment.limitations) if assessment.status != "unavailable" else [],
+            "limitations": (
+                list(assessment.limitations)
+                if assessment.completeness == "complete"
+                else []
+            ),
         }
 
     def inspect(self, mission_id: str | None = None,

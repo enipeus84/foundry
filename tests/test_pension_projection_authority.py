@@ -76,9 +76,10 @@ def test_provider_managed_pension_without_any_projection_withholds_the_outcome(t
     _declare_provider_managed(log, household.alex_pension_id)
     assessment = _assessment(log, household)
 
-    assert assessment.status == "unavailable"
+    assert assessment.status == "none"
+    assert assessment.completeness == "partial"
     assert any("provider projection required" in value for value in assessment.limitations)
-    # `forecast` is empty when unavailable, so assert the internal figure is
+    # `forecast` is empty when partial, so assert the internal figure is
     # absent from every stated number rather than from an empty tuple.
     assert assessment.forecast == ()
     assert internal.forecast[-1].base not in {
@@ -102,7 +103,8 @@ def test_provider_managed_pension_with_stale_projection_fails_closed(tmp_path):
 
     assessment = _assessment(log, household)
 
-    assert assessment.status == "unavailable"
+    assert assessment.status == "none"
+    assert assessment.completeness == "partial"
     assert any("provider projection required" in value for value in assessment.limitations)
 
 
@@ -124,7 +126,8 @@ def test_mixed_portfolio_cannot_substitute_foundry_modelling_for_the_missing_mem
 
     assessment = _assessment(log, household)
 
-    assert assessment.status == "unavailable"
+    assert assessment.status == "none"
+    assert assessment.completeness == "partial"
     assert any("every included pension" in value for value in assessment.limitations)
 
 
@@ -152,7 +155,8 @@ def test_assessment_without_a_projection_view_still_fails_closed(tmp_path):
     assessment = assessor.assess(MissionAssessmentRequest(
         mission.id, POLICY_ID, Subject("party", household.household_id), household.as_of))
 
-    assert assessment.status == "unavailable"
+    assert assessment.status == "none"
+    assert assessment.completeness == "partial"
 
 
 # ------------------------------------------------------ canonical model
@@ -333,7 +337,8 @@ def test_unvalued_provider_managed_pension_cannot_be_dropped_from_the_assessment
 
     assert FinanceEntityProjection(log).accounts[ghost.id].projection_authority == "provider_managed"
     assert not FinanceEntityProjection(log).valuations_of(ghost.id)
-    assert assessment.status == "unavailable"
+    assert assessment.status == "none"
+    assert assessment.completeness == "partial"
     assert any("provider projection required" in value for value in assessment.limitations)
     assert projectable.forecast[-1].base not in {
         item.result.value for item in assessment.telemetry}
@@ -354,7 +359,8 @@ def test_unvalued_provider_managed_pension_with_stale_projection_fails_closed(tm
 
     assessment = _assessment(log, household)
 
-    assert assessment.status == "unavailable"
+    assert assessment.status == "none"
+    assert assessment.completeness == "partial"
     assert any("provider projection required" in value for value in assessment.limitations)
 
 

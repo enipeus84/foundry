@@ -258,6 +258,7 @@ class FinancialIndependenceAssessor:
             return MissionAssessment(
                 mission_id=request.mission_id, policy_id=request.policy_id,
                 scope=request.scope, as_of=request.as_of, status="unavailable",
+                completeness="unavailable",
                 calculation_version=CALCULATION_VERSION, current_value=current,
                 confidence=MissionConfidence(
                     "Insufficient", "accessible assets are unavailable"),
@@ -267,6 +268,7 @@ class FinancialIndependenceAssessor:
             return MissionAssessment(
                 mission_id=request.mission_id, policy_id=request.policy_id,
                 scope=request.scope, as_of=request.as_of, status="unavailable",
+                completeness="unavailable",
                 calculation_version=CALCULATION_VERSION, current_value=current,
                 confidence=MissionConfidence(
                     "Insufficient", "assessment currency is incompatible"),
