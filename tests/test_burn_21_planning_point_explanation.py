@@ -130,7 +130,14 @@ def test_explanation_preserves_one_day_provider_compatibility_boundary(
     assert result["provider_projections"][0]["compatibility_result"] is compatible
     assert result["compatibility"]["result"] is compatible
     # The actual assessor remains the authority for the same fail-closed result.
-    assert (result["assessment"]["status"] != "unavailable") is compatible
+    assert (result["assessment"]["completeness"] == "complete") is compatible
+    if compatible:
+        assert result["assessment"]["status"] != "unavailable"
+        assert result["assessment"]["blocker"] is None
+    else:
+        assert result["assessment"]["status"] == "none"
+        assert result["assessment"]["completeness"] == "partial"
+        assert result["assessment"]["blocker"] is not None
 
 
 def test_explanation_includes_observed_provider_evidence_without_provider_authority(tmp_path):
@@ -154,7 +161,8 @@ def test_explanation_includes_observed_provider_evidence_without_provider_author
     assert alex["resolution_error"] is None
     assert result["compatibility"]["provider_mode_active"] is True
     assert result["compatibility"]["result"] is False
-    assert result["assessment"]["status"] == "unavailable"
+    assert result["assessment"]["status"] == "none"
+    assert result["assessment"]["completeness"] == "partial"
     assert "planning point is incompatible" in result["assessment"]["blocker"]
 
 
@@ -178,7 +186,8 @@ def test_explanation_separates_date_compatibility_from_stale_record_usability(tm
     assert all(item["record_stale"] is True for item in result["provider_projections"])
     assert all(item["record_freshness_result"] is False
                for item in result["provider_projections"])
-    assert result["assessment"]["status"] == "unavailable"
+    assert result["assessment"]["status"] == "none"
+    assert result["assessment"]["completeness"] == "partial"
     assert "current provider projection required" in result["assessment"]["blocker"]
 
 

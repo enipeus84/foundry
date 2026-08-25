@@ -2425,7 +2425,7 @@ def mission_detail(request: Request, slug: str):
             notes.append(
                 f"<ul style=\"margin:16px 0 0 18px;color:var(--muted);\">{limitations}</ul>")
         partial_notice = f"""<section class="mission-empty-state" style="margin-bottom:24px;">
-  <div class="status-word amber">PARTIAL ASSESSMENT</div>
+  <div class="status-word none">PARTIAL ASSESSMENT</div>
   <p class="status-sub">Core mission position is available, but expected outcome is currently unavailable.</p>
   {''.join(notes)}
 </section>"""

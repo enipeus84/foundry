@@ -665,7 +665,7 @@ class FinancialResilienceAssessor:
             limitations=(reason,),
             confidence_basis=reason,
             forecast_resolution="month",
-            applicability=APPLICABILITY,
+            applicability=replace(APPLICABILITY, margin="unavailable"),
         )
 
     @staticmethod

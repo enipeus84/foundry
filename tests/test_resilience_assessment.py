@@ -6,7 +6,7 @@ import inspect
 import pytest
 
 from foundry.core.entities import EntityProjection, declare_mission
-from foundry.core.metrics import MetricRegistry, MetricRequest
+from foundry.core.metrics import MetricRegistry, MetricRequest, MetricResult
 from foundry.core.mission_assessment import (
     MissionAssessmentRegistry,
     MissionAssessmentRequest,
@@ -509,6 +509,67 @@ def test_net_negative_runway_remains_exposed_and_critical(tmp_path):
     assert result.milestones
     assert result.current_value.input_references
     assert "assessment provider failed safely" not in result.limitations
+
+
+def test_deployable_surplus_failure_yields_partial_assessment(tmp_path):
+    log, household, assumptions, mission = _seed(tmp_path)
+    result, assessor, metrics, _ = _assessment(log, household, mission)
+    scope = Subject("party", household.household_id)
+    real_dispatch = metrics.dispatch
+
+    def partial_dispatch(request):
+        if request.metric_id == "finance.deployable_surplus":
+            return MetricResult(
+                request.metric_id,
+                None,
+                "GBP",
+                scope,
+                request.as_of,
+                "unavailable",
+                CALCULATION_VERSION,
+                assumption_references=(assumptions.id,),
+                limitations=("deployable surplus is unavailable",),
+            )
+        return real_dispatch(request)
+
+    assessor.metrics.dispatch = partial_dispatch
+    partial = assessor.assess(MissionAssessmentRequest(
+        mission.id, POLICY_ID, scope, AS_OF))
+
+    assert result.status == "green"
+    assert partial.completeness == "partial"
+    assert partial.status == "none"
+    assert partial.current_value.value is not None
+    assert partial.mission_margin is None
+    assert partial.applicability.margin == "unavailable"
+
+
+def test_runway_failure_remains_unavailable_not_partial(tmp_path):
+    log, household, _, mission = _seed(tmp_path)
+    _, assessor, metrics, _ = _assessment(log, household, mission)
+    scope = Subject("party", household.household_id)
+    real_dispatch = metrics.dispatch
+
+    def unavailable_dispatch(request):
+        if request.metric_id == TARGET_METRIC:
+            return MetricResult(
+                request.metric_id,
+                None,
+                "months",
+                scope,
+                request.as_of,
+                "unavailable",
+                CALCULATION_VERSION,
+                limitations=("liquidity runway is unavailable",),
+            )
+        return real_dispatch(request)
+
+    assessor.metrics.dispatch = unavailable_dispatch
+    result = assessor.assess(MissionAssessmentRequest(
+        mission.id, POLICY_ID, scope, AS_OF))
+
+    assert result.completeness == "unavailable"
+    assert result.status == "unavailable"
 
 
 def test_completion_reopens_at_sixteen_months_without_event_append(tmp_path):

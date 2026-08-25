@@ -724,6 +724,32 @@ def test_pension_independence_labels_provider_projection_as_observation(tmp_path
     assert "PROVIDER ILLUSTRATIONS" in response.text
 
 
+def test_pension_partial_route_renders_partial_without_false_rag(tmp_path):
+    from foundry.demo_data import build
+    from foundry.finance import entities as finance
+    from foundry.finance.pension_projection import record_pension_provider_projection
+
+    log = EventLog(tmp_path / "events.jsonl")
+    household = build(log, as_of=MISSION_CONTROL_FIXTURE_AS_OF)
+    finance.declare_pension_projection_authority(
+        log, household.alex_pension_id,
+        projection_authority="provider_managed",
+        reason="test")
+    response = client().get("/missions/pension-independence")
+
+    assert response.status_code == 200
+    assert "PARTIAL ASSESSMENT" in response.text
+    assert '<div class="status-word amber">PARTIAL ASSESSMENT</div>' \
+        not in response.text
+    assert "CURRENT PENSION" in response.text
+    assert "REQUIRED RETIREMENT WEALTH" in response.text
+    assert "£62,000" in response.text
+    assert "£735,000" in response.text
+    assert "EXPECTED OUTCOME" not in response.text
+    assert "£785,000" not in response.text
+    assert "NOMINAL TRAJECTORY" not in response.text
+
+
 def _render_shape_neutral_mission(
     monkeypatch,
     tmp_path,
