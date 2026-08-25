@@ -12,6 +12,9 @@ from foundry.application.mcp_writes import (
     McpMortgageEvidenceCapture, McpPensionProviderProjectionCapture, McpWriteDenied,
 )
 from foundry.application.mission_assumptions import MissionAssumptionError, MissionAssumptionService
+from foundry.application.mortgage_mission import (
+    MortgageMissionQueryError, MortgageMissionQueryService,
+)
 from foundry.application.pension_mission import PensionMissionQueryError, PensionMissionQueryService
 from foundry.application.pension_timing import PensionTimingError, PensionTimingService
 from foundry.application.resources import FinancialResourceQuery, ResourceNotFound
@@ -49,6 +52,8 @@ def create_mcp_server(query: FinancialResourceQuery | None = None,
     mission_assumptions = MissionAssumptionService(query.log)
     pension_mission = PensionMissionQueryService(query.log, active_principal.household_id)
     pension_timing = PensionTimingService(query.log, active_principal.household_id)
+    mortgage_mission = MortgageMissionQueryService(
+        query.log, active_principal.household_id)
     server = FastMCP("Foundry", instructions="Governed household finance and Mission access.",
                      streamable_http_path=streamable_http_path, host=host,
                      transport_security=transport_security, auth=auth,
@@ -61,6 +66,19 @@ def create_mcp_server(query: FinancialResourceQuery | None = None,
         try:
             return pension_mission.inspect(mission_id, as_of)
         except PensionMissionQueryError as exc:
+            raise ValueError(str(exc)) from exc
+
+    @server.tool()
+    def inspect_mortgage_freedom(mission_id: str | None = None,
+                                 as_of: str | None = None) -> dict:
+        """Inspect the authorised Mortgage Freedom Mission and its exact blockers.
+
+        This read never declares, repairs or bootstraps canonical state. An
+        absent Mission, Mission Target or Assumption Set is reported as that
+        exact dependency rather than manufactured."""
+        try:
+            return mortgage_mission.inspect(mission_id, as_of)
+        except MortgageMissionQueryError as exc:
             raise ValueError(str(exc)) from exc
 
     @server.tool()

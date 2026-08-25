@@ -19,6 +19,7 @@ from foundry.finance.pension_projection import (
     record_pension_provider_projection, validate_pension_provider_projection,
 )
 from foundry.finance.mortgage_evidence import record_mortgage_evidence
+from foundry.finance.runtime_bootstrap import bootstrap_finance_capture_targets
 
 
 class McpWriteDenied(PermissionError):
@@ -178,6 +179,28 @@ class McpMortgageEvidenceCapture:
         }, actor=f"mcp:{self.principal}")
         return MortgageEvidenceProposalReceipt(proposal_id, request["obligation_id"], request["field"])
 
+    #: Evidence fields whose canonical value can change capture eligibility.
+    #: ``property_role`` is the only one the bootstrap's primary-residence
+    #: proof reads; recording anything else cannot alter which targets exist.
+    _CAPTURE_ELIGIBILITY_FIELDS = frozenset({"property_role"})
+
+    def _refresh_capture_targets(self, field: str) -> None:
+        """Re-run the existing idempotent bootstrap at the mutation boundary.
+
+        Capture availability is derived from canonical state, so it must be
+        recomputed when the state it depends on changes -- not only at web
+        startup or resource creation. The bootstrap declares nothing it has
+        already declared, and a refresh failure must never invalidate the
+        canonical evidence that was just recorded.
+        """
+        if field not in self._CAPTURE_ELIGIBILITY_FIELDS:
+            return
+        try:
+            bootstrap_finance_capture_targets(
+                self.log, self.household_id, actor=f"mcp:{self.principal}")
+        except (AcquisitionError, KeyError, TypeError, ValueError):
+            return
+
     def execute(self, *, proposal_id: str, command_id: str, **values: Any) -> dict[str, Any]:
         if not isinstance(command_id, str) or not command_id.strip():
             raise McpClientSafeDenied("command_id is required for idempotent execution")
@@ -200,6 +223,7 @@ class McpMortgageEvidenceCapture:
             record = record_mortgage_evidence(self.log, actor=f"mcp:{self.principal}", **request)
         except (TypeError, ValueError) as exc:
             raise McpClientSafeDenied(str(exc)) from exc
+        self._refresh_capture_targets(record.field)
         result = {"obligation_id": record.obligation_id, "field": record.field,
                   "value": record.value, "effective_at": record.effective_at,
                   "confidence": record.confidence, "source": record.source,
