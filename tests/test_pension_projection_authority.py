@@ -126,7 +126,7 @@ def test_partial_pension_query_preserves_current_target_gap_and_splits_blockers(
     _record_provider(
         log, household.alex_pension_id, planning_at, 604_000)
     _record_provider(
-        log, household.sam_pension_id, planning_at - 31 * 86_400, 401_000)
+        log, household.sam_pension_id, planning_at + 31 * 86_400, 401_000)
     assessed_at = max(event["ts"] for event in log.events())
     as_of = datetime.fromtimestamp(
         assessed_at, timezone.utc).isoformat().replace("+00:00", "Z")
@@ -144,7 +144,7 @@ def test_partial_pension_query_preserves_current_target_gap_and_splits_blockers(
     assert result["gap"]["value"] is not None
     assert result["horizon"]["estimated_independence_at"] is None
     assert result["blockers"]
-    assert "planning point is incompatible" in result["blockers"][0]
+    assert "dated after the Mission planning point" in result["blockers"][0]
     assert result["limitations"]
     assert any(
         "not regulated financial advice" in note

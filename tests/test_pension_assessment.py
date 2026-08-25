@@ -58,7 +58,7 @@ def _assessor(log):
 
 
 def _assessment(log, household, *, mission_id=None, as_of=None):
-    assessor, core, _ = _assessor(log)
+    assessor, core, finance = _assessor(log)
     if mission_id is None:
         mission = next(
             mission for mission in core.missions.values()
@@ -125,9 +125,9 @@ def test_governor_worked_shape_separates_completion_from_projection(tmp_path):
 
 
 def test_expected_outcome_drives_trajectory_while_funding_uses_current_pot(
-        monkeypatch, tmp_path):
+    monkeypatch, tmp_path):
     log, household = _seed(tmp_path)
-    assessor, core, _ = _assessor(log)
+    assessor, core, finance = _assessor(log)
     mission = next(
         mission for mission in core.missions.values()
         if mission.assessment_policy_id == POLICY_ID)
@@ -600,11 +600,11 @@ def test_compatible_provider_projections_aggregate_below_essential_summary(tmp_p
                 if item.display_group == "PROVIDER ILLUSTRATIONS"]) == 4
 
 
-def test_incompatible_provider_projection_planning_points_fail_closed(tmp_path):
+def test_future_provider_projection_planning_points_fail_closed(tmp_path):
     log, household = _seed(tmp_path)
     planning_at = _assessment(log, household).forecast[-1].at
     _record_provider(log, household.alex_pension_id, planning_at, 604_000)
-    _record_provider(log, household.sam_pension_id, planning_at - 31 * 86_400, 401_000)
+    _record_provider(log, household.sam_pension_id, planning_at + 31 * 86_400, 401_000)
 
     assessment = _assessment(log, household)
 
@@ -613,7 +613,94 @@ def test_incompatible_provider_projection_planning_points_fail_closed(tmp_path):
     assert assessment.forecast == ()
     assert assessment.eta is None
     assert assessment.trajectory_state is None
-    assert any("planning point is incompatible" in value for value in assessment.limitations)
+    assert any("dated after the Mission planning point" in value for value in assessment.limitations)
+
+
+def test_provider_terminal_scenarios_carry_forward_with_matching_returns_and_fee(tmp_path):
+    log, household = _seed(tmp_path)
+    assessor, core, finance = _assessor(log)
+    mission = next(item for item in core.missions.values()
+                   if item.assessment_policy_id == POLICY_ID)
+    inputs = PensionIndependenceInputs.from_assumption_set(
+        finance.assumption_sets[mission.assumption_set_id])
+    planning_at = _assessment(log, household).forecast[-1].at
+    record_at = assessor._add_months(planning_at, -24)
+    record = _record_provider(log, household.alex_pension_id, record_at, 600_000)
+    values, carry = assessor._carry_provider_terminal_values(
+        household.alex_pension_id, record, record_at, planning_at, inputs)
+    fee = assessor.evidence.latest(household.alex_pension_id, "annual_fee_percent", household.as_of)
+    assert carry["months"] == 24
+    assert values == pytest.approx(tuple(
+        value * (1 + annual_return - float(fee.value)) ** 2
+        for value, annual_return in zip(
+            (record.fund_low, record.fund_medium, record.fund_high),
+            (inputs.low_real_return, inputs.base_real_return, inputs.high_real_return))))
+    assert values[1] == pytest.approx(629_145.60)
+
+
+def test_provider_projection_at_mission_point_is_an_identity(tmp_path):
+    log, household = _seed(tmp_path)
+    assessor, core, finance = _assessor(log)
+    mission = next(item for item in core.missions.values()
+                   if item.assessment_policy_id == POLICY_ID)
+    inputs = PensionIndependenceInputs.from_assumption_set(
+        finance.assumption_sets[mission.assumption_set_id])
+    planning_at = _assessment(log, household).forecast[-1].at
+    record = _record_provider(log, household.alex_pension_id, planning_at, 604_000)
+    values, carry = assessor._carry_provider_terminal_values(
+        household.alex_pension_id, record, planning_at, planning_at, inputs)
+    assert values == (record.fund_low, record.fund_medium, record.fund_high)
+    assert carry is None
+
+
+def test_same_horizon_provider_mode_does_not_disclose_an_unused_default_fee(
+        monkeypatch, tmp_path):
+    log, household = _seed(tmp_path)
+    planning_at = _assessment(log, household).forecast[-1].at
+    _record_provider(log, household.alex_pension_id, planning_at, 604_000)
+    _record_provider(log, household.sam_pension_id, planning_at, 401_000)
+    assessor, core, finance = _assessor(log)
+    mission = next(item for item in core.missions.values()
+                   if item.assessment_policy_id == POLICY_ID)
+    accounts, _ = assessor._projection_accounts(
+        {household.alex_id, household.sam_id}, household.as_of,
+        PensionIndependenceInputs.from_assumption_set(
+            finance.assumption_sets[mission.assumption_set_id]))
+    monkeypatch.setattr(assessor, "_projection_accounts", lambda *args: (accounts, True))
+
+    assessment = assessor.assess(MissionAssessmentRequest(
+        mission.id, POLICY_ID, Subject("party", household.household_id), household.as_of))
+
+    assert assessment.forecast[-1].base == 1_005_000
+    assert any("not a Foundry forecast" in value for value in assessment.limitations)
+    assert not any("assumed annual fee is used" in value for value in assessment.limitations)
+
+
+def test_carried_provider_projection_uses_and_discloses_assumed_fee(
+        monkeypatch, tmp_path):
+    log, household = _seed(tmp_path)
+    assessor, core, finance = _assessor(log)
+    mission = next(item for item in core.missions.values()
+                   if item.assessment_policy_id == POLICY_ID)
+    inputs = PensionIndependenceInputs.from_assumption_set(
+        finance.assumption_sets[mission.assumption_set_id])
+    planning_at = _assessment(log, household).forecast[-1].at
+    record_at = assessor._add_months(planning_at, -24)
+    record = _record_provider(log, household.alex_pension_id, record_at, 600_000)
+    _record_provider(log, household.sam_pension_id, record_at, 401_000)
+    original_latest = assessor.evidence.latest
+    monkeypatch.setattr(assessor.evidence, "latest", lambda account_id, field, as_of: (
+        None if field == "annual_fee_percent" else original_latest(account_id, field, as_of))
+    )
+    values, carry = assessor._carry_provider_terminal_values(
+        household.alex_pension_id, record, record_at, planning_at, inputs,
+        as_of=household.as_of)
+
+    assert carry["fee_defaulted"] is True
+    assert values[1] == pytest.approx(627_303.75)
+    assessment = assessor.assess(MissionAssessmentRequest(
+        mission.id, POLICY_ID, Subject("party", household.household_id), household.as_of))
+    assert any("assumed annual fee is used" in value for value in assessment.limitations)
 
 
 def test_telemetry_hierarchy_has_three_essential_items_and_per_year_labels(

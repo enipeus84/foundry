@@ -90,7 +90,8 @@ def test_explanation_uses_assessor_horizon_and_reports_provider_delta(tmp_path):
     assert provider[0]["latest_provider_projection"]["retirement_at"] is None
     assert provider[0]["record_planning_at"] is not None
     assert provider[0]["absolute_delta_seconds"] > DAY
-    assert provider[0]["compatibility_result"] is False
+    assert provider[0]["compatibility_result"] is True
+    assert provider[0]["carry_months"] > 0
     assert result["compatibility"] == {
         "tolerance_seconds": DAY, "tolerance": "P1D",
         "provider_mode_active": True, "result": False}
@@ -111,7 +112,7 @@ def test_explanation_scopes_a_single_adult_participant_to_the_mission_subject(tm
 
 
 @pytest.mark.parametrize("offset, compatible", [(DAY, True), (DAY + 1, False)])
-def test_explanation_preserves_one_day_provider_compatibility_boundary(
+def test_explanation_preserves_directional_provider_admissibility_boundary(
         tmp_path, offset, compatible):
     log, household, mission = _world(tmp_path)
     service = PensionMissionQueryService(log, household.household_id)
@@ -122,7 +123,7 @@ def test_explanation_preserves_one_day_provider_compatibility_boundary(
         log, household.alex_pension_id, projection_authority="provider_managed", reason="test")
     finance.declare_pension_projection_authority(
         log, household.sam_pension_id, projection_authority="provider_managed", reason="test")
-    _provider(log, household.alex_pension_id, retirement_at=planning_at - offset)
+    _provider(log, household.alex_pension_id, retirement_at=planning_at + offset)
     _provider(log, household.sam_pension_id, retirement_at=planning_at)
 
     result = service.explain_planning_point(mission.id, "2026-08-21T23:00:00Z")
@@ -157,13 +158,13 @@ def test_explanation_includes_observed_provider_evidence_without_provider_author
     assert alex["projection_authority"] is None
     assert alex["provider_projection_required"] is False
     assert alex["latest_provider_projection"]["evidence_reference"] == incompatible.event_id
-    assert alex["compatibility_result"] is False
+    assert alex["compatibility_result"] is True
     assert alex["resolution_error"] is None
     assert result["compatibility"]["provider_mode_active"] is True
-    assert result["compatibility"]["result"] is False
-    assert result["assessment"]["status"] == "none"
-    assert result["assessment"]["completeness"] == "partial"
-    assert "planning point is incompatible" in result["assessment"]["blocker"]
+    assert result["compatibility"]["result"] is True
+    assert result["assessment"]["status"] != "none"
+    assert result["assessment"]["completeness"] == "complete"
+    assert result["assessment"]["blocker"] is None
 
 
 def test_explanation_separates_date_compatibility_from_stale_record_usability(tmp_path):
