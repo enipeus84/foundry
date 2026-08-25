@@ -126,6 +126,7 @@ def test_mcp_client_connects_and_cannot_cross_household(environment):
                     "close_financial_resource", "execute_close_financial_resource",
                     "get_mission_assumption_readiness", "propose_mission_assumption_set",
                     "execute_mission_assumption_set", "inspect_pension_independence",
+                    "inspect_mortgage_freedom",
                     "explain_pension_independence_planning_point",
                     "get_current_pension_value", "evaluate_pension_independence",
                     "propose_person_date_of_birth", "declare_person_date_of_birth",
