@@ -23,7 +23,9 @@ from foundry.finance.metrics import FinanceMetricProvider
 from foundry.finance.mission_targets import FinanceTargetMetricResolver
 from foundry.finance.missions import register_finance_mission_definitions
 from foundry.finance.mortgage_assessment import POLICY_ID, MortgageFreedomAssessor
-from foundry.finance.mortgage_evidence import MortgageEvidenceProjection
+from foundry.finance.mortgage_evidence import (
+    EVIDENCE_FIELDS, MortgageEvidence, MortgageEvidenceProjection,
+)
 from foundry.finance.resilience_evidence import ResilienceEvidenceProjection
 from foundry.finance.resilience_metrics import FinanceResilienceMetricProvider
 
@@ -49,6 +51,10 @@ _CURRENT_POSITION_METRICS = (
     "finance.mortgage_initial_deposit",
     "finance.property_acquisition_costs",
 )
+
+#: Mirrors the confidence gate MortgageFreedomAssessor applies to required
+#: evidence. It is reported, never enforced: this read blocks nothing.
+ASSESSOR_CONFIDENCE_FLOOR = .5
 
 _FORECAST_METRICS = (
     "finance.mortgage_projected_interest",
@@ -346,4 +352,233 @@ class MortgageMissionQueryService:
             },
             "blockers": list(dict.fromkeys(blocking)),
             "limitations": non_blocking if assessment.completeness != "unavailable" else [],
+        }
+
+    # ----------------------------------------------------------- provenance reads
+
+    def _evidence_scope(self, assessor: MortgageFreedomAssessor,
+                        obligation_id: str | None):
+        """Resolve the household's one mortgage obligation, canonically.
+
+        Scope is deliberately delegated to the assessor's own resolver rather
+        than reimplemented here: ``MortgageFreedomAssessor`` remains the only
+        place a household's mortgage is decided.  Nothing about the assessor
+        is modified; this is a read of its scoping result.
+        """
+        if self.household_id not in assessor.core.parties:
+            return None, "household is not canonically declared"
+        obligation, _asset, _refs, reason = assessor._scoped_mortgage(
+            self.household_id)
+        if obligation is None:
+            return None, reason
+        if obligation_id is not None and obligation_id != obligation.id:
+            # A caller may narrow to the household's own obligation; naming
+            # another household's obligation is never a read of it.
+            return None, "obligation is not authorised for this household"
+        return obligation, ""
+
+    @staticmethod
+    def _evidence_record(record: MortgageEvidence, *, is_current: bool) -> dict[str, Any]:
+        return {
+            "field": record.field,
+            "value": record.value,
+            "unit_or_currency": record.unit_or_currency,
+            "effective_at": iso(record.effective_at),
+            "confidence": record.confidence,
+            "source": record.source,
+            "lineage": record.lineage,
+            "event_id": record.event_id,
+            "is_current": is_current,
+            "below_assessor_confidence_floor": (
+                record.confidence < ASSESSOR_CONFIDENCE_FLOOR),
+        }
+
+    def evidence_history(self, obligation_id: str | None = None,
+                         as_of: str | None = None,
+                         field: str | None = None) -> dict[str, Any]:
+        """Return canonical mortgage evidence and how the assessor resolves it.
+
+        This read never records, repairs or reinterprets evidence.  Absent or
+        malformed evidence is reported as exactly that.
+        """
+        try:
+            read_at = as_of_timestamp(as_of)
+        except ValueError as exc:
+            raise MortgageMissionQueryError(str(exc)) from exc
+        if field is not None and field not in EVIDENCE_FIELDS:
+            raise MortgageMissionQueryError("unsupported mortgage evidence field")
+        core, _finance, assessor, _targets = self._composition()
+        evidence = assessor.evidence
+        obligation, reason = self._evidence_scope(assessor, obligation_id)
+        base = {
+            "subject": {"kind": "party", "id": self.household_id},
+            "read_as_of": iso(read_at),
+            "obligation_id": obligation_id,
+        }
+        if obligation is None:
+            return {**base, "obligation_state": "unresolved", "reason": reason,
+                    "records": [], "record_count": 0, "fields": {},
+                    "required_field_resolution": None,
+                    "malformed_envelopes": None}
+
+        visible = evidence.for_obligation(obligation.id, read_at)
+        current_event_ids = {
+            resolved.event_id for resolved in (
+                evidence.latest(obligation.id, name, read_at)
+                for name in {record.field for record in visible})
+            if resolved is not None}
+        selected = tuple(record for record in visible
+                         if field is None or record.field == field)
+        records = [self._evidence_record(
+                       record, is_current=record.event_id in current_event_ids)
+                   for record in sorted(
+                       selected, key=lambda item: (item.field, item.effective_at))]
+
+        by_field: dict[str, Any] = {}
+        for name in sorted({record.field for record in selected}):
+            resolved = evidence.latest(obligation.id, name, read_at)
+            by_field[name] = {
+                "observation_count": sum(
+                    1 for record in selected if record.field == name),
+                "current": (self._evidence_record(resolved, is_current=True)
+                            if resolved is not None else None),
+            }
+
+        # Resolved with the assessor's own accessor, so this answers whether
+        # the assessor can see the evidence, not merely whether it was written.
+        required = {
+            name: evidence.latest(obligation.id, name, read_at)
+            for name in sorted(MortgageFreedomAssessor._REQUIRED_FIELDS)}
+        missing = sorted(name for name, record in required.items() if record is None)
+        low_confidence = sorted(
+            name for name, record in required.items()
+            if record is not None and record.confidence < ASSESSOR_CONFIDENCE_FLOOR)
+        return {
+            **base,
+            "obligation_id": obligation.id,
+            "obligation_state": "resolved",
+            "records": records,
+            "record_count": len(records),
+            "fields": by_field,
+            "required_field_resolution": {
+                "required_count": len(MortgageFreedomAssessor._REQUIRED_FIELDS),
+                "resolved": sorted(name for name, record in required.items()
+                                   if record is not None),
+                "resolved_count": sum(
+                    1 for record in required.values() if record is not None),
+                "missing": missing,
+                "below_confidence_floor": low_confidence,
+                "confidence_floor": ASSESSOR_CONFIDENCE_FLOOR,
+                "assessor_resolves_all_required": not missing and not low_confidence,
+            },
+            "malformed_envelopes": {
+                "affects_this_obligation": evidence.has_invalid_for(
+                    obligation.id, read_at),
+                "event_ids": list(evidence.invalid_event_ids),
+            },
+        }
+
+    def _target_declaration(self, event_id: str) -> dict[str, Any] | None:
+        """Return who declared a target and when, straight from the log."""
+        event = self.log.get(event_id)
+        if event is None:
+            return None
+        return {"event_id": event_id, "kind": event.get("kind"),
+                "actor": event.get("actor"), "recorded_at": iso(event.get("ts"))}
+
+    def _target_entry(self, target, targets: MissionTargetProjection,
+                      in_force_id: str | None, read_at: float) -> dict[str, Any]:
+        successors = sorted(
+            other.id for other in targets.targets.values()
+            if other.supersedes == target.id)
+        if target.id == in_force_id:
+            state = "in_force"
+        elif target.closed_at is not None:
+            state = "withdrawn"
+        elif successors:
+            state = "superseded"
+        elif target.effective_from > read_at:
+            state = "not_yet_effective"
+        else:
+            state = "not_in_force"
+        declaration_event_id = target.provenance[0] if target.provenance else None
+        return {
+            "id": target.id,
+            "state": state,
+            "metric_id": target.metric_id,
+            "household_id": target.household_id,
+            "subject_id": target.subject_id,
+            "target_value": target.destination.value,
+            "unit_or_currency": target.destination.unit_or_currency,
+            "destination_direction": target.destination_direction,
+            "horizon_kind": target.horizon_kind,
+            "horizon_at": iso(target.horizon_at),
+            "effective_from": iso(target.effective_from),
+            "declared_at": iso(target.declared_at),
+            "withdrawn_at": iso(target.closed_at),
+            "basis": target.basis,
+            "supersedes": target.supersedes,
+            "superseded_by": successors,
+            "declaration_event_id": declaration_event_id,
+            "declaration": (self._target_declaration(declaration_event_id)
+                            if declaration_event_id else None),
+            "provenance": list(target.provenance),
+            "history": list(target.history),
+        }
+
+    def target_history(self, mission_id: str | None = None,
+                       as_of: str | None = None) -> dict[str, Any]:
+        """Return every Mission Target declared for this Mission, and its state.
+
+        This read never declares, withdraws or supersedes a Mission Target.
+        """
+        try:
+            read_at = as_of_timestamp(as_of)
+        except ValueError as exc:
+            raise MortgageMissionQueryError(str(exc)) from exc
+        core, _finance, _assessor, targets = self._composition()
+        mission, _target, mission_state = self._resolve(
+            core, targets, mission_id, read_at)
+        base = {
+            "subject": {"kind": "party", "id": self.household_id},
+            "read_as_of": iso(read_at),
+            "policy_id": POLICY_ID,
+        }
+        if mission is None:
+            return {**base, "mission": None, "mission_state": mission_state,
+                    "targets": [], "target_count": 0, "in_force_target_id": None,
+                    "mission_destination_metadata": None, "conflicts": []}
+
+        in_force = targets.in_force(mission.id, read_at)
+        in_force_id = in_force.id if in_force is not None else None
+        declared = sorted(
+            (item for item in targets.targets.values()
+             if item.mission_id == mission.id),
+            key=lambda item: (item.effective_from, item.declared_at))
+        return {
+            **base,
+            "mission": {
+                "id": mission.id, "name": mission.name,
+                "lifecycle_status": mission.status,
+                "policy_id": mission.assessment_policy_id,
+                "target_metric": mission.target_metric,
+                "authorising_household": self.household_id,
+            },
+            "mission_state": mission_state,
+            "in_force_target_id": in_force_id,
+            "targets": [self._target_entry(item, targets, in_force_id, read_at)
+                        for item in declared],
+            "target_count": len(declared),
+            # The Mission entity's own destination fields. The canonical
+            # assessor gates on these, not on the RFC-016 Mission Target, so
+            # a divergence between the two is visible in one read.
+            "mission_destination_metadata": {
+                "target_value": mission.target_value,
+                "target_date": iso(mission.target_date),
+                "assumption_set_id": mission.assumption_set_id,
+                "provenance": list(mission.provenance),
+            },
+            "conflicts": [
+                {"mission_id": key, "target_ids": list(value)}
+                for key, value in sorted(targets.conflicts.items())],
         }
