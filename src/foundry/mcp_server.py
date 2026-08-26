@@ -82,6 +82,39 @@ def create_mcp_server(query: FinancialResourceQuery | None = None,
             raise ValueError(str(exc)) from exc
 
     @server.tool()
+    def get_mortgage_evidence_history(obligation_id: str | None = None,
+                                      as_of: str | None = None,
+                                      field: str | None = None) -> dict:
+        """Return canonical mortgage evidence history and its assessor resolution.
+
+        Read-only. Every observation recorded against the household's mortgage
+        obligation is returned with its field, value, effective date,
+        confidence, source, lineage and originating event ID, alongside which
+        observation is currently resolved for each field and whether the
+        canonical assessor resolves every required field. Absent, malformed or
+        low-confidence evidence is reported as exactly that and never
+        repaired."""
+        try:
+            return mortgage_mission.evidence_history(obligation_id, as_of, field)
+        except MortgageMissionQueryError as exc:
+            raise ValueError(str(exc)) from exc
+
+    @server.tool()
+    def get_mission_target_history(mission_id: str | None = None,
+                                   as_of: str | None = None) -> dict:
+        """Return every Mission Target declared for a Mission, with provenance.
+
+        Read-only. Current and historical Target declarations are returned with
+        target value, metric, horizon, in-force/superseded/withdrawn state,
+        declaring actor and declaration event IDs, so a horizon can be traced
+        to the declaration that set it. This never declares, supersedes or
+        withdraws a Mission Target."""
+        try:
+            return mortgage_mission.target_history(mission_id, as_of)
+        except MortgageMissionQueryError as exc:
+            raise ValueError(str(exc)) from exc
+
+    @server.tool()
     def explain_pension_independence_planning_point(
             mission_id: str | None = None, as_of: str | None = None) -> dict:
         """Explain this Mission's canonical planning point and provider-date compatibility."""
