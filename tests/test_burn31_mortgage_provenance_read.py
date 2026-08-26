@@ -179,7 +179,7 @@ def test_evidence_history_is_side_effect_free(tmp_path):
 def test_target_history_traces_the_horizon_to_its_declaration(tmp_path):
     log, household, _, _ = _burn29_world(tmp_path)
     mission = _declare_mortgage_mission(
-        log, household, assumption_set_id=_assumptions(log).id)
+        log, household, assumption_set_id=_assumptions(log).id, declare_target=False)
     declared = _declare_target(
         log, household, mission, horizon_at=HORIZON_2043,
         basis="lender redemption illustration", actor="christopher")
@@ -207,7 +207,7 @@ def test_target_history_traces_the_horizon_to_its_declaration(tmp_path):
 def test_superseded_targets_stay_visible_with_their_state(tmp_path):
     log, household, _, _ = _burn29_world(tmp_path)
     mission = _declare_mortgage_mission(
-        log, household, assumption_set_id=_assumptions(log).id)
+        log, household, assumption_set_id=_assumptions(log).id, declare_target=False)
     original = _declare_target(
         log, household, mission, horizon_at=HORIZON_2043 + 365 * DAY,
         after=1.0, basis="original commissioning")
@@ -231,7 +231,7 @@ def test_target_history_exposes_mission_destination_metadata(tmp_path):
     """The assessor gates on Mission metadata; the read must make it visible."""
     log, household, _, _ = _burn29_world(tmp_path)
     mission = _declare_mortgage_mission(
-        log, household, assumption_set_id=_assumptions(log).id)
+        log, household, assumption_set_id=_assumptions(log).id, declare_target=False)
     _declare_target(log, household, mission, horizon_at=HORIZON_2043)
 
     metadata = _service(log, household).target_history(
@@ -264,7 +264,7 @@ def test_target_history_refuses_an_unauthorised_mission(tmp_path):
 def test_target_history_is_side_effect_free(tmp_path):
     log, household, _, _ = _burn29_world(tmp_path)
     mission = _declare_mortgage_mission(
-        log, household, assumption_set_id=_assumptions(log).id)
+        log, household, assumption_set_id=_assumptions(log).id, declare_target=False)
     _declare_target(log, household, mission, horizon_at=HORIZON_2043)
     service = _service(log, household)
     as_of = _as_of_after(log, mission)
@@ -282,7 +282,7 @@ def test_target_history_is_side_effect_free(tmp_path):
 def test_both_reads_are_registered_and_never_mutate(tmp_path):
     log, household, _, mortgage = _burn29_world(tmp_path)
     mission = _declare_mortgage_mission(
-        log, household, assumption_set_id=_assumptions(log).id)
+        log, household, assumption_set_id=_assumptions(log).id, declare_target=False)
     _declare_target(log, household, mission, horizon_at=HORIZON_2043)
     server = create_mcp_server(
         FinancialResourceQuery(log, household.id),

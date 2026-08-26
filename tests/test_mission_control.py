@@ -16,6 +16,7 @@ from foundry import webauth  # noqa: E402
 from foundry.core.entities import abandon_mission, declare_mission  # noqa: E402
 from foundry.core.evidence import concern, derive_claim_directly, tag_claim  # noqa: E402
 from foundry.eventlog import EventLog  # noqa: E402
+from foundry.core.mission_targets import TargetQuantity  # noqa: E402
 from foundry.finance.fixtures import build_parker_brads_household  # noqa: E402
 from foundry.web import app, _build_console  # noqa: E402
 
@@ -430,11 +431,23 @@ def test_scope_controls_do_not_imply_unsupported_individual_metrics(tmp_path):
 
 def _seed_financial_independence(tmp_path):
     from foundry.demo_data import build
+    from foundry.finance.mortgage_assessment import POLICY_ID as MORTGAGE_POLICY_ID
 
     log = EventLog(tmp_path / "events.jsonl")
     # Route goldens must never inherit wall-clock time: event timestamps
     # become Mission Control's as_of and can move calendar projections.
-    build(log, as_of=MISSION_CONTROL_FIXTURE_AS_OF)
+    household = build(log, as_of=MISSION_CONTROL_FIXTURE_AS_OF)
+    console = _build_console()
+    mission = next(
+        item for item in console.entities.missions.values()
+        if item.assessment_policy_id == MORTGAGE_POLICY_ID)
+    console.mission_targets.declare(
+        household_id=household.household_id, subject_id=household.household_id,
+        mission_id=mission.id, metric_id=mission.target_metric,
+        destination=TargetQuantity(0.0, "GBP", "currency"),
+        destination_direction="lower_is_better", horizon_kind="by_date",
+        horizon_at=mission.target_date,
+        effective_from=log.get(mission.provenance[0])["ts"])
     return log
 
 
@@ -923,7 +936,7 @@ def test_rfc010_phase_2_route_goldens_are_pinned_for_all_four_missions(
         "pension-independence":
             "c1694554084dc1bfae538823393f2cc487cdcfdafa1d20cbbe226f1331851d6a",
         "mortgage-freedom":
-            "df06e6acbe81b3f3af2788a8f61625202a160091bde4509f45a830070b673eed",
+            "9c3536ffb2ef73dfb5b1c192b312653f100854d1c5a5086991ccfdbb32fbcee0",
     }
 
 

@@ -317,11 +317,11 @@ def _build_console() -> Console:
     assessments.register(PensionIndependenceAssessor(
         registry, finance_entities, core_entities, pension_evidence,
         provider_projections=pension_projections))
-    assessments.register(MortgageFreedomAssessor(
-        finance_entities, core_entities, registry,
-        MortgageEvidenceProjection(log)))
     mission_targets = MissionTargetProjection(
         log, core_entities, assessments, FinanceTargetMetricResolver())
+    assessments.register(MortgageFreedomAssessor(
+        finance_entities, core_entities, registry,
+        MortgageEvidenceProjection(log), mission_targets))
     return Console(log=log, registry=registry, entities=core_entities,
                    assessments=assessments,
                    evidence=EvidenceIndex(log), canon=Canon(log),

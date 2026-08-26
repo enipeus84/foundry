@@ -15,12 +15,16 @@ from foundry.application.resources import FinancialResourceCommandService, Finan
 from foundry.mcp_server import create_mcp_server
 from foundry.core.entities import EntityProjection, declare_party, join_household, update_party
 from foundry.core.metrics import MetricRegistry
+from foundry.core.mission_assessment import MissionAssessmentRegistry
+from foundry.core.mission_targets import MissionTargetProjection
 from foundry.core.principal_authority import grant_principal_household_authority
 from foundry.eventlog import EventLog
 from foundry.finance import entities as finance
 from foundry.finance.entities import FinanceEntityProjection
 from foundry.finance.mortgage_evidence import MortgageEvidenceProjection
 from foundry.finance.mortgage_assessment import MortgageFreedomAssessor
+from foundry.finance.mission_targets import FinanceTargetMetricResolver
+from foundry.finance.missions import register_finance_mission_definitions
 
 
 PRINCIPAL = "mcp@example.com"
@@ -161,9 +165,14 @@ def test_mortgage_creation_is_a_governed_canonical_obligation_with_evidence(tmp_
     ]
     assert mortgage["id"] in FinanceEntityProjection(log).obligations
     assert not FinanceEntityProjection(log).accounts.get(mortgage["id"])
+    core = EntityProjection(log)
+    definitions = MissionAssessmentRegistry()
+    register_finance_mission_definitions(definitions)
+    targets = MissionTargetProjection(
+        log, core, definitions, FinanceTargetMetricResolver())
     scoped, secured, _, reason = MortgageFreedomAssessor(
-        FinanceEntityProjection(log), EntityProjection(log), MetricRegistry(),
-        MortgageEvidenceProjection(log))._scoped_mortgage(household.id)
+        FinanceEntityProjection(log), core, MetricRegistry(),
+        MortgageEvidenceProjection(log), targets)._scoped_mortgage(household.id)
     assert scoped.id == mortgage["id"] and secured.id == home["id"] and reason == ""
 
     capture = McpMortgageEvidenceCapture(log, PRINCIPAL, household.id, "claude-code", "gpt-test")
