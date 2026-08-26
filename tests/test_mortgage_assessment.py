@@ -377,12 +377,12 @@ def test_full_assessment_is_lower_is_better_and_has_complete_output(tmp_path):
     assert result.forecast
     assert result.delta_v.days > 0
     assert result.delta_v.direction == "accelerated"
-    assert result.mission_margin.label == "LTV BUFFER"
-    assert result.mission_margin.format_kind == "percent"
+    assert result.mission_margin.label == "MORTGAGE MARGIN"
+    assert result.mission_margin.format_kind == "plain"
     assert sum(
         item.display_region == "essential"
         for item in result.telemetry
-    ) == 2
+    ) == 5
     assert result.telemetry
     assert result.evidence_references
     assert result.assumption_references
@@ -941,7 +941,7 @@ def test_non_finite_runway_provider_cannot_bypass_precedence(tmp_path):
     result = assessor.assess(request)
 
     assert result.status != "unavailable"
-    assert result.recommendations == ()
+    assert result.recommendations[0].status == "unavailable"
     assert result.mission_margin.state == "Negative Margin"
     assert "runway unavailable" in result.mission_margin.description
     assert any(
@@ -970,7 +970,7 @@ def test_cross_scope_runway_provider_cannot_influence_mission(tmp_path):
     result = assessor.assess(request)
 
     assert result.status != "unavailable"
-    assert result.recommendations == ()
+    assert result.recommendations[0].status == "unavailable"
     assert result.mission_margin.state == "Negative Margin"
     assert any(
         "Liquidity evidence is absent" in note

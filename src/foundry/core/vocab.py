@@ -188,7 +188,7 @@ TARGET_HORIZON_KIND = ClosedVocabulary(
 
 TELEMETRY_FORMAT = ClosedVocabulary(
     "telemetry_format",
-    {"currency", "percent", "months", "number", "plain"},
+    {"currency", "percent", "months", "number", "plain", "date", "status"},
 )
 
 TELEMETRY_REGION = ClosedVocabulary(

@@ -196,7 +196,8 @@ class MissionConsoleModel:
                         if assessment.delta_v else
                         "Recent movement is unavailable."),
             ))
-        if assessment.current_milestone is not None:
+        if assessment.current_milestone is not None \
+                and assessment.current_milestone.promote_completion:
             supporting.append(ConsoleInstrumentView(
                 kind="milestone-completion",
                 label="MILESTONE COMPLETION",
@@ -283,6 +284,11 @@ class MissionConsoleModel:
                 state = "no-burn-required"
                 title = "NO BURN REQUIRED"
                 summary = "No improving action is declared for this assessment."
+        elif primary.status == "unavailable" \
+                and primary.action_type == "liquidity_evidence_required":
+            state = "insufficient-evidence"
+            title = "BURN UNAVAILABLE"
+            summary = primary.action
         elif primary.status == "suppressed":
             state = "suppressed"
             title = "BURN HELD"
