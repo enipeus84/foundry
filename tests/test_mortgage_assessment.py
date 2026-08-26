@@ -382,7 +382,15 @@ def test_full_assessment_is_lower_is_better_and_has_complete_output(tmp_path):
     assert sum(
         item.display_region == "essential"
         for item in result.telemetry
-    ) == 5
+    ) == 3
+    assert sum(
+        item.display_region == "headline"
+        for item in result.telemetry
+    ) == 1
+    assert sum(
+        item.display_region == "outcome"
+        for item in result.telemetry
+    ) == 1
     assert result.telemetry
     assert result.evidence_references
     assert result.assumption_references
