@@ -804,7 +804,6 @@ class MortgageFreedomAssessor:
                 "CURRENT VALUE − PURCHASE PRICE"),
         )
         essential_metric_ids = {
-            "finance.mortgage_ltv",
             "finance.mortgage_principal_repaid",
         }
         acquisition_metric_ids = {
@@ -824,6 +823,9 @@ class MortgageFreedomAssessor:
             replace(
                 item,
                 display_region=(
+                    "headline"
+                    if item.result.metric_id == "finance.mortgage_ltv"
+                    else
                     "essential"
                     if item.result.metric_id in essential_metric_ids
                     else "drilldown"
@@ -840,6 +842,17 @@ class MortgageFreedomAssessor:
             )
             for item in telemetry
         )
+        expected_payoff_metric = (
+            self._metric(
+                "finance.mortgage_expected_payoff", projected.payoff_base,
+                None, request, "available", mortgage_input_refs,
+                target.provenance, assumption_refs)
+            if projected.payoff_base is not None else
+            self._unavailable_metric(
+                "finance.mortgage_expected_payoff", request,
+                "expected payoff is outside the forecast horizon",
+                mortgage_input_refs, target.provenance, assumption_refs)
+        )
         target_telemetry = (
             TelemetryItem(
                 self._metric(
@@ -847,21 +860,26 @@ class MortgageFreedomAssessor:
                     None, request, "available", mortgage_input_refs,
                     target.provenance, assumption_refs),
                 "HOUSEHOLD GOAL", "date",
-                (
-                    f"EXPECTED PAYOFF {_month_year(projected.payoff_base).upper()} · "
-                    f"{abs((projected.payoff_base - target.horizon_at) / DAY):.0f} DAYS "
-                    f"{'LATE' if projected.payoff_base > target.horizon_at else 'EARLY'}"
-                    if projected.payoff_base is not None else
-                    "EXPECTED PAYOFF UNAVAILABLE"
-                ),
+                "Mortgage free by declared goal",
                 "essential"),
+            TelemetryItem(
+                expected_payoff_metric,
+                "EXPECTED PAYOFF", "date",
+                (
+                    f"~{abs((projected.payoff_base - target.horizon_at) / DAY):.0f} days "
+                    f"{'after' if projected.payoff_base > target.horizon_at else 'before'} declared goal"
+                    if projected.payoff_base is not None else
+                    "Expected payoff unavailable"
+                ),
+                "outcome"),
             TelemetryItem(
                 self._metric(
                     "finance.mortgage_target_adherence", 0.0,
                     None, request, "available", mortgage_input_refs,
                     target.provenance, assumption_refs),
                 "TARGET ADHERENCE", "status",
-                adherence_state.replace("_", " ").upper(), "essential"),
+                adherence_state.replace("_", " ").upper(), "drilldown",
+                "TARGET ASSESSMENT"),
             TelemetryItem(
                 self._metric(
                     "finance.mortgage_contractual_maturity",
@@ -870,9 +888,8 @@ class MortgageFreedomAssessor:
                     assumption_refs),
                 "ORIGINAL MORTGAGE CONTRACT", "date",
                 (
-                    f"EXPECTED PAYOFF {_month_year(projected.payoff_base).upper()} · "
-                    f"{abs((original_contractual_eta - projected.payoff_base) / MONTH):.0f} "
-                    f"MONTHS {'EARLY' if projected.payoff_base < original_contractual_eta else 'LATE'}"
+                    f"Expected payoff ~{abs((original_contractual_eta - projected.payoff_base) / MONTH):.0f} "
+                    f"months {'early' if projected.payoff_base < original_contractual_eta else 'late'}"
                     if projected.payoff_base is not None else
                     "EXPECTED PAYOFF UNAVAILABLE"
                 ),

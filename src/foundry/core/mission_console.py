@@ -68,6 +68,7 @@ class MissionHeroView:
     trajectory: MissionTrajectoryView
     margin: MissionMargin | None
     margin_applicability: str
+    headline_telemetry: TelemetryItem | None
     confidence: MissionConfidence
     burn_preview: str
 
@@ -167,6 +168,12 @@ class MissionConsoleModel:
         if len(outcomes) > 1:
             raise ValueError("Mission Console accepts at most one expected outcome")
         expected_outcome = outcomes[0] if outcomes else None
+        headlines = tuple(
+            item for item in assessment.telemetry
+            if item.display_region == "headline"
+        )
+        if len(headlines) > 1:
+            raise ValueError("Mission Console accepts at most one headline telemetry item")
         hero = MissionHeroView(
             definition=definition,
             current=assessment.current_value,
@@ -179,6 +186,7 @@ class MissionConsoleModel:
             trajectory=trajectory,
             margin=assessment.mission_margin,
             margin_applicability=assessment.applicability.margin,
+            headline_telemetry=headlines[0] if headlines else None,
             confidence=confidence,
             burn_preview=(
                 next_burn.primary.action_label or next_burn.primary.action
@@ -332,7 +340,7 @@ class MissionConsoleModel:
         groups: list[tuple[str, list[TelemetryItem]]] = []
         indexes: dict[str, int] = {}
         for item in assessment.telemetry:
-            if item.display_region in ("essential", "outcome"):
+            if item.display_region in ("essential", "outcome", "headline"):
                 continue
             title = item.display_group or f"{definition.label} telemetry"
             if title not in indexes:

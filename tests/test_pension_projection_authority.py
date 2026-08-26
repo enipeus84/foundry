@@ -95,7 +95,8 @@ def test_provider_managed_pension_without_any_projection_withholds_the_outcome(t
 
 
 def test_partial_pension_query_preserves_current_target_gap_and_splits_blockers(
-        tmp_path):
+        tmp_path, monkeypatch):
+    monkeypatch.setattr("foundry.eventlog.time.time", lambda: PENSION_FIXTURE_AS_OF)
     log, household = _seed(tmp_path)
     planning_at = _assessment(log, household).forecast[-1].at
     core = EntityProjection(log)
@@ -127,9 +128,8 @@ def test_partial_pension_query_preserves_current_target_gap_and_splits_blockers(
         log, household.alex_pension_id, planning_at, 604_000)
     _record_provider(
         log, household.sam_pension_id, planning_at + 31 * 86_400, 401_000)
-    assessed_at = max(event["ts"] for event in log.events())
     as_of = datetime.fromtimestamp(
-        assessed_at, timezone.utc).isoformat().replace("+00:00", "Z")
+        PENSION_FIXTURE_AS_OF, timezone.utc).isoformat().replace("+00:00", "Z")
 
     result = PensionMissionQueryService(
         log, household.household_id).evaluate(as_of=as_of)

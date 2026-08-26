@@ -2032,7 +2032,14 @@ def _telemetry_card_html(item) -> str:
     )
 
 
-def _console_margin_html(view: ConsoleMissionHeroView) -> str:
+def _console_headline_html(view: ConsoleMissionHeroView) -> str:
+    if view.headline_telemetry is not None:
+        value, detail = _telemetry_presentation(view.headline_telemetry)
+        return f'''<div class="console-instrument wide">
+      <p class="k">{html.escape(view.headline_telemetry.label)}</p>
+      <p class="v num">{html.escape(value)}</p>
+      <p class="sub">{html.escape(detail)}</p>
+    </div>'''
     if view.margin_applicability == "not_applicable":
         return ""
     if view.margin is None:
@@ -2098,7 +2105,7 @@ def _render_console_hero(
         if expected_outcome is not None else ("", "")
     )
     expected_instrument = (
-        f'''\n      <div class="console-instrument"><p class="k">EXPECTED OUTCOME</p>
+        f'''\n      <div class="console-instrument"><p class="k">{html.escape(expected_outcome.label)}</p>
         <p class="v num">{html.escape(expected_value)}</p>
         <p class="sub">{html.escape(expected_detail)}</p>
       </div>'''
@@ -2156,7 +2163,7 @@ def _render_console_hero(
         <p class="v">{html.escape(view.confidence.state.upper())}</p>
         <p class="sub">{html.escape(view.confidence.basis)}</p>
       </div>
-      {_console_margin_html(view)}{burn}
+      {_console_headline_html(view)}{burn}
     </div>
   </div>
   <p class="sr-only" id="mission-console-summary">{html.escape(summary)}</p>
@@ -2185,7 +2192,7 @@ def _render_console_analysis(view: ConsoleFlightAnalysisView) -> str:
         if expected_outcome is not None else ("", "")
     )
     expected_endpoint = (
-        f'''\n    <div class="endpoint"><p class="label">EXPECTED OUTCOME</p>
+        f'''\n    <div class="endpoint"><p class="label">{html.escape(expected_outcome.label)}</p>
       <p class="value num">{html.escape(expected_value)}</p>
       <p class="sub">{html.escape(expected_detail)}</p></div>'''
         if expected_outcome is not None else ""

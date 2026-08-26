@@ -936,7 +936,7 @@ def test_rfc010_phase_2_route_goldens_are_pinned_for_all_four_missions(
         "pension-independence":
             "c1694554084dc1bfae538823393f2cc487cdcfdafa1d20cbbe226f1331851d6a",
         "mortgage-freedom":
-            "d148bb2b6e28bdfdf6a4b8ed9408fabe1eaea8f1b8c50e0c84bf5b81eafa94e4",
+            "b3fdfb2c386dd97fd6497336a77184c522286c695459f838d124f07c3c274da0",
     }
 
 
@@ -1006,7 +1006,7 @@ def test_d13_unavailable_history_without_a_state_keeps_not_available_tile(
     ("financial-resilience", 2),
     ("financial-independence", 2),
     ("pension-independence", 3),
-    ("mortgage-freedom", 5),
+    ("mortgage-freedom", 3),
 ))
 def test_all_finance_missions_use_five_ordered_console_regions(
         tmp_path, slug, essential_count):
@@ -1103,15 +1103,15 @@ def test_mortgage_secondary_analysis_stays_behind_disclosure(tmp_path):
         'data-console-region="progressive-disclosure"'):]
 
     for primary in (
-        "LTV",
-        "ESTIMATED PROPERTY VALUE",
-        "EQUITY",
         "PRINCIPAL REPAID",
         "HOUSEHOLD GOAL",
-        "TARGET ADHERENCE",
         "ORIGINAL MORTGAGE CONTRACT",
     ):
         assert primary in essential
+    hero = rendered[:rendered.index('data-console-region="flight-analysis"')]
+    for headline in ("LTV", "ESTIMATED PROPERTY VALUE", "EQUITY"):
+        assert headline in hero
+    assert "TARGET ADHERENCE" in disclosure
     for supporting in (
         "PROPERTY ACQUISITION",
         "CURRENT EQUITY",
@@ -1130,14 +1130,18 @@ def test_mortgage_console_renders_financial_position_and_typed_timeline(tmp_path
 
     assert "MORTGAGE BALANCE" in rendered
     assert "LTV" in rendered
+    assert "MORTGAGE MARGIN" not in rendered
     assert "PRINCIPAL REPAID" in rendered
     assert "HOUSEHOLD GOAL" in rendered
-    assert "TARGET ADHERENCE" in rendered
+    assert "EXPECTED PAYOFF" in rendered
     assert "ORIGINAL MORTGAGE CONTRACT" in rendered
     assert "APRIL 2043" in rendered
+    assert re.search(r"~\d+ days (after|before) declared goal", rendered)
+    assert re.search(r"Expected payoff ~\d+ months (early|late)", rendered)
     assert re.search(r"ORIGINAL MORTGAGE CONTRACT.*?[A-Z]+ 2050", rendered, re.S)
-    adherence = rendered[rendered.index("TARGET ADHERENCE"):]
-    assert "0.00" not in adherence.split('</div></div>', 1)[0]
+    essential_start = rendered.index('data-console-region="essential-telemetry"')
+    essential_end = rendered.index("</section>", essential_start)
+    assert "TARGET ADHERENCE" not in rendered[essential_start:essential_end]
     assert "2,312,755,200.00" not in rendered
     assert "NO BURN REQUIRED" not in rendered
     assert "LTV BUFFER" not in rendered
