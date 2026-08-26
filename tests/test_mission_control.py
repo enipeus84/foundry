@@ -936,7 +936,7 @@ def test_rfc010_phase_2_route_goldens_are_pinned_for_all_four_missions(
         "pension-independence":
             "c1694554084dc1bfae538823393f2cc487cdcfdafa1d20cbbe226f1331851d6a",
         "mortgage-freedom":
-            "9c3536ffb2ef73dfb5b1c192b312653f100854d1c5a5086991ccfdbb32fbcee0",
+            "d148bb2b6e28bdfdf6a4b8ed9408fabe1eaea8f1b8c50e0c84bf5b81eafa94e4",
     }
 
 
@@ -1006,7 +1006,7 @@ def test_d13_unavailable_history_without_a_state_keeps_not_available_tile(
     ("financial-resilience", 2),
     ("financial-independence", 2),
     ("pension-independence", 3),
-    ("mortgage-freedom", 2),
+    ("mortgage-freedom", 5),
 ))
 def test_all_finance_missions_use_five_ordered_console_regions(
         tmp_path, slug, essential_count):
@@ -1102,17 +1102,77 @@ def test_mortgage_secondary_analysis_stays_behind_disclosure(tmp_path):
     disclosure = rendered[rendered.index(
         'data-console-region="progressive-disclosure"'):]
 
-    assert "MONTHLY PAYMENT" in essential
-    assert "FIXED-RATE PROTECTION" in essential
+    for primary in (
+        "LTV",
+        "ESTIMATED PROPERTY VALUE",
+        "EQUITY",
+        "PRINCIPAL REPAID",
+        "HOUSEHOLD GOAL",
+        "TARGET ADHERENCE",
+        "ORIGINAL MORTGAGE CONTRACT",
+    ):
+        assert primary in essential
     for supporting in (
         "PROPERTY ACQUISITION",
         "CURRENT EQUITY",
-        "CURRENT LTV",
-        "PRINCIPAL REPAID",
+        "MONTHLY PAYMENT",
+        "FIXED-RATE PROTECTION",
         "VALUATION MOVEMENT",
     ):
         assert supporting not in essential
         assert supporting in disclosure
+
+
+def test_mortgage_console_renders_financial_position_and_typed_timeline(tmp_path):
+    _seed_financial_independence(tmp_path)
+
+    rendered = client().get("/missions/mortgage-freedom").text
+
+    assert "MORTGAGE BALANCE" in rendered
+    assert "LTV" in rendered
+    assert "PRINCIPAL REPAID" in rendered
+    assert "HOUSEHOLD GOAL" in rendered
+    assert "TARGET ADHERENCE" in rendered
+    assert "ORIGINAL MORTGAGE CONTRACT" in rendered
+    assert "APRIL 2043" in rendered
+    assert re.search(r"ORIGINAL MORTGAGE CONTRACT.*?[A-Z]+ 2050", rendered, re.S)
+    adherence = rendered[rendered.index("TARGET ADHERENCE"):]
+    assert "0.00" not in adherence.split('</div></div>', 1)[0]
+    assert "2,312,755,200.00" not in rendered
+    assert "NO BURN REQUIRED" not in rendered
+    assert "LTV BUFFER" not in rendered
+    assert "MILESTONE COMPLETION" not in rendered
+
+
+def test_mortgage_console_names_missing_liquidity_as_burn_unavailable(
+        monkeypatch, tmp_path):
+    from foundry.core.mission_assessment import RecommendationAssessment
+    from foundry.finance.mortgage_assessment import MortgageFreedomAssessor
+
+    _seed_financial_independence(tmp_path)
+    action = (
+        "Liquidity evidence required. Mortgage Freedom will not recommend "
+        "deploying additional capital to the mortgage without adequate "
+        "household liquidity evidence.")
+
+    def unavailable_recommendation(*_args, **_kwargs):
+        return (RecommendationAssessment(
+            action=action,
+            scenario_id="liquidity-evidence-required",
+            estimated_delta_v_days=None,
+            status="unavailable",
+            action_type="liquidity_evidence_required",
+            action_label="Liquidity evidence required",
+            limitations=(action,),
+        ),)
+
+    monkeypatch.setattr(
+        MortgageFreedomAssessor, "_recommendation", unavailable_recommendation)
+    rendered = client().get("/missions/mortgage-freedom").text
+
+    assert "BURN UNAVAILABLE" in rendered
+    assert "Liquidity evidence required" in rendered
+    assert "NO BURN REQUIRED" not in rendered
 
 
 def test_console_grids_collapse_to_real_items_without_placeholders(tmp_path):

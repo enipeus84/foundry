@@ -607,6 +607,9 @@ class MortgageFreedomAssessor:
             ltv, runway_value, fixed_months, overpayments)
         milestones = self._milestones(
             balance, original, projected)
+        milestones = tuple(
+            replace(item, promote_completion=False) if item.is_current else item
+            for item in milestones)
         current_milestone = next(
             item for item in milestones if item.is_current)
 
@@ -761,8 +764,8 @@ class MortgageFreedomAssessor:
                 "finance.mortgage_ltv", ltv, None, request,
                 valuation_status, mortgage_input_refs,
                 valuation_evidence_refs, assumption_refs),
-                "CURRENT POSITION · CURRENT LTV", "percent",
-                valuation_reference),
+                "LTV", "percent",
+                f"ESTIMATED PROPERTY VALUE £{valuation:,.0f} · EQUITY £{current_equity:,.0f}"),
             TelemetryItem(self._metric(
                 "finance.mortgage_payment", payment,
                 self.policy.unit_or_currency, request, "available",
@@ -792,17 +795,17 @@ class MortgageFreedomAssessor:
                 evidence_refs(
                     acquisition_history["original_advance"],
                     (records["balance"],)),
-                assumption_refs), "EQUITY COMPOSITION · PRINCIPAL REPAID",
+                assumption_refs), "PRINCIPAL REPAID",
                 "currency",
-                "INITIAL MORTGAGE − CURRENT BALANCE"),
+                f"OF £{original:,.0f} · {principal_repaid / original * 100:.1f}%"),
             TelemetryItem(
                 valuation_movement_metric,
                 "EQUITY COMPOSITION · VALUATION MOVEMENT", "currency",
                 "CURRENT VALUE − PURCHASE PRICE"),
         )
         essential_metric_ids = {
-            "finance.mortgage_payment",
-            "finance.mortgage_fixed_protection",
+            "finance.mortgage_ltv",
+            "finance.mortgage_principal_repaid",
         }
         acquisition_metric_ids = {
             "finance.property_purchase_price",
@@ -843,17 +846,37 @@ class MortgageFreedomAssessor:
                     "finance.mortgage_target_horizon", target.horizon_at,
                     None, request, "available", mortgage_input_refs,
                     target.provenance, assumption_refs),
-                "DECLARED DESTINATION · TARGET HORIZON", "plain",
-                _month_year(target.horizon_at).upper(), "drilldown",
-                "DECLARED DESTINATION"),
+                "HOUSEHOLD GOAL", "date",
+                (
+                    f"EXPECTED PAYOFF {_month_year(projected.payoff_base).upper()} · "
+                    f"{abs((projected.payoff_base - target.horizon_at) / DAY):.0f} DAYS "
+                    f"{'LATE' if projected.payoff_base > target.horizon_at else 'EARLY'}"
+                    if projected.payoff_base is not None else
+                    "EXPECTED PAYOFF UNAVAILABLE"
+                ),
+                "essential"),
             TelemetryItem(
                 self._metric(
                     "finance.mortgage_target_adherence", 0.0,
                     None, request, "available", mortgage_input_refs,
                     target.provenance, assumption_refs),
-                "DECLARED DESTINATION · TARGET ADHERENCE", "plain",
-                adherence_state.replace("_", " ").upper(), "drilldown",
-                "DECLARED DESTINATION"),
+                "TARGET ADHERENCE", "status",
+                adherence_state.replace("_", " ").upper(), "essential"),
+            TelemetryItem(
+                self._metric(
+                    "finance.mortgage_contractual_maturity",
+                    original_contractual_eta, None, request, "available",
+                    mortgage_input_refs, mortgage_evidence_refs,
+                    assumption_refs),
+                "ORIGINAL MORTGAGE CONTRACT", "date",
+                (
+                    f"EXPECTED PAYOFF {_month_year(projected.payoff_base).upper()} · "
+                    f"{abs((original_contractual_eta - projected.payoff_base) / MONTH):.0f} "
+                    f"MONTHS {'EARLY' if projected.payoff_base < original_contractual_eta else 'LATE'}"
+                    if projected.payoff_base is not None else
+                    "EXPECTED PAYOFF UNAVAILABLE"
+                ),
+                "essential"),
         )
         telemetry += target_telemetry
         limitations = [
@@ -1430,10 +1453,10 @@ class MortgageFreedomAssessor:
             pace_percent=None,
             schedule_buffer_days=None,
             state=state,
-            label="LTV BUFFER",
-            value=1.0 - ltv,
+            label="MORTGAGE MARGIN",
+            value=None,
             unit_or_currency=None,
-            format_kind="percent",
+            format_kind="plain",
             description=(
                 f"LTV {ltv * 100:.1f}%, runway "
                 f"{runway_value:.1f} months"
@@ -1499,7 +1522,22 @@ class MortgageFreedomAssessor:
         runway_value: float | None,
         evidence_refs: tuple[str, ...],
     ) -> tuple[RecommendationAssessment, ...]:
-        if runway_value is None or baseline.payoff_base is None:
+        if runway_value is None:
+            action = (
+                "Liquidity evidence required. Mortgage Freedom will not "
+                "recommend deploying additional capital to the mortgage "
+                "without adequate household liquidity evidence.")
+            return (RecommendationAssessment(
+                action=action,
+                scenario_id="liquidity-evidence-required",
+                estimated_delta_v_days=None,
+                status="unavailable",
+                action_type="liquidity_evidence_required",
+                action_label="Liquidity evidence required",
+                limitations=(action,),
+                evidence_references=evidence_refs,
+            ),)
+        if baseline.payoff_base is None:
             return ()
         if runway_value < inputs.liquidity_floor_months:
             action = (
@@ -1691,7 +1729,9 @@ class MortgageFreedomAssessor:
             interest_high=0.0,
         )
         milestones = tuple(
-            replace(item, estimated_at=None)
+            replace(
+                item, estimated_at=None,
+                promote_completion=False if item.is_current else item.promote_completion)
             for item in self._milestones(balance, original, projected)
         )
         current_milestone = next(

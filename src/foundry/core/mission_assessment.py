@@ -155,6 +155,7 @@ class MissionMilestone:
     is_current: bool = False
     is_complete: bool = False
     completes_mission: bool = False
+    promote_completion: bool = True
     estimated_at: float | None = None
     destination_direction: str = "higher_is_better"
     destination_value: float | None = None
@@ -182,6 +183,7 @@ class MissionMilestone:
             ("is_current", self.is_current),
             ("is_complete", self.is_complete),
             ("completes_mission", self.completes_mission),
+            ("promote_completion", self.promote_completion),
         ):
             if not isinstance(value, bool):
                 raise ValueError(f"milestone {field} must be boolean")

@@ -216,6 +216,8 @@ def _format_value(value: float | None, unit: str | None, kind: str) -> str:
         return f"{value * 100:.1f}%"
     if kind == "months":
         return f"{value:.1f} mo"
+    if kind == "date":
+        return _month_year(value).upper()
     if kind == "number" and unit:
         return f"{value:,.2f} {unit}"
     return f"{value:,.2f}"
@@ -2006,12 +2008,14 @@ def _mission_trajectory_svg(
 def _telemetry_presentation(item) -> tuple[str, str]:
     result = item.result
     value = (
-        _format_value(
-            result.value, result.unit_or_currency, item.format_kind)
+        (item.qualifier if item.format_kind == "status" else _format_value(
+            result.value, result.unit_or_currency, item.format_kind))
         if result.status in ("available", "stale")
         else result.status.upper()
     )
-    qualifier = f" · {item.qualifier}" if item.qualifier else ""
+    qualifier = (
+        "" if item.format_kind == "status" else
+        f" · {item.qualifier}" if item.qualifier else "")
     detail = (
         f"{result.status.upper()} · "
         f"{len(result.input_references)} INPUT EVENT(S){qualifier}"
