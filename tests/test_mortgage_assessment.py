@@ -4,6 +4,7 @@ from dataclasses import replace
 
 import pytest
 
+from foundry.core import grammar
 from foundry.core.entities import (
     EntityProjection,
     declare_mission,
@@ -15,6 +16,7 @@ from foundry.core.mission_assessment import (
     MissionAssessmentRegistry,
     MissionAssessmentRequest,
 )
+from foundry.core.mission_targets import MissionTargetProjection, TargetQuantity
 from foundry.core.scope import Subject
 from foundry.eventlog import EventLog
 from foundry.finance import entities as fin
@@ -23,21 +25,41 @@ from foundry.finance.metrics import FinanceMetricProvider
 from foundry.finance.mortgage_assessment import (
     DAY,
     MONTH,
+    YEAR,
     POLICY_ID,
     TARGET_METRIC,
-    MortgageFreedomAssessor,
+    MortgageFreedomAssessor as _MortgageFreedomAssessor,
     MortgageProjectionEngine,
     MortgageProjectionInputs,
     _add_calendar_months,
     _month_year,
 )
+from foundry.finance.mission_targets import FinanceTargetMetricResolver
+from foundry.finance.missions import register_finance_mission_definitions
 from foundry.finance.mortgage_evidence import (
     MortgageEvidenceProjection,
     record_mortgage_evidence,
 )
 
 
-NOW = 1_785_170_000.0
+# This must remain after the real event clock so fixture Targets can be
+# validly declared after their Mission and still be in force at assessment.
+NOW = 1_800_000_000.0
+
+
+def _targets(log):
+    definitions = MissionAssessmentRegistry()
+    register_finance_mission_definitions(definitions)
+    return MissionTargetProjection(
+        log, EntityProjection(log), definitions, FinanceTargetMetricResolver())
+
+
+class MortgageFreedomAssessor(_MortgageFreedomAssessor):
+    """Keep legacy fixture call sites focused on the assessment under test."""
+
+    def __init__(self, finance, core, metrics, evidence, targets=None):
+        super().__init__(
+            finance, core, metrics, evidence, targets or _targets(core.log))
 
 
 class RunwayProvider:
@@ -110,6 +132,13 @@ def _fixture(path, *, runway=18.0, include_scenario=True,
             mortgage_start, original_term_months),
         assessment_policy_id=POLICY_ID,
         assumption_set_id=assumptions.id)
+    _targets(log).declare(
+        household_id=household.id, subject_id=household.id,
+        mission_id=mission.id, metric_id=TARGET_METRIC,
+        destination=TargetQuantity(0.0, "GBP", "currency"),
+        destination_direction="lower_is_better", horizon_kind="by_date",
+        horizon_at=mission.target_date,
+        effective_from=log.get(mission.provenance[0])["ts"] + 1.0)
 
     fields = {
         "property_role": "primary_residence",
@@ -170,6 +199,125 @@ def _fixture(path, *, runway=18.0, include_scenario=True,
 
 def _telemetry_by_id(result):
     return {item.result.metric_id: item for item in result.telemetry}
+
+
+def _successor_target(log, household, mission, *, horizon_at,
+                      destination=0.0, horizon_kind="by_date"):
+    targets = _targets(log)
+    predecessor = targets.in_force(mission.id, NOW)
+    assert predecessor is not None
+    return targets.declare(
+        household_id=household.id, subject_id=household.id,
+        mission_id=mission.id, metric_id=TARGET_METRIC,
+        destination=TargetQuantity(destination, "GBP", "currency"),
+        destination_direction="lower_is_better", horizon_kind=horizon_kind,
+        horizon_at=horizon_at if horizon_kind == "by_date" else None,
+        effective_from=predecessor.effective_from + 1.0,
+        supersedes=predecessor.id)
+
+
+def test_target_horizon_equal_to_contract_preserves_legacy_assessment(tmp_path):
+    log, _, _, _, assessor, request = _fixture(tmp_path / "events.jsonl")
+
+    result = assessor.assess(request)
+
+    target = _targets(log).in_force(request.mission_id, request.as_of)
+    assert target is not None
+    assert target.horizon_at == assessor.core.missions[request.mission_id].target_date
+    assert result.trajectory_state == "Accelerated"
+    assert result.delta_v is not None
+    assert target.id in result.input_references
+    assert set(target.provenance) <= set(result.input_references)
+    assert "finance.mortgage_target_horizon" in _telemetry_by_id(result)
+    assert "finance.mortgage_target_adherence" in _telemetry_by_id(result)
+    assert any("coincides with contractual maturity" in note for note in result.limitations)
+
+
+def test_earlier_target_horizon_does_not_change_contractual_trajectory(tmp_path):
+    log, household, _, _, assessor, request = _fixture(tmp_path / "events.jsonl")
+    baseline = assessor.assess(request)
+    maturity = assessor.core.missions[request.mission_id].target_date
+    _successor_target(log, household, assessor.core.missions[request.mission_id],
+                      horizon_at=maturity - 5 * YEAR)
+
+    revised = MortgageFreedomAssessor(
+        FinanceEntityProjection(log), EntityProjection(log), _metric_registry(18.0),
+        MortgageEvidenceProjection(log)).assess(request)
+
+    assert revised.trajectory_state == baseline.trajectory_state
+    assert revised.delta_v == baseline.delta_v
+    assert revised.eta == baseline.eta
+    assert _telemetry_by_id(revised)["finance.mortgage_target_horizon"].result.value < maturity
+
+
+def test_later_target_horizon_cannot_improve_contractual_trajectory(tmp_path):
+    log, household, _, _, assessor, request = _fixture(tmp_path / "events.jsonl")
+    baseline = assessor.assess(request)
+    maturity = assessor.core.missions[request.mission_id].target_date
+    _successor_target(log, household, assessor.core.missions[request.mission_id],
+                      horizon_at=maturity + 5 * YEAR)
+
+    revised = MortgageFreedomAssessor(
+        FinanceEntityProjection(log), EntityProjection(log), _metric_registry(18.0),
+        MortgageEvidenceProjection(log)).assess(request)
+
+    assert revised.trajectory_state == baseline.trajectory_state
+    assert revised.trajectory_tone == baseline.trajectory_tone
+    assert revised.delta_v == baseline.delta_v
+    assert any("later than contractual maturity" in note for note in revised.limitations)
+
+
+def test_historical_target_resolution_uses_the_predecessor(tmp_path):
+    log, household, _, _, assessor, request = _fixture(tmp_path / "events.jsonl")
+    mission = assessor.core.missions[request.mission_id]
+    predecessor = _targets(log).in_force(mission.id, request.as_of)
+    assert predecessor is not None
+    successor = _successor_target(
+        log, household, mission, horizon_at=predecessor.horizon_at - YEAR)
+
+    projection = _targets(log)
+    assert projection.in_force(mission.id, predecessor.effective_from) == predecessor
+    assert projection.in_force(mission.id, request.as_of) == successor
+
+
+def test_absent_target_uses_the_new_failure_message(tmp_path):
+    log, household, _, _, assessor, request = _fixture(tmp_path / "events.jsonl")
+    target = _targets(log).in_force(request.mission_id, request.as_of)
+    assert target is not None
+    _targets(log).withdraw(household_id=household.id, target_id=target.id,
+                           reason="test withdrawal")
+
+    result = MortgageFreedomAssessor(
+        FinanceEntityProjection(log), EntityProjection(log), _metric_registry(18.0),
+        MortgageEvidenceProjection(log)).assess(request)
+
+    assert result.status == "unavailable"
+    assert result.limitations == (
+        "no Mission Target is in force for this Mission at the assessment time",)
+
+
+def test_conflicting_target_state_uses_the_governed_failure_message(tmp_path):
+    log, household, _, _, assessor, request = _fixture(tmp_path / "events.jsonl")
+    mission = assessor.core.missions[request.mission_id]
+    target = _targets(log).in_force(mission.id, request.as_of)
+    assert target is not None
+    duplicate_id = grammar.new_id()
+    grammar.declare(log, "core", "mission_target", duplicate_id, {
+        "entity_id": duplicate_id, "mission_id": mission.id,
+        "household_id": household.id, "subject_id": household.id,
+        "metric_id": TARGET_METRIC, "destination_value": 0.0,
+        "destination_unit": "GBP", "destination_dimension": "currency",
+        "destination_direction": "lower_is_better", "horizon_kind": "by_date",
+        "horizon_at": target.horizon_at,
+        "effective_from": target.effective_from,
+    })
+
+    result = MortgageFreedomAssessor(
+        FinanceEntityProjection(log), EntityProjection(log), _metric_registry(18.0),
+        MortgageEvidenceProjection(log)).assess(request)
+
+    assert result.status == "unavailable"
+    assert result.limitations == ("Mission Target state is in conflict",)
 
 
 def test_projection_is_deterministic_ordered_and_separate_from_observation():
@@ -302,7 +450,7 @@ def test_property_equity_calculations_are_direct_explanatory_attribution(
     assert telemetry[
         "finance.mortgage_initial_deposit"].result.value == 140_000.0
     assert telemetry[
-        "finance.mortgage_balance"].qualifier == "OBSERVED · JULY 2026"
+        "finance.mortgage_balance"].qualifier == "OBSERVED · JANUARY 2027"
     assert telemetry[
         "finance.property_acquisition_costs"].result.value == 7_500.0
     principal_refs = set(telemetry[
@@ -446,12 +594,12 @@ def test_valuation_basis_is_explicit_and_never_inferred_from_source_text(
     assert (
         explicit_valuation.qualifier
         == "Estimated · Agent appraisal · manual lender statement"
-        " · July 2026"
+        " · January 2027"
     )
     assert (
         absent_valuation.qualifier
         == "Estimated · Valuation basis: Not recorded; not inferred"
-        " · manual lender statement · July 2026"
+        " · manual lender statement · January 2027"
     )
     assert "Owner Estimate" not in absent_valuation.qualifier
     assert "Index Estimate" not in absent_valuation.qualifier
@@ -552,13 +700,13 @@ def test_original_contractual_term_drives_trajectory_and_time_gained(tmp_path):
 
     mission.target_date += MONTH
     forged = assessor.assess(request)
-    assert forged.status == "unavailable"
-    assert "does not match" in forged.limitations[0]
+    assert forged.status == result.status
+    assert forged.trajectory_state == result.trajectory_state
 
     mission.target_date = contractual_destination + DAY / 2
     subtly_forged = assessor.assess(request)
-    assert subtly_forged.status == "unavailable"
-    assert "does not match" in subtly_forged.limitations[0]
+    assert subtly_forged.status == result.status
+    assert subtly_forged.trajectory_state == result.trajectory_state
 
 
 def test_historical_overpayments_do_not_become_recurring_forecast_inputs(
@@ -1017,7 +1165,7 @@ def test_unrepresentable_original_term_fails_closed(tmp_path):
     ("target_date", False),
     ("target_value", False),
 ])
-def test_malformed_mission_target_policy_fails_closed(
+def test_legacy_mission_destination_metadata_is_ignored(
         tmp_path, field, value):
     _, _, _, _, assessor, request = _fixture(
         tmp_path / "events.jsonl")
@@ -1026,8 +1174,7 @@ def test_malformed_mission_target_policy_fails_closed(
 
     result = assessor.assess(request)
 
-    assert result.status == "unavailable"
-    assert result.recommendations == ()
+    assert result.status != "unavailable"
 
 
 def test_cross_household_borrower_scope_fails_closed(tmp_path):

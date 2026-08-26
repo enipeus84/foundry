@@ -83,12 +83,12 @@ class MortgageMissionQueryService:
         metrics.register(FinanceMetricProvider(finance, core))
         metrics.register(FinanceResilienceMetricProvider(
             finance, core, ResilienceEvidenceProjection(self.log)))
-        assessor = MortgageFreedomAssessor(
-            finance, core, metrics, MortgageEvidenceProjection(self.log))
         definitions = MissionAssessmentRegistry()
         register_finance_mission_definitions(definitions)
         targets = MissionTargetProjection(
             self.log, core, definitions, FinanceTargetMetricResolver())
+        assessor = MortgageFreedomAssessor(
+            finance, core, metrics, MortgageEvidenceProjection(self.log), targets)
         return core, finance, assessor, targets
 
     # ----------------------------------------------------------- scope
@@ -317,7 +317,9 @@ class MortgageMissionQueryService:
             "confidence": ({"state": assessment.confidence.state,
                             "basis": assessment.confidence.basis}
                            if assessment.confidence is not None else None),
-            "contractual_maturity_at": iso(mission.target_date),
+            "contractual_maturity_at": (
+                iso(delta_v.reference_destination_at)
+                if delta_v is not None else None),
             "current_position": self._current_position(assessment),
             "forecast": self._forecast(assessment),
             "mission_margin": ({

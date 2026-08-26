@@ -16,6 +16,7 @@ import time
 
 from foundry.core.entities import EntityProjection
 from foundry.core.metrics import MetricRegistry, MetricRequest, MetricResult
+from foundry.core.mission_targets import MissionTargetProjection
 from foundry.core.mission_assessment import (
     DeltaV,
     ForecastPoint,
@@ -306,12 +307,14 @@ class MortgageFreedomAssessor:
         core: EntityProjection,
         metrics: MetricRegistry,
         evidence: MortgageEvidenceProjection,
+        targets: MissionTargetProjection,
         policy: MortgageFreedomPolicy | None = None,
     ):
         self.finance = finance
         self.core = core
         self.metrics = metrics
         self.evidence = evidence
+        self.targets = targets
         self.policy = policy or MortgageFreedomPolicy()
         self.projection = MortgageProjectionEngine()
 
@@ -325,19 +328,9 @@ class MortgageFreedomAssessor:
         if mission.assessment_policy_id != self.policy.id:
             return self._unavailable(
                 request, "mission is not declared against this policy")
-        if mission.target_metric != self.policy.target_metric \
-                or isinstance(mission.target_value, bool) \
-                or not isinstance(mission.target_value, (int, float)) \
-                or not math.isfinite(float(mission.target_value)) \
-                or mission.target_value != 0.0:
+        if mission.target_metric != self.policy.target_metric:
             return self._unavailable(
-                request, "Mission destination must be a zero mortgage balance")
-        if mission.target_date is None \
-                or isinstance(mission.target_date, bool) \
-                or not isinstance(mission.target_date, (int, float)) \
-                or not math.isfinite(float(mission.target_date)):
-            return self._unavailable(
-                request, "mission target date is absent or invalid")
+                request, "mission is not declared against this policy")
         if request.scope.kind != "party":
             return self._unavailable(
                 request, "Mortgage Freedom requires a party scope")
@@ -346,6 +339,29 @@ class MortgageFreedomAssessor:
                 or household.status != "active":
             return self._unavailable(
                 request, "active household scope not found")
+
+        target = self.targets.in_force(mission.id, request.as_of)
+        if target is None:
+            if mission.id in self.targets.conflicts:
+                return self._unavailable(
+                    request, "Mission Target state is in conflict")
+            return self._unavailable(
+                request,
+                "no Mission Target is in force for this Mission at the assessment time")
+        if target.household_id != request.scope.id:
+            return self._unavailable(
+                request, "Mission Target belongs to another household")
+        # A legacy unspecified subject is valid. RFC-016 owns validation for
+        # specified subjects; Mortgage Freedom never derives scope from it.
+        if target.metric_id != self.policy.target_metric:
+            return self._unavailable(
+                request, "Mission Target metric is not the mortgage balance")
+        if target.destination.value != 0.0:
+            return self._unavailable(
+                request, "Mission destination must be a zero mortgage balance")
+        if target.horizon_kind != "by_date" or target.horizon_at is None:
+            return self._unavailable(
+                request, "Mortgage Freedom requires a dated Mission Target horizon")
 
         assumption_set = self.finance.assumption_sets.get(
             mission.assumption_set_id or "")
@@ -433,12 +449,6 @@ class MortgageFreedomAssessor:
             return self._unavailable(
                 request,
                 "Original contractual term cannot be represented safely")
-        if mission.target_date != original_contractual_eta:
-            return self._unavailable(
-                request,
-                "Mission destination does not match the original "
-                "contractual term evidence")
-
         balance = numeric["balance"]
         original = numeric["original_advance"]
         valuation = valuation_candidate.amount
@@ -452,6 +462,7 @@ class MortgageFreedomAssessor:
         valuation_evidence_refs = (valuation_candidate.event_id,)
         mortgage_input_refs = tuple(sorted({
             *scope_input_refs, *mission.provenance, *mission.history,
+            target.id, *target.provenance,
         }))
         assumption_refs = tuple(assumption_set.provenance)
         balance_status = (
@@ -574,6 +585,9 @@ class MortgageFreedomAssessor:
             request.as_of, records, inputs, overpayments,
             valuation_effective_at=valuation_candidate.effective_at,
             valuation_record=valuation_candidate.legacy_record)
+        adherence_state, adherence_limitations = self._target_adherence(
+            balance=balance, as_of=request.as_of, horizon_at=target.horizon_at,
+            payoff_low=projected.payoff_low, payoff_base=projected.payoff_base)
         assessment_input_refs = tuple(sorted({
             *mortgage_input_refs,
             *(runway.input_references if runway_value is not None else ()),
@@ -823,6 +837,25 @@ class MortgageFreedomAssessor:
             )
             for item in telemetry
         )
+        target_telemetry = (
+            TelemetryItem(
+                self._metric(
+                    "finance.mortgage_target_horizon", target.horizon_at,
+                    None, request, "available", mortgage_input_refs,
+                    target.provenance, assumption_refs),
+                "DECLARED DESTINATION · TARGET HORIZON", "plain",
+                _month_year(target.horizon_at).upper(), "drilldown",
+                "DECLARED DESTINATION"),
+            TelemetryItem(
+                self._metric(
+                    "finance.mortgage_target_adherence", 0.0,
+                    None, request, "available", mortgage_input_refs,
+                    target.provenance, assumption_refs),
+                "DECLARED DESTINATION · TARGET ADHERENCE", "plain",
+                adherence_state.replace("_", " ").upper(), "drilldown",
+                "DECLARED DESTINATION"),
+        )
+        telemetry += target_telemetry
         limitations = [
             f"Primary residence dated valuation reference: "
             f"£{valuation:,.2f} · {valuation_source} · "
@@ -855,6 +888,24 @@ class MortgageFreedomAssessor:
         ]
         if purchase_detail is not None:
             limitations.insert(1, purchase_detail)
+        if target.supersedes is not None:
+            limitations.append(
+                "The declared destination in force supersedes Mission Target "
+                f"{target.supersedes}; the predecessor remains the historic destination.")
+        if target.declared_at > request.as_of:
+            limitations.append("The declared Mission Target was recorded retrospectively.")
+        if mission.target_value is not None and mission.target_value != 0.0:
+            limitations.append(
+                "Legacy Mission target value differs from the in-force "
+                "Mission Target and is non-authoritative.")
+        if abs(target.horizon_at - original_contractual_eta) <= DAY:
+            limitations.append(
+                "The declared target horizon coincides with contractual maturity.")
+        elif target.horizon_at > original_contractual_eta:
+            limitations.append(
+                "The declared target horizon is later than contractual maturity; "
+                "the mortgage contract remains the binding constraint.")
+        limitations.extend(adherence_limitations)
         missing_composition = []
         if initial_deposit is None:
             missing_composition.append("initial deposit")
@@ -974,6 +1025,28 @@ class MortgageFreedomAssessor:
         if points[-1].value > points[0].value:
             return "receding"
         return "holding"
+
+    @staticmethod
+    def _target_adherence(*, balance: float, as_of: float, horizon_at: float,
+                          payoff_low: float | None,
+                          payoff_base: float | None) -> tuple[str, tuple[str, ...]]:
+        """Compare the forecast with declared intent without touching trajectory."""
+        if balance == 0.0:
+            return "met", ()
+        if as_of > horizon_at:
+            return "elapsed", (
+                "The declared Mortgage Target horizon has elapsed while a balance remains.",)
+        if payoff_base is None:
+            return "unavailable", ()
+        if payoff_base <= horizon_at + DAY:
+            return "on_track", ()
+        if payoff_low is not None and payoff_low <= horizon_at + DAY:
+            return "at_risk", (
+                "The expected mortgage payoff misses the declared target horizon; "
+                "only the low-rate sensitivity reaches it.",)
+        return "off_track", (
+            "The expected and low-rate mortgage payoff paths miss the declared "
+            "target horizon.",)
 
     def _unavailable(
         self, request: MissionAssessmentRequest, reason: str

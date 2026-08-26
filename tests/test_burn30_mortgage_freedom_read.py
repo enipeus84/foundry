@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 
 import pytest
 
@@ -14,17 +15,21 @@ from foundry.application.mortgage_mission import (
     MortgageMissionQueryError, MortgageMissionQueryService,
 )
 from foundry.application.resources import FinancialResourceQuery
+from foundry.core import grammar
 from foundry.core.entities import (
     EntityProjection, declare_mission, declare_party, join_household, update_party,
 )
 from foundry.core.metrics import MetricRegistry
-from foundry.core.mission_assessment import MissionAssessmentRequest
+from foundry.core.mission_assessment import MissionAssessmentRegistry, MissionAssessmentRequest
+from foundry.core.mission_targets import MissionTargetProjection, TargetQuantity
 from foundry.core.principal_authority import grant_principal_household_authority
 from foundry.core.scope import Subject
 from foundry.eventlog import EventLog
 from foundry.finance import entities as finance
 from foundry.finance.entities import FinanceEntityProjection
 from foundry.finance.metrics import FinanceMetricProvider
+from foundry.finance.mission_targets import FinanceTargetMetricResolver
+from foundry.finance.missions import register_finance_mission_definitions
 from foundry.finance.mortgage_assessment import (
     DAY, POLICY_ID, TARGET_METRIC, MortgageFreedomAssessor,
     MortgageProjectionEngine, _add_calendar_months,
@@ -42,6 +47,7 @@ NOW = 1_787_616_000.0            # 2026-08-25T00:00:00Z
 MORTGAGE_START = 1_748_736_000.0  # 2025-06-01T00:00:00Z
 FIXED_RATE_EXPIRY = 1_816_992_000.0  # 2027-07-31T00:00:00Z
 ORIGINAL_TERM_MONTHS = 300
+_DEFAULT_TARGET_DATE = object()
 
 #: The twelve fields Burn 29 made canonical, at their production values.
 BURN29_EVIDENCE: dict[str, object] = {
@@ -107,14 +113,32 @@ def _burn29_world(tmp_path, *, evidence_fields=None, valuation=None):
     return log, household, home, mortgage
 
 
-def _declare_mortgage_mission(log, household, *, assumption_set_id=None):
-    return declare_mission(
+def _declare_mortgage_mission(log, household, *, assumption_set_id=None,
+                              target_value=0.0, target_date=_DEFAULT_TARGET_DATE,
+                              declare_target=True):
+    contractual_maturity = _add_calendar_months(
+        MORTGAGE_START, ORIGINAL_TERM_MONTHS)
+    mission = declare_mission(
         log, "Mortgage free by contractual term",
-        target_metric=TARGET_METRIC, target_value=0.0,
-        target_date=_add_calendar_months(MORTGAGE_START, ORIGINAL_TERM_MONTHS),
+        target_metric=TARGET_METRIC, target_value=target_value,
+        target_date=(contractual_maturity if target_date is _DEFAULT_TARGET_DATE
+                     else target_date),
         assessment_policy_id=POLICY_ID,
         assumption_set_id=assumption_set_id,
         household_id=household.id)
+    if declare_target:
+        definitions = MissionAssessmentRegistry()
+        register_finance_mission_definitions(definitions)
+        targets = MissionTargetProjection(
+            log, EntityProjection(log), definitions, FinanceTargetMetricResolver())
+        targets.declare(
+            household_id=household.id, subject_id=household.id,
+            mission_id=mission.id, metric_id=TARGET_METRIC,
+            destination=TargetQuantity(0.0, "GBP", "currency"),
+            destination_direction="lower_is_better", horizon_kind="by_date",
+            horizon_at=contractual_maturity,
+            effective_from=log.get(mission.provenance[0])["ts"])
+    return mission
 
 
 def _assumptions(log):
@@ -141,10 +165,41 @@ def _direct_assessment(log, household, mission):
     metrics.register(FinanceMetricProvider(fin, core))
     metrics.register(FinanceResilienceMetricProvider(
         fin, core, ResilienceEvidenceProjection(log)))
+    definitions = MissionAssessmentRegistry()
+    register_finance_mission_definitions(definitions)
+    targets = MissionTargetProjection(
+        log, core, definitions, FinanceTargetMetricResolver())
     assessor = MortgageFreedomAssessor(
-        fin, core, metrics, MortgageEvidenceProjection(log))
+        fin, core, metrics, MortgageEvidenceProjection(log), targets)
     return assessor.assess(MissionAssessmentRequest(
-        mission.id, POLICY_ID, Subject("party", household.id), NOW))
+        mission.id, POLICY_ID, Subject("party", household.id), time.time()))
+
+
+def _production_shaped_target(log, household, mission):
+    """Replay the deployed legacy declaration shape: null subject and basis."""
+    definitions = MissionAssessmentRegistry()
+    register_finance_mission_definitions(definitions)
+    targets = MissionTargetProjection(
+        log, EntityProjection(log), definitions, FinanceTargetMetricResolver())
+    predecessor = targets.in_force(mission.id, time.time())
+    assert predecessor is not None
+    target_id = grammar.new_id()
+    grammar.declare(log, "core", "mission_target", target_id, {
+        "entity_id": target_id,
+        "mission_id": mission.id,
+        "household_id": household.id,
+        "subject_id": None,
+        "metric_id": TARGET_METRIC,
+        "destination_value": 0.0,
+        "destination_unit": "GBP",
+        "destination_dimension": "currency",
+        "destination_direction": "lower_is_better",
+        "horizon_kind": "by_date",
+        "horizon_at": 2_312_755_200.0,  # 2043-04-16
+        "effective_from": predecessor.effective_from,
+        "supersedes": predecessor.id,
+    })
+    return target_id
 
 
 def _tool(server, name):
@@ -212,19 +267,38 @@ def test_absent_assumption_set_is_named_as_the_exact_dependency(tmp_path):
     assert result["blockers"] == ["active Assumption Set not found"]
 
 
-def test_absent_mission_target_is_reported_without_blocking_the_assessment(tmp_path):
+def test_production_shaped_target_reaches_assumption_set_blocker(tmp_path):
+    log, household, _, _ = _burn29_world(tmp_path, valuation=436_638.42)
+    mission = _declare_mortgage_mission(
+        log, household, target_value=None, target_date=None)
+    declaration = next(event for event in log.events()
+                       if event["id"] == mission.provenance[0])
+    assert declaration["payload"]["target_value"] is None
+    assert declaration["payload"]["target_date"] is None
+    target_id = _production_shaped_target(log, household, mission)
+
+    # Projection state is the production shape: no Assumption Set and a
+    # legacy Target with unspecified subject and no basis.
+    result = _service(log, household).inspect()
+
+    assert result["target"]["id"] == target_id
+    assert result["target"]["subject_id"] is None
+    assert result["target"]["basis"] is None
+    assert result["target"]["horizon_at"].startswith("2043-04-16")
+    assert result["contractual_maturity_at"] is None
+    assert result["blockers"] == ["active Assumption Set not found"]
+
+
+def test_in_force_mission_target_authorises_the_assessment(tmp_path):
     log, household, _, _ = _burn29_world(tmp_path, valuation=436_638.42)
     mission = _declare_mortgage_mission(
         log, household, assumption_set_id=_assumptions(log).id)
 
     result = _service(log, household).inspect()
 
-    assert result["target"]["state"] == "absent"
-    assert "no in-force canonical Mission Target" in result["target"]["reason"]
-    assert result["target"]["mission_destination"]["target_value"] == 0.0
+    assert result["target"]["state"] == "in_force"
+    assert result["target"]["destination"]["value"] == 0.0
     assert result["mission"]["id"] == mission.id
-    # The mortgage assessor scopes on the household, not on a Target, so an
-    # absent Target must not itself make the assessment unavailable.
     assert result["completeness"] == "complete"
 
 
@@ -262,7 +336,7 @@ def test_complete_read_mirrors_the_direct_domain_assessment(tmp_path):
     assessment = _direct_assessment(log, household, mission)
     assert assessment.completeness == "complete"
 
-    result = _service(log, household).inspect(as_of="2026-08-25T00:00:00Z")
+    result = _service(log, household).inspect()
 
     assert result["completeness"] == assessment.completeness
     assert result["assessment_status"] == assessment.status
@@ -300,7 +374,7 @@ def test_forecast_failure_preserves_present_state_outputs(tmp_path, monkeypatch)
     assessment = _direct_assessment(log, household, mission)
     assert assessment.completeness == "partial"
 
-    result = _service(log, household).inspect(as_of="2026-08-25T00:00:00Z")
+    result = _service(log, household).inspect()
 
     assert result["completeness"] == "partial"
     assert result["evaluable"] is False
