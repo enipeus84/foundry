@@ -265,15 +265,14 @@ register_capture_contract(CaptureContract(
 
 register_capture_contract(CaptureContract(
     identifier="cash-balance-update", version="1", display_name="Cash Balance Update",
-    description=("Record a stated cash-account observation. It does not update Finance balances, "
-                 "net worth, liquidity, or other downstream projections, and is not currently "
-                 "consumed by the RFC-011 reconciliation lens."),
-    capabilities=("manual_capture", "finance_reconciliation", "review_required"), schema=_CASH_SCHEMA,
+    description="Record the stated current value of an existing liquid account.",
+    capabilities=("manual_capture", "finance_valuation", "review_required"), schema=_CASH_SCHEMA,
     validation=CaptureValidation(),
-    review_template="Review cash observation for {subject_id}: {currency} {amount:,.2f} at {valid_at:.0f}.",
+    review_template="Review cash balance for {subject_id}: {currency} {amount:,.2f} at {valid_at:.0f}.",
     evidence_policy=EvidencePolicy.OPTIONAL,
-    canonical_mapper=CanonicalMapper("finance.account.reconciliation_observed", "cash_balance", {
-        "entity_id": "$subject_id", "supplied_total": "$amount", "valid_at": "$valid_at",
+    canonical_mapper=CanonicalMapper("finance.valuation.declared", "cash_balance", {
+        "entity_id": "$capture_id", "subject_id": "$subject_id", "amount": "$amount",
+        "currency": "$currency", "as_of": "$valid_at", "valuation_basis": "account_balance",
     }), stream_properties=("cash_balance", "statement_total"),
 ))
 

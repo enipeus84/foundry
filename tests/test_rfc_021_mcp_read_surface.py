@@ -205,7 +205,7 @@ def test_mcp_client_connects_and_cannot_cross_household(environment):
     gate = ConfirmationGate(log, ProposalInbox(log), TelemetryStreamRegistry(log), IdentityIndex(log),
                             finance_asset_registry(log), FINANCE_MANUAL_DRAFT_CONTRACT)
     gate.confirm(proposal.id, actor="human-reviewer")
-    assert any(event["kind"] == "finance.account.reconciliation_observed" for event in log.events())
+    assert any(event["kind"] == "finance.valuation.declared" for event in log.events())
     assert any(event["actor"] == f"mcp:{ALLOWED}" for event in log.events())
 
 
