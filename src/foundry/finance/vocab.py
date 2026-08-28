@@ -76,6 +76,29 @@ RECURRING_COMMITMENT_TYPE = ExtensibleVocabulary(
      "savings_contribution", "investment_contribution", "child_contribution"},
 )
 
+# The denominator is deliberately closed-world.  An unclassified expense is
+# an observation, but it cannot silently prove that an essential household
+# need is covered.
+ESSENTIAL_CATEGORY = ExtensibleVocabulary(
+    "essential_category",
+    {"housing", "transport", "groceries", "childcare", "education",
+     "healthcare", "tax_payment"},
+)
+
+RECURRING_CADENCE = ExtensibleVocabulary(
+    "recurring_cadence", {"week", "fortnight", "month", "quarter", "year"},
+)
+
+RECURRING_DIRECTION = ExtensibleVocabulary(
+    "recurring_direction", {"inflow", "outflow"},
+)
+
+RECURRING_BASIS = ExtensibleVocabulary(
+    "recurring_basis",
+    {"contractual_derived", "contractual_declared", "operator_estimate",
+     "not_applicable"},
+)
+
 TAX_ESTIMATION_BASIS = ExtensibleVocabulary(
     "tax_estimation_basis",
     {"observed", "estimated", "derived", "unsupported"},

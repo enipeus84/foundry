@@ -84,6 +84,7 @@ docs/rfc-002-implementation-report.md:
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 import time
 from typing import Iterable
 
@@ -95,7 +96,12 @@ from . import vocab
 from .aggregation import FinanceAggregationService
 from .entities import Account, Asset, FinanceEntityProjection, Obligation
 
+# V2 changes one and only one published calculation: the runway
+# denominator now has governed category coverage and commitment semantics.
+# Keep the public V1 constant for the unchanged metrics and make the changed
+# metric's version explicit at its boundary.
 CALCULATION_VERSION = "v1"
+LIQUIDITY_RUNWAY_CALCULATION_VERSION = "v2"
 
 METRIC_IDS = frozenset({
     "finance.net_worth",
@@ -115,6 +121,35 @@ ESSENTIAL_COMMITTED_CATEGORIES = frozenset({
 })
 
 _LIQUID = frozenset({"liquid", "near_liquid"})
+
+_MONTHLY_MULTIPLIER = {
+    "week": 365.2425 / 7.0 / 12.0,
+    "fortnight": 365.2425 / 14.0 / 12.0,
+    "month": 1.0,
+    "quarter": 1.0 / 3.0,
+    "year": 1.0 / 12.0,
+}
+
+
+@dataclass(frozen=True)
+class EssentialOutflowCategory:
+    category: str
+    amount: float
+    basis: str
+    effective_from: float | None
+    provenance: tuple[str, ...]
+    contractual: float = 0.0
+    observed: float = 0.0
+    estimated: float = 0.0
+
+
+@dataclass(frozen=True)
+class EssentialOutflowBasis:
+    monthly_amount: float | None
+    categories: tuple[EssentialOutflowCategory, ...]
+    uncovered_categories: tuple[str, ...]
+    input_references: tuple[str, ...]
+    limitations: tuple[str, ...]
 
 
 class FinanceMetricProvider:
@@ -153,14 +188,21 @@ class FinanceMetricProvider:
                 "Financial Projections (001 §16) are not implemented in RFC-002 "
                 "Part 1 — a horizon/assumption_set_id/scenario_id request cannot "
                 "be honoured, and a silently-Baseline answer would misrepresent it")
-        if request.requested_calculation_version not in (None, CALCULATION_VERSION):
+        calculation_version = self._calculation_version(request.metric_id)
+        if request.requested_calculation_version not in (None, calculation_version):
             return self._unsupported(
                 request,
                 f"calculation_version {request.requested_calculation_version!r} "
-                f"cannot be reproduced (current: {CALCULATION_VERSION!r})")
+                f"cannot be reproduced (current: {calculation_version!r})")
         return handler(request)
 
     # ------------------------------------------------------------ metrics
+
+    @staticmethod
+    def _calculation_version(metric_id: str) -> str:
+        return (LIQUIDITY_RUNWAY_CALCULATION_VERSION
+                if metric_id == "finance.liquidity_runway"
+                else CALCULATION_VERSION)
 
     def _net_worth(self, request: MetricRequest) -> MetricResult:
         """(accounts + assets) − owed obligations, unioned by entity id
@@ -215,14 +257,17 @@ class FinanceMetricProvider:
             other, r2, l2 = self._attributed_value(attribute_to, self.finance.assets, target,
                                                      request.as_of, filter_liquidity=_LIQUID)
 
-        monthly_outflow, r3 = self._average_essential_outflow(
+        outflow_basis = self.essential_outflow_basis(
             set(person_ids), attribute_to, target, request.as_of)
+        monthly_outflow = outflow_basis.monthly_amount
         if monthly_outflow is None or monthly_outflow <= 0:
             return self._unavailable(
-                request, "no net essential/committed monthly outflow observed yet")
+                request, "essential-outflow coverage is incomplete",
+                list(outflow_basis.limitations))
 
         return self._available(request, (accounts + other) / monthly_outflow, "months",
-                                r1 + r2 + r3, l1 + l2)
+                                r1 + r2 + list(outflow_basis.input_references),
+                                l1 + l2 + list(outflow_basis.limitations))
 
     def _cash_flow(self, request: MetricRequest) -> MetricResult:
         """Net flow across every owned account's transactions dated at
@@ -648,6 +693,182 @@ class FinanceMetricProvider:
             return None, refs
         return total / len(months), refs
 
+    def essential_outflow_basis(
+            self, person_ids: set[str], attribute_to: str | None,
+            target_currency: str, as_of: float) -> EssentialOutflowBasis:
+        """Compose the governed denominator by essential category.
+
+        Transactions remain observations.  RecurringSeries supplies expected
+        commitments or explicitly-labelled estimates.  The category gate is
+        intentionally all-or-nothing: a missing category is not a zero.
+        """
+        owned_accounts = self._owned_entities(
+            person_ids, self.finance.accounts, vocab.VALUE_OWNERSHIP_RELATIONS)
+        owned_obligations = self._owned_entities(
+            person_ids, self.finance.obligations, vocab.LIABILITY_RELATIONS)
+        categories = []
+        refs: list[str] = []
+        limitations: list[str] = []
+        uncovered: list[str] = []
+        total = 0.0
+        for category in sorted(vocab.ESSENTIAL_CATEGORY.values):
+            series = [s for s in self.finance.recurring_series.values()
+                      if s.status == "active" and s.essential_category == category
+                      and s.cadence in _MONTHLY_MULTIPLIER and s.direction == "outflow"
+                      and s.basis in vocab.RECURRING_BASIS
+                      and s.effective_from is not None and s.effective_from <= as_of
+                      and self._series_in_scope(s, owned_accounts, owned_obligations)]
+            not_applicable = [s for s in series if s.basis == "not_applicable"]
+            all_contracts = [s for s in series if s.basis in
+                             {"contractual_derived", "contractual_declared"}]
+            contracts = self._current_contracts(all_contracts)
+            estimates = [s for s in series if s.basis == "operator_estimate"]
+            counted_series = {s.id for s in all_contracts}
+            observed, observed_refs = self._observed_category_monthly(
+                owned_accounts, attribute_to, target_currency, as_of, category,
+                counted_series)
+            contractual, contract_refs = self._series_monthly(
+                contracts, target_currency, as_of, limitations)
+            estimated = 0.0
+            estimate_refs: list[str] = []
+            if observed > 0 and estimates:
+                limitations.append(
+                    f"operator estimate for {category} is not combined with observed expenditure")
+            elif len(estimates) > 1:
+                limitations.append(
+                    f"multiple operator estimates for {category} require reconciliation")
+            elif estimates:
+                estimated, estimate_refs = self._series_monthly(
+                    estimates, target_currency, as_of, limitations)
+                if estimated > 0:
+                    limitations.append(
+                        f"operator estimate materially contributes to essential outflow for {category}")
+            if not_applicable:
+                amount, basis, effective, category_refs = (
+                    0.0, "not_applicable",
+                    max(s.effective_from for s in not_applicable),
+                    tuple(ref for s in not_applicable
+                          for ref in (*s.provenance,
+                                      *((s.source_reference,) if s.source_reference else ()))))
+            else:
+                amount = contractual + observed + estimated
+                effective_values = [s.effective_from for s in contracts + estimates
+                                    if s.effective_from is not None]
+                effective = max(effective_values) if effective_values else None
+                category_refs = tuple(contract_refs + observed_refs + estimate_refs)
+                if contractual and observed:
+                    basis = "contractual_plus_observed"
+                elif contractual:
+                    basis = "contractual_derived" if all(
+                        s.basis == "contractual_derived" for s in contracts) \
+                        else "contractual_declared"
+                elif observed:
+                    basis = "observed"
+                elif estimated:
+                    basis = "operator_estimate"
+                else:
+                    basis = "uncovered"
+            refs.extend(category_refs)
+            if basis == "uncovered":
+                uncovered.append(category)
+            else:
+                total += amount
+            categories.append(EssentialOutflowCategory(
+                category, amount, basis, effective, category_refs,
+                contractual, observed, estimated))
+        if uncovered:
+            limitations.append(
+                "essential categories without an acceptable basis: "
+                + ", ".join(uncovered))
+            return EssentialOutflowBasis(
+                None, tuple(categories), tuple(uncovered), tuple(refs),
+                tuple(limitations))
+        return EssentialOutflowBasis(
+            total if total > 0 else None, tuple(categories), (), tuple(refs),
+            tuple(limitations))
+
+    @staticmethod
+    def _current_contracts(contracts: list) -> list:
+        """Choose one in-force derived series per settled obligation.
+
+        Mortgage promotion is an immutable correction: a newer authoritative
+        payment creates a new series rather than mutating old truth.  Only the
+        latest effective derived series for that same obligation can enter a
+        present denominator, while historic requests continue to select the
+        prior series through ``effective_from`` filtering above.
+        """
+        selected: dict[str, tuple[int, object]] = {}
+        retained = []
+        for index, series in enumerate(contracts):
+            if series.basis != "contractual_derived" \
+                    or series.settled_obligation_id is None:
+                retained.append(series)
+                continue
+            key = series.settled_obligation_id
+            previous = selected.get(key)
+            if previous is None or (series.effective_from, index) > (
+                    previous[1].effective_from, previous[0]):
+                selected[key] = (index, series)
+        return retained + [item[1] for _, item in sorted(selected.items())]
+
+    @staticmethod
+    def _series_in_scope(series, owned_accounts: dict, owned_obligations: dict) -> bool:
+        # not_applicable is an explicit household policy declaration; it has
+        # no cash settlement and therefore no resource to test for ownership.
+        if series.basis == "not_applicable":
+            return True
+        return ((series.funding_account_id is not None
+                 and series.funding_account_id in owned_accounts)
+                or (series.settled_obligation_id is not None
+                    and series.settled_obligation_id in owned_obligations))
+
+    def _series_monthly(self, series, target_currency: str, as_of: float,
+                        limitations: list[str]) -> tuple[float, list[str]]:
+        total, refs = 0.0, []
+        for item in series:
+            converted, conversion_ref = self._convert(
+                item.amount * _MONTHLY_MULTIPLIER[item.cadence],
+                item.currency, target_currency, as_of)
+            if converted is None:
+                limitations.append(
+                    f"no exchange rate {item.currency}->{target_currency} for commitment {item.id}; excluded")
+                continue
+            total += converted
+            refs.extend(item.provenance)
+            if item.source_reference:
+                refs.append(item.source_reference)
+            if conversion_ref:
+                refs.append(conversion_ref)
+        return total, refs
+
+    def _observed_category_monthly(
+            self, owned_accounts: dict, attribute_to: str | None,
+            target_currency: str, as_of: float, category: str,
+            counted_series: set[str]) -> tuple[float, list[str]]:
+        total, refs, months = 0.0, [], set()
+        for account_id in owned_accounts:
+            weight = self._flow_weight(self.finance.accounts[account_id], attribute_to)
+            if weight <= 0:
+                continue
+            for transaction in self.finance.transactions_in(account_id):
+                if transaction.ts > as_of or transaction.transaction_category != category:
+                    continue
+                if counted_series.intersection(
+                        self.finance.fulfilled_series(transaction.id)):
+                    continue
+                converted, conversion_ref = self._convert(
+                    -transaction.amount, transaction.currency, target_currency, as_of)
+                if converted is None:
+                    continue
+                total += converted * weight
+                refs.extend(transaction.provenance)
+                if conversion_ref:
+                    refs.append(conversion_ref)
+                months.add(time.strftime("%Y-%m", time.gmtime(transaction.ts)))
+        if not months or total <= 0:
+            return 0.0, refs
+        return total / len(months), refs
+
     # -------------------------------------------------------------- results
 
     def _available(self, request: MetricRequest, value: float, unit: str,
@@ -655,7 +876,7 @@ class FinanceMetricProvider:
         return MetricResult(
             metric_id=request.metric_id, value=value, unit_or_currency=unit,
             scope=request.scope, as_of=request.as_of, status="available",
-            calculation_version=CALCULATION_VERSION, input_references=tuple(refs),
+            calculation_version=self._calculation_version(request.metric_id), input_references=tuple(refs),
             limitations=tuple(limitations), confidence_or_quality="derived",
         )
 
@@ -668,7 +889,7 @@ class FinanceMetricProvider:
         return MetricResult(
             metric_id=request.metric_id, value=None, unit_or_currency=None,
             scope=request.scope, as_of=request.as_of, status="unavailable",
-            calculation_version=CALCULATION_VERSION,
+            calculation_version=self._calculation_version(request.metric_id),
             limitations=(reason, *extra_limitations),
         )
 
@@ -681,5 +902,5 @@ class FinanceMetricProvider:
         return MetricResult(
             metric_id=request.metric_id, value=None, unit_or_currency=None,
             scope=request.scope, as_of=request.as_of, status="unsupported",
-            calculation_version=CALCULATION_VERSION, limitations=(reason,),
+            calculation_version=self._calculation_version(request.metric_id), limitations=(reason,),
         )

@@ -44,8 +44,11 @@ def test_every_registered_metric_returns_available_for_the_household(kernel):
     debt_ratio = provider.calculate(MetricRequest("finance.debt_ratio", scope, household.as_of))
     cash = provider.calculate(MetricRequest("finance.cash_available", scope, household.as_of))
 
-    for result in (net_worth, runway, cash_flow, allocation, concentration, debt_ratio, cash):
+    for result in (net_worth, cash_flow, allocation, concentration, debt_ratio, cash):
         assert result.status == "available", result.limitations
+
+    assert runway.status == "unavailable"
+    assert "education" in runway.limitations[-1]
 
     assert net_worth.value > 0
     assert 0.0 < concentration.value < 1.0  # Chris's Anchor stock is concentrated, not his whole portfolio

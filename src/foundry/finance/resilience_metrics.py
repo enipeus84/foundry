@@ -162,32 +162,30 @@ class FinanceResilienceMetricProvider:
                 "finance.essential_outflow_monthly requires a party scope",
             )
         person_ids, attribute_to, currency = scope
-        monthly, refs = self.basis._average_essential_outflow(
-            person_ids,
-            attribute_to,
-            currency,
-            request.as_of,
-        )
+        outflow_basis = self.basis.essential_outflow_basis(
+            person_ids, attribute_to, currency, request.as_of)
+        monthly = outflow_basis.monthly_amount
+        refs = outflow_basis.input_references
         if monthly is None or monthly <= 0:
             return self._unavailable(
                 request,
-                "no net essential or committed monthly outflow observed",
+                "essential-outflow coverage is incomplete",
                 assumption_refs=tuple(assumption_set.provenance),
+                extra_limitations=outflow_basis.limitations,
             )
 
+        observed_contribution = sum(
+            category.observed for category in outflow_basis.categories)
         latest_at = self._latest_essential_transaction_at(
-            person_ids,
-            attribute_to,
-            currency,
-            request.as_of,
-        )
+            person_ids, attribute_to, currency, request.as_of)
         status = (
             "stale"
-            if latest_at is None
-            or request.as_of - latest_at > stale_days * DAY
+            if observed_contribution > 0 and (
+                latest_at is None
+                or request.as_of - latest_at > stale_days * DAY)
             else "available"
         )
-        limitations = []
+        limitations = list(outflow_basis.limitations)
         evidence_refs = []
         crosscheck = self.evidence.latest(
             request.scope.id,
