@@ -124,11 +124,12 @@ def test_required_evidence_and_canonical_mapping_are_contract_owned():
     }}
     cash = capture_contract_registry().get("cash-balance-update")
     assert cash is not None
-    assert "does not update Finance balances" in cash.description
-    assert "not currently consumed by the RFC-011 reconciliation lens" in cash.description
     assert cash.draft({"amount": "1200", "currency": "GBP", "valid_at": "100"},
-                      subject_id="cash-1", capture_id="capture-2")["canonical_event"]["kind"] == (
-        "finance.account.reconciliation_observed")
+                      subject_id="cash-1", capture_id="capture-2")["canonical_event"] == {
+        "kind": "finance.valuation.declared", "payload": {
+            "entity_id": "capture-2", "subject_id": "cash-1", "amount": 1200.0,
+            "currency": "GBP", "as_of": 100.0, "valuation_basis": "account_balance",
+        }}
     for timestamp in ("-1", "253402300800", "1e300"):
         with pytest.raises(AcquisitionError, match="timestamp"):
             cash.draft({"amount": "1200", "currency": "GBP", "valid_at": timestamp},
@@ -453,7 +454,7 @@ def test_bootstrap_failure_is_not_misdiagnosed_as_missing_resource(environment):
     assert "Register pension account" not in response.text
 
 
-def test_confirmed_cash_capture_is_a_reconciliation_observation_not_a_finance_projection_update(environment):
+def test_confirmed_cash_capture_establishes_the_canonical_account_valuation(environment):
     log = EventLog(environment / "events.jsonl")
     household = declare_party(log, "household")
     person = declare_party(log, "person")
@@ -470,11 +471,11 @@ def test_confirmed_cash_capture_is_a_reconciliation_observation_not_a_finance_pr
         unit_or_currency="GBP", validation_contract="numeric", household_id=household.id,
         expected_cadence="annual"))
 
-    def cash_available():
+    def cash_available(as_of=1_700_000_000.0):
         registry = MetricRegistry()
         registry.register(FinanceMetricProvider(FinanceEntityProjection(log), EntityProjection(log)))
         return registry.dispatch(MetricRequest("finance.cash_available", Subject("party", household.id),
-                                               as_of=1_700_000_000.0))
+                                               as_of=as_of))
 
     assert cash_available().value == 1_000.0
     client = _client()
@@ -484,5 +485,25 @@ def test_confirmed_cash_capture_is_a_reconciliation_observation_not_a_finance_pr
     assert client.post(f"/acquisition/proposals/{proposal.id}/confirm", data={
         "csrf": webauth.csrf_token(ALLOWED, webauth.load_config(), "rfc011-confirmation"),
     }).status_code == 303
-    assert any(event["kind"] == "finance.account.reconciliation_observed" for event in log.events())
-    assert cash_available().value == 1_000.0
+    valuation = next(event for event in log.events() if event["kind"] == "finance.valuation.declared")
+    assert valuation["payload"]["subject_id"] == account.id
+    assert valuation["payload"]["amount"] == 1500.0
+    assert valuation["payload"]["currency"] == "GBP"
+    assert valuation["payload"]["valuation_basis"] == "account_balance"
+    assert valuation["payload"]["observation"]["external_document_ref"] == "cash-statement-2026"
+    assert valuation["actor"] == ALLOWED
+    projection = FinanceEntityProjection(log)
+    assert projection.valuations_of(account.id)[0].provenance == [valuation["id"]]
+    assert cash_available().value == 1_500.0
+
+    # Effective date, not confirmation order, establishes the current value.
+    for amount, valid_at in (("2000", "2023-11-15T22:13"), ("900", "2023-11-10T22:13")):
+        assert _submit_capture(client, "cash-balance-update", "cash-value", amount=amount,
+                               valid_at=valid_at).status_code == 303
+        proposal = next(item for item in ProposalInbox(log).proposals.values() if item.state == "pending")
+        assert client.post(f"/acquisition/proposals/{proposal.id}/confirm", data={
+            "csrf": webauth.csrf_token(ALLOWED, webauth.load_config(), "rfc011-confirmation"),
+        }).status_code == 303
+    assert cash_available(1_800_000_000.0).value == 2_000.0
+    replayed = FinanceEntityProjection(EventLog(log.path))
+    assert max(replayed.valuations_of(account.id), key=lambda item: item.as_of).amount == 2_000.0
