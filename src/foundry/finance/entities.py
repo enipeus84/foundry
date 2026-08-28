@@ -187,6 +187,15 @@ class RecurringSeries:
     amount: float
     currency: str
     description: str | None = None
+    cadence: str | None = None
+    direction: str | None = None
+    essential_category: str | None = None
+    basis: str | None = None
+    effective_from: float | None = None
+    source_reference: str | None = None
+    derivation_reference: str | None = None
+    funding_account_id: str | None = None
+    settled_obligation_id: str | None = None
     status: str = "active"
     provenance: list[str] = field(default_factory=list)
     asserted_by: str = ""
@@ -538,20 +547,96 @@ def close_position(log: EventLog, position_id: str, reason: str, actor: str = "u
 
 def declare_recurring_series(log: EventLog, recurring_commitment_type: str, amount: float,
                               currency: str, description: str | None = None,
-                              actor: str = "user") -> RecurringSeries:
+                              actor: str = "user", *, cadence: str | None = None,
+                              direction: str | None = None,
+                              essential_category: str | None = None,
+                              basis: str | None = None,
+                              effective_from: float | None = None,
+                              source_reference: str | None = None,
+                              derivation_reference: str | None = None,
+                              funding_account_id: str | None = None,
+                              settled_obligation_id: str | None = None) -> RecurringSeries:
     """Describes an *expected* future pattern (001 §15) — it never
     pre-creates a canonical `finance.transaction.declared` event."""
     if recurring_commitment_type not in vocab.RECURRING_COMMITMENT_TYPE:
         raise VocabularyError(f"{recurring_commitment_type!r} is not a valid recurring_commitment_type")
+    validate_recurring_commitment(
+        amount, currency, cadence, direction, essential_category, basis,
+        effective_from, source_reference, derivation_reference)
     series_id = grammar.new_id()
     attrs: dict[str, Any] = {"recurring_commitment_type": recurring_commitment_type,
                               "amount": amount, "currency": currency}
     if description is not None:
         attrs["description"] = description
+    optional = {
+        "cadence": cadence, "direction": direction,
+        "essential_category": essential_category, "basis": basis,
+        "effective_from": effective_from, "source_reference": source_reference,
+        "derivation_reference": derivation_reference,
+        "funding_account_id": funding_account_id,
+        "settled_obligation_id": settled_obligation_id,
+    }
+    attrs.update({key: value for key, value in optional.items()
+                  if value is not None})
     e = grammar.declare(log, PREFIX, "recurring_series", series_id, attrs, actor=actor)
     return RecurringSeries(id=series_id, recurring_commitment_type=recurring_commitment_type,
                             amount=amount, currency=currency, description=description,
+                            cadence=cadence, direction=direction,
+                            essential_category=essential_category, basis=basis,
+                            effective_from=effective_from,
+                            source_reference=source_reference,
+                            derivation_reference=derivation_reference,
+                            funding_account_id=funding_account_id,
+                            settled_obligation_id=settled_obligation_id,
                             asserted_by=actor, provenance=[e["id"]], history=[e["id"]])
+
+
+def validate_recurring_commitment(
+        amount: float, currency: str, cadence: str | None, direction: str | None,
+        essential_category: str | None, basis: str | None,
+        effective_from: float | None, source_reference: str | None,
+        derivation_reference: str | None) -> None:
+    """Validate the new governed commitment envelope.
+
+    Historic RecurringSeries deliberately remain readable.  A declaration
+    becomes a denominator input only when it supplies the entire governed
+    envelope; partial new shapes are rejected rather than guessed at.
+    """
+    if isinstance(amount, bool) or not isinstance(amount, (int, float)) \
+            or not math.isfinite(float(amount)):
+        raise ValueError("recurring amount must be a finite number")
+    supplied = (cadence, direction, essential_category, basis, effective_from,
+                source_reference, derivation_reference)
+    if not any(value is not None for value in supplied):
+        return
+    if not all(value is not None for value in
+               (cadence, direction, essential_category, basis, effective_from,
+                source_reference)):
+        raise ValueError("governed recurring commitments require cadence, direction, essential_category, basis, effective_from, and source_reference")
+    if cadence not in vocab.RECURRING_CADENCE:
+        raise VocabularyError(f"{cadence!r} is not a valid recurring_cadence")
+    if direction not in vocab.RECURRING_DIRECTION:
+        raise VocabularyError(f"{direction!r} is not a valid recurring_direction")
+    if essential_category not in vocab.ESSENTIAL_CATEGORY:
+        raise VocabularyError(f"{essential_category!r} is not a valid essential_category")
+    if basis not in vocab.RECURRING_BASIS:
+        raise VocabularyError(f"{basis!r} is not a valid recurring_basis")
+    if not isinstance(effective_from, (int, float)) or isinstance(effective_from, bool) \
+            or not math.isfinite(float(effective_from)):
+        raise ValueError("effective_from must be a finite timestamp")
+    if not isinstance(source_reference, str) or not source_reference.strip():
+        raise ValueError("source_reference is required")
+    if direction != "outflow":
+        raise ValueError("governed essential commitments must be outflows")
+    if basis == "not_applicable":
+        if amount != 0:
+            raise ValueError("not_applicable must not carry expenditure")
+    elif amount <= 0:
+        raise ValueError("counted recurring commitments must be positive outflows")
+    if basis == "contractual_derived" and (
+            not isinstance(derivation_reference, str)
+            or not derivation_reference.strip()):
+        raise ValueError("contractual_derived requires derivation_reference")
 
 
 def pause_recurring_series(log: EventLog, series_id: str, reason: str, actor: str = "user") -> dict:
@@ -789,6 +874,7 @@ class FinanceEntityProjection:
         self.valuations: dict[str, Valuation] = {}
         self.positions: dict[str, Position] = {}
         self.recurring_series: dict[str, RecurringSeries] = {}
+        self.fulfilments: dict[str, set[str]] = {}
         self.tax_jurisdictions: dict[str, TaxJurisdiction] = {}
         self.exchange_rates: dict[str, ExchangeRate] = {}
         self.tax_positions: dict[str, TaxPosition] = {}
@@ -805,6 +891,7 @@ class FinanceEntityProjection:
         projection.accounts, projection.assets, projection.obligations = {}, {}, {}
         projection.transactions, projection.valuations, projection.positions = {}, {}, {}
         projection.recurring_series, projection.tax_jurisdictions = {}, {}
+        projection.fulfilments = {}
         projection.exchange_rates, projection.tax_positions = {}, {}
         projection.capital_gain_events, projection.assumption_sets, projection.scenarios = {}, {}, {}
         return projection
@@ -813,6 +900,7 @@ class FinanceEntityProjection:
         self.accounts, self.assets, self.obligations = {}, {}, {}
         self.transactions, self.valuations, self.positions = {}, {}, {}
         self.recurring_series, self.tax_jurisdictions = {}, {}
+        self.fulfilments = {}
         self.exchange_rates, self.tax_positions, self.capital_gain_events = {}, {}, {}
         self.assumption_sets, self.scenarios = {}, {}
         for e in self.log.events():
@@ -850,6 +938,15 @@ class FinanceEntityProjection:
 
     def transactions_in(self, account_id: str) -> list[Transaction]:
         return [t for t in self.transactions.values() if t.account_id == account_id]
+
+    def fulfilled_series(self, transaction_id: str) -> frozenset[str]:
+        """Recurring commitments a transaction has already discharged.
+
+        This relationship is part of the Finance projection, not an
+        interpretive convention in a downstream metric: residual observed
+        expenditure must never count a fulfilled commitment again.
+        """
+        return frozenset(self.fulfilments.get(transaction_id, set()))
 
     # -------------------------------------------------------- internals
 
@@ -917,6 +1014,11 @@ class FinanceEntityProjection:
                         setattr(t, k, p[k])
                 t.status = "corrected"
                 t.history.append(e["id"])
+        elif verb == "linked" and p.get("relation") == "fulfils":
+            # A link may arrive after the Transaction declaration.  Preserve
+            # it separately because it is a relationship, not a mutation of
+            # the observed transaction itself.
+            self.fulfilments.setdefault(tid, set()).add(p["target"])
 
     def _apply_valuation(self, e: dict) -> None:
         p = e["payload"]
@@ -963,6 +1065,13 @@ class FinanceEntityProjection:
             self.recurring_series[sid] = RecurringSeries(
                 id=sid, recurring_commitment_type=p["recurring_commitment_type"],
                 amount=p["amount"], currency=p["currency"], description=p.get("description"),
+                cadence=p.get("cadence"), direction=p.get("direction"),
+                essential_category=p.get("essential_category"), basis=p.get("basis"),
+                effective_from=p.get("effective_from"),
+                source_reference=p.get("source_reference"),
+                derivation_reference=p.get("derivation_reference"),
+                funding_account_id=p.get("funding_account_id"),
+                settled_obligation_id=p.get("settled_obligation_id"),
                 asserted_by=e["actor"], provenance=[e["id"]], history=[e["id"]],
             )
         elif verb == "updated":

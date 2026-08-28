@@ -240,7 +240,7 @@ def test_metric_dependencies_are_memoised_per_request_scope(
         tmp_path, monkeypatch):
     _, _, assumptions, _, registry, scope, provider = _system(tmp_path)
     calls = 0
-    original = provider.basis._average_essential_outflow
+    original = provider.basis.essential_outflow_basis
 
     def counted(*args, **kwargs):
         nonlocal calls
@@ -248,7 +248,7 @@ def test_metric_dependencies_are_memoised_per_request_scope(
         return original(*args, **kwargs)
 
     monkeypatch.setattr(
-        provider.basis, "_average_essential_outflow", counted)
+        provider.basis, "essential_outflow_basis", counted)
 
     for metric_id in sorted(METRIC_IDS):
         result = registry.dispatch(_request(

@@ -892,6 +892,14 @@ class FinancialResilienceAssessor:
             reasons.append(
                 "The declared essential-outflow cross-check diverges from "
                 "the transaction-derived basis.")
+        if any(
+            "operator estimate materially contributes" in limitation
+            for result in metrics
+            for limitation in result.limitations
+        ):
+            reasons.append(
+                "Operator-estimated essential expenditure materially contributes "
+                "to the denominator.")
         if reasons:
             return (
                 MissionConfidence(

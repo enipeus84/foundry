@@ -408,9 +408,8 @@ def test_liquidity_runway_months(kernel):
     result = registry.dispatch(MetricRequest(
         metric_id="finance.liquidity_runway",
         scope=Subject("party", household.id), as_of=as_of))
-    assert result.status == "available"
-    assert result.unit_or_currency == "months"
-    assert result.value == pytest.approx(6000.0 / 1000.0)  # liquid holdings / avg monthly essential spend
+    assert result.status == "unavailable"
+    assert "transport" in result.limitations[-1]
 
 
 def test_liquidity_runway_refund_nets_against_burn_never_inflates_it(kernel):
@@ -427,6 +426,11 @@ def test_liquidity_runway_refund_nets_against_burn_never_inflates_it(kernel):
     fin.link_ownership(kernel.log, "account", bills.id, "owner", chris.id)
     fin.declare_transaction(kernel.log, bills.id, -300.0, "GBP", "groceries", NOW - 50)
     fin.declare_transaction(kernel.log, bills.id, 100.0, "GBP", "groceries", NOW - 40)  # partial refund
+    for category in ("housing", "transport", "childcare", "education", "healthcare", "tax_payment"):
+        fin.declare_recurring_series(
+            kernel.log, "regular_expense", 0.0, "GBP", cadence="month", direction="outflow",
+            essential_category=category, basis="not_applicable", effective_from=NOW - 100,
+            source_reference=f"test:{category}")
 
     registry = _registry(kernel.log)
     result = registry.dispatch(MetricRequest(
@@ -466,6 +470,11 @@ def test_illiquid_holdings_are_excluded_from_liquidity_runway(kernel):
     bills_account = fin.declare_account(kernel.log, "savings", "GBP")  # no liquidity_classification
     fin.link_ownership(kernel.log, "account", bills_account.id, "owner", chris.id)
     fin.declare_transaction(kernel.log, bills_account.id, -200.0, "GBP", "groceries", NOW - 10)
+    for category in ("housing", "transport", "childcare", "education", "healthcare", "tax_payment"):
+        fin.declare_recurring_series(
+            kernel.log, "regular_expense", 0.0, "GBP", cadence="month", direction="outflow",
+            essential_category=category, basis="not_applicable", effective_from=NOW - 100,
+            source_reference=f"test:{category}")
 
     registry = _registry(kernel.log)
     result = registry.dispatch(MetricRequest(

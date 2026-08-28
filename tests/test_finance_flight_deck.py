@@ -74,8 +74,7 @@ def test_flight_deck_composes_two_finance_tiles_in_one_call(kernel):
 
     by_metric = {t.metric_id: t for t in tiles}
     assert by_metric["finance.net_worth"].current_value.status == "available"
-    assert by_metric["finance.liquidity_runway"].current_value.status == "available"
-    assert by_metric["finance.liquidity_runway"].current_value.unit_or_currency == "months"
+    assert by_metric["finance.liquidity_runway"].current_value.status == "unavailable"
 
 
 def test_mission_status_evaluated_against_a_real_finance_metric(kernel):

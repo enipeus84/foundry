@@ -11,6 +11,10 @@ from foundry.application.mcp_writes import (
     McpBalanceCapture, McpClientSafeDenied, McpFinancialResourceWrites,
     McpMortgageEvidenceCapture, McpPensionProviderProjectionCapture, McpWriteDenied,
 )
+from foundry.application.household_commitments import (
+    EssentialOutflowQueryService, HouseholdCommitmentDenied,
+    HouseholdCommitmentService,
+)
 from foundry.application.mission_assumptions import MissionAssumptionError, MissionAssumptionService
 from foundry.application.mortgage_mission import (
     MortgageMissionQueryError, MortgageMissionQueryService,
@@ -49,6 +53,11 @@ def create_mcp_server(query: FinancialResourceQuery | None = None,
     mortgage_evidence_capture = McpMortgageEvidenceCapture(
         query.log, active_principal.email, active_principal.household_id,
         active_principal.client, active_principal.witness_model)
+    commitments = HouseholdCommitmentService(
+        query.log, active_principal.email, active_principal.household_id,
+        active_principal.client, active_principal.witness_model)
+    essential_outflow = EssentialOutflowQueryService(
+        query.log, active_principal.household_id)
     mission_assumptions = MissionAssumptionService(query.log)
     pension_mission = PensionMissionQueryService(query.log, active_principal.household_id)
     pension_timing = PensionTimingService(query.log, active_principal.household_id)
@@ -97,6 +106,18 @@ def create_mcp_server(query: FinancialResourceQuery | None = None,
         try:
             return mortgage_mission.evidence_history(obligation_id, as_of, field)
         except MortgageMissionQueryError as exc:
+            raise ValueError(str(exc)) from exc
+
+    @server.tool()
+    def inspect_essential_outflow_basis(as_of: float) -> dict:
+        """Read the governed runway denominator, its evidence basis and gaps.
+
+        This is a Finance read, not a Financial Resilience inspection. It
+        names the exact essential categories that still need evidence.
+        """
+        try:
+            return essential_outflow.inspect(as_of)
+        except LookupError as exc:
             raise ValueError(str(exc)) from exc
 
     @server.tool()
@@ -315,6 +336,74 @@ def create_mcp_server(query: FinancialResourceQuery | None = None,
                 source=source, lineage=lineage, unit_or_currency=unit_or_currency)
         except McpWriteDenied as exc:
             raise ValueError("mortgage evidence execution refused") from exc
+
+    @server.tool()
+    def propose_household_commitment(
+            recurring_commitment_type: str, amount: float, currency: str,
+            cadence: str, direction: str, essential_category: str, basis: str,
+            effective_from: float, source_reference: str,
+            description: str | None = None,
+            derivation_reference: str | None = None,
+            funding_account_id: str | None = None,
+            settled_obligation_id: str | None = None) -> dict:
+        """Propose a canonical recurring commitment or labelled estimate."""
+        try:
+            receipt = commitments.propose(
+                recurring_commitment_type=recurring_commitment_type, amount=amount,
+                currency=currency, cadence=cadence, direction=direction,
+                essential_category=essential_category, basis=basis,
+                effective_from=effective_from, source_reference=source_reference,
+                description=description, derivation_reference=derivation_reference,
+                funding_account_id=funding_account_id,
+                settled_obligation_id=settled_obligation_id)
+            return {"operation": "declare_household_commitment",
+                    "requires_execution": True, **receipt}
+        except HouseholdCommitmentDenied as exc:
+            raise ValueError("household commitment proposal refused") from exc
+
+    @server.tool()
+    def execute_household_commitment(
+            proposal_id: str, command_id: str, recurring_commitment_type: str,
+            amount: float, currency: str, cadence: str, direction: str,
+            essential_category: str, basis: str, effective_from: float,
+            source_reference: str, description: str | None = None,
+            derivation_reference: str | None = None,
+            funding_account_id: str | None = None,
+            settled_obligation_id: str | None = None) -> dict:
+        """Execute exactly one previously proposed recurring commitment."""
+        try:
+            return commitments.execute(
+                proposal_id=proposal_id, command_id=command_id,
+                recurring_commitment_type=recurring_commitment_type, amount=amount,
+                currency=currency, cadence=cadence, direction=direction,
+                essential_category=essential_category, basis=basis,
+                effective_from=effective_from, source_reference=source_reference,
+                description=description, derivation_reference=derivation_reference,
+                funding_account_id=funding_account_id,
+                settled_obligation_id=settled_obligation_id)
+        except HouseholdCommitmentDenied as exc:
+            raise ValueError("household commitment execution refused") from exc
+
+    @server.tool()
+    def propose_mortgage_payment_promotion(obligation_id: str, as_of: float) -> dict:
+        """Propose promotion of authoritative Mortgage Freedom payment evidence."""
+        try:
+            receipt = commitments.propose_mortgage_promotion(obligation_id, as_of)
+            return {"operation": "promote_mortgage_payment",
+                    "requires_execution": True, **receipt}
+        except HouseholdCommitmentDenied as exc:
+            raise ValueError("mortgage payment promotion refused") from exc
+
+    @server.tool()
+    def execute_mortgage_payment_promotion(obligation_id: str, as_of: float,
+                                           proposal_id: str, command_id: str) -> dict:
+        """Execute a promotion only while its mortgage evidence is current."""
+        try:
+            return commitments.execute_mortgage_promotion(
+                obligation_id=obligation_id, as_of=as_of,
+                proposal_id=proposal_id, command_id=command_id)
+        except HouseholdCommitmentDenied as exc:
+            raise ValueError("mortgage payment promotion refused") from exc
 
     @server.tool()
     def declare_pension_projection_authority(resource_id: str, projection_authority: str,
