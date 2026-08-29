@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 
 from foundry import webauth  # noqa: E402
 from foundry.application.capture import CaptureService  # noqa: E402
+from foundry.application.resources import FinancialResourceQuery  # noqa: E402
 from foundry.acquisition_web import _timestamp  # noqa: E402
 from foundry.capture_contracts import (  # noqa: E402
     CanonicalMapper, CaptureContract, CaptureContractRegistry, CaptureField,
@@ -495,6 +496,11 @@ def test_confirmed_cash_capture_establishes_the_canonical_account_valuation(envi
     projection = FinanceEntityProjection(log)
     assert projection.valuations_of(account.id)[0].provenance == [valuation["id"]]
     assert cash_available().value == 1_500.0
+    valuation_read = FinancialResourceQuery(log, household.id).get_financial_resource_valuation(account.id)
+    assert valuation_read["current_valuation"]["amount"] == 1_500.0
+    assert valuation_read["current_valuation"]["canonical_valuation"]["event"]["canonical_id"] == valuation["id"]
+    assert valuation_read["current_valuation"]["evidence"] == {
+        "description": "cash-statement-2026", "kind": "external evidence reference"}
 
     # Effective date, not confirmation order, establishes the current value.
     for amount, valid_at in (("2000", "2023-11-15T22:13"), ("900", "2023-11-10T22:13")):

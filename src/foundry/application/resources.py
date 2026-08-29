@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from hashlib import sha256
 import json
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from foundry.capture_contracts import CaptureContractRegistry, capture_contract_registry
 from foundry.core.acquisition import AssetRegistry, AssetRegistration, AcquisitionError
@@ -37,6 +39,9 @@ _RESOURCE_TYPES = {
     "property": ("asset", "property", None), "vehicle": ("asset", "vehicle", None),
     "collectible": ("asset", "collectible", None),
 }
+
+_LONDON = ZoneInfo("Europe/London")
+_CURRENCY_SYMBOLS = {"GBP": "£", "EUR": "€", "USD": "$"}
 
 
 def _command_digest(values: dict[str, Any]) -> str:
@@ -349,6 +354,129 @@ class FinancialResourceQuery:
                                                         "default": field.default}
                                                        for field in contract.schema]})
         return {"resource_id": resource_id, "supported_capture_operations": supported}
+
+    def get_financial_resource_valuation(self, resource: str) -> dict[str, Any]:
+        """Return a human-facing canonical valuation read for one resource.
+
+        The reference is deliberately an exact resource name or canonical id.
+        This keeps MCP useful to a person without turning it into an
+        unbounded, cross-household search surface.
+        """
+        resource_id = self._resolve_resource_reference(resource)
+        registry, projection = self._state()
+        registration = registry.registrations[resource_id]
+        if registration.household_id != self.household_id or registration.domain != "finance":
+            raise ResourceNotFound(resource)
+        subject = (projection.accounts.get(resource_id) or projection.assets.get(resource_id)
+                   or projection.obligations.get(resource_id))
+        if subject is None:
+            raise ResourceNotFound(resource)
+        valuations = self._valuation_history(subject, projection)
+        current = valuations[0] if valuations else None
+        return {
+            "resource": self._display_name(subject),
+            "current_valuation": current,
+            "valuation_history": valuations,
+            "canonical_resource": {"canonical_id": subject.id,
+                                   "resource_kind": self._summary(subject)["resource_kind"],
+                                   "currency": subject.currency},
+            "owners": self._owners(subject),
+        }
+
+    def _resolve_resource_reference(self, reference: str) -> str:
+        if not isinstance(reference, str) or not reference.strip():
+            raise ResourceNotFound(reference)
+        value = reference.strip()
+        registry, projection = self._state()
+        candidates = []
+        for resource_id, registration in registry.registrations.items():
+            if registration.household_id != self.household_id or registration.domain != "finance":
+                continue
+            subject = (projection.accounts.get(resource_id) or projection.assets.get(resource_id)
+                       or projection.obligations.get(resource_id))
+            if subject is not None and (value == resource_id or value.casefold() in {
+                    self._display_name(subject).casefold(), str(getattr(subject, "name", "")).casefold()}):
+                candidates.append(resource_id)
+        if len(candidates) != 1:
+            raise ResourceNotFound(reference)
+        return candidates[0]
+
+    def _valuation_history(self, subject: Account | Asset | Obligation,
+                           projection: FinanceEntityProjection) -> list[dict[str, Any]]:
+        events = {event["id"]: (index, event) for index, event in enumerate(self.log.events())}
+        records = []
+        for valuation in projection.valuations_of(subject.id):
+            event_id = valuation.provenance[-1] if valuation.provenance else None
+            indexed = events.get(event_id)
+            if indexed is None:
+                continue
+            index, event = indexed
+            records.append((valuation.as_of, index, self._valuation_record(valuation, event)))
+        return [record for _, _, record in sorted(records, key=lambda item: item[:2], reverse=True)]
+
+    def _valuation_record(self, valuation, event: dict[str, Any]) -> dict[str, Any]:
+        payload = event["payload"]
+        observation = payload.get("observation") if isinstance(payload.get("observation"), dict) else {}
+        evidence_reference = observation.get("external_document_ref")
+        source = evidence_reference or valuation.source
+        record = {
+            "summary": f"{self._money(valuation.amount, valuation.currency)} | "
+                       f"{self._when(valuation.as_of)}" + (f" | {source}" if source else ""),
+            "amount": valuation.amount,
+            "currency": valuation.currency,
+            "as_of": self._when(valuation.as_of),
+            "valuation_basis": valuation.valuation_basis,
+            "evidence": ({"description": evidence_reference,
+                          "kind": "external evidence reference"} if evidence_reference else
+                         {"description": valuation.source, "kind": "declared source"}
+                         if valuation.source else None),
+            "canonical_valuation": {
+                "canonical_id": valuation.id,
+                "event": {"description": "Finance valuation declared",
+                          "canonical_id": event["id"], "kind": event["kind"]},
+                "asserted_by": event["actor"],
+            },
+        }
+        provenance = payload.get("provenance")
+        if isinstance(provenance, dict):
+            record["canonical_valuation"]["acquisition"] = {
+                "description": "Confirmed manual observation",
+                **({"proposal_canonical_id": provenance["proposal_id"]}
+                   if isinstance(provenance.get("proposal_id"), str) else {}),
+                **({"evidence_canonical_id": provenance["evidence_id"]}
+                   if isinstance(provenance.get("evidence_id"), str) else {}),
+            }
+        return record
+
+    def _owners(self, resource: Account | Asset | Obligation) -> list[dict[str, str]]:
+        people = EntityProjection(self.log).parties
+        return [{"person": self._party_name(people.get(link.target)), "relation": link.relation,
+                 "canonical_id": link.target}
+                for link in resource.ownership]
+
+    @staticmethod
+    def _party_name(party) -> str:
+        if party is None:
+            return "Unknown person"
+        return str(party.attributes.get("display_name") or party.attributes.get("name")
+                   or "Household member")
+
+    @staticmethod
+    def _money(amount: float, currency: str) -> str:
+        return f"{_CURRENCY_SYMBOLS.get(currency, currency + ' ')}{amount:,.2f}"
+
+    @staticmethod
+    def _when(timestamp: float) -> str:
+        value = datetime.fromtimestamp(timestamp, tz=_LONDON)
+        return f"{value.day} {value.strftime('%b %Y %H:%M')}"
+
+    @staticmethod
+    def _display_name(resource: Account | Asset | Obligation) -> str:
+        summary = FinancialResourceQuery._summary(resource)
+        labels = {"isa": "Cash ISA", "checking": "Cash account", "savings": "Savings account",
+                  "pension": "Pension", "property": "Property"}
+        label = labels.get(summary["resource_type"], str(summary["resource_type"]).replace("_", " ").title())
+        return f"{label} — {resource.name}" if getattr(resource, "name", None) else label
 
     def _state(self) -> tuple[AssetRegistry, FinanceEntityProjection]:
         return finance_asset_registry(self.log), FinanceEntityProjection(self.log)
