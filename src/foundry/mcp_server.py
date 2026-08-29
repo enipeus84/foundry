@@ -264,6 +264,20 @@ def create_mcp_server(query: FinancialResourceQuery | None = None,
             raise ValueError("unknown financial resource") from exc
 
     @server.tool()
+    def get_financial_resource_valuation(resource: str) -> dict:
+        """Show a resource's current canonical valuation and valuation history.
+
+        Accepts its exact displayed name (for example, ``Cash ISA — Vida
+        Savings``) or its canonical id. Results lead with readable resource,
+        evidence and event descriptions; canonical ids remain available for
+        audit and cross-reference.
+        """
+        try:
+            return query.get_financial_resource_valuation(resource)
+        except ResourceNotFound as exc:
+            raise ValueError("unknown financial resource") from exc
+
+    @server.tool()
     def create_financial_resource(resource_type: str, currency: str, owner: str | None = None,
                                   name: str | None = None, provider: str | None = None,
                                   owners: list[str] | None = None,

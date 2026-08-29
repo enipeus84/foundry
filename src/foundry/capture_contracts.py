@@ -235,7 +235,7 @@ _MONEY_SCHEMA = (
 
 _CASH_SCHEMA = (
     CaptureField("amount", "Stated cash balance", "number",
-                 help_text="Recorded for reconciliation only; it does not update Finance projections."),
+                 help_text="Recorded as a governed account valuation; confirmation updates Finance's current account value."),
     CaptureField("currency", "Currency", "text", help_text="Three-letter ISO currency code."),
     CaptureField("valid_at", "As at", "number", help_text="When this value was stated."),
     CaptureField("evidence_reference", "Evidence reference", "text", required=False,

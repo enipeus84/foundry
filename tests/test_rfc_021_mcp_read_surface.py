@@ -83,7 +83,7 @@ def test_resource_query_is_household_scoped_and_exposes_domain_shape(environment
         "contract_id": "cash-balance-update", "contract_version": "1", "target_id": "cash-balance",
         "input_schema": [
             {"name": "amount", "required": True,
-             "help_text": "Recorded for reconciliation only; it does not update Finance projections.", "default": ""},
+             "help_text": "Recorded as a governed account valuation; confirmation updates Finance's current account value.", "default": ""},
             {"name": "currency", "required": True, "help_text": "Three-letter ISO currency code.", "default": ""},
             {"name": "valid_at", "required": True, "help_text": "When this value was stated.", "default": ""},
             {"name": "evidence_reference", "required": False,
@@ -118,6 +118,7 @@ def test_mcp_client_connects_and_cannot_cross_household(environment):
                 tools = await session.list_tools()
                 assert {tool.name for tool in tools.tools} == {
                     "list_financial_resources", "get_financial_resource",
+                    "get_financial_resource_valuation",
                     "explain_capture_availability", "record_account_balance",
                     "propose_financial_observation",
                     "create_financial_resource", "execute_create_financial_resource",
@@ -141,6 +142,10 @@ def test_mcp_client_connects_and_cannot_cross_household(environment):
                     "execute_declare_pension_projection_authority"}
                 listed = await session.call_tool("list_financial_resources", {})
                 assert account.id in listed.content[0].text
+                valuation = await session.call_tool("get_financial_resource_valuation", {
+                    "resource": "Household cash"})
+                assert not valuation.isError
+                assert json.loads(valuation.content[0].text)["resource"] == "Cash account — Household cash"
                 available = await session.call_tool("explain_capture_availability", {"resource_id": account.id})
                 assert "cash-balance-update" in available.content[0].text
                 denied = await session.call_tool("get_financial_resource", {"resource_id": other_account.id})
@@ -211,6 +216,40 @@ def test_mcp_client_connects_and_cannot_cross_household(environment):
     gate.confirm(proposal.id, actor="human-reviewer")
     assert any(event["kind"] == "finance.valuation.declared" for event in log.events())
     assert any(event["actor"] == f"mcp:{ALLOWED}" for event in log.events())
+
+
+def test_mcp_valuation_read_leads_with_named_resource_and_evidence(environment):
+    log = EventLog(environment / "events.jsonl")
+    household = declare_party(log, "household")
+    person = declare_party(log, "person")
+    join_household(log, person.id, household.id)
+    account = finance.declare_account(log, "brokerage", "GBP", name="Vida Savings", tax_wrapper="isa")
+    finance.link_ownership(log, "account", account.id, "owner", person.id)
+    finance_asset_registry(log).register(AssetRegistration(account.id, "finance", household.id))
+    first = log.append("finance.valuation.declared", {
+        "entity_id": "vida-valuation-earlier", "subject_id": account.id, "amount": 20_000.0,
+        "currency": "GBP", "as_of": 1787918400.0, "valuation_basis": "account_balance",
+        "provenance": {"proposal_id": "vida-proposal-earlier", "evidence_id": "vida-evidence-earlier"},
+        "observation": {"external_document_ref": "earlier app screenshot"},
+    }, actor="reviewer")
+    latest = log.append("finance.valuation.declared", {
+        "entity_id": "vida-valuation-current", "subject_id": account.id, "amount": 20_280.90,
+        "currency": "GBP", "as_of": 1787934600.0, "valuation_basis": "account_balance",
+        "provenance": {"proposal_id": "vida-proposal-current", "evidence_id": "vida-evidence-current"},
+        "observation": {"external_document_ref": "live app screenshot"},
+    }, actor="reviewer")
+
+    result = FinancialResourceQuery(log, household.id).get_financial_resource_valuation("Cash ISA — Vida Savings")
+
+    assert result["resource"] == "Cash ISA — Vida Savings"
+    assert result["current_valuation"]["summary"] == "£20,280.90 | 28 Aug 2026 17:30 | live app screenshot"
+    assert result["current_valuation"]["evidence"] == {
+        "description": "live app screenshot", "kind": "external evidence reference"}
+    assert [item["amount"] for item in result["valuation_history"]] == [20_280.90, 20_000.0]
+    assert result["current_valuation"]["canonical_valuation"]["event"] == {
+        "description": "Finance valuation declared", "canonical_id": latest["id"],
+        "kind": "finance.valuation.declared"}
+    assert result["valuation_history"][1]["canonical_valuation"]["event"]["canonical_id"] == first["id"]
 
 
 def test_mcp_pension_timing_commands_are_narrow_and_receipt_bound(environment):

@@ -17,24 +17,21 @@ without a route or renderer change.
 
 The initial production registrations are Pension Balance Update, Cash Balance
 Update and Property Valuation Update.  Their mappers produce only inert
-RFC-011 manual facts.  Pension and property values map to the pre-existing
-`finance.valuation.declared` canonical shape; cash maps to the pre-existing
-`finance.account.reconciliation_observed` shape.  Finance's existing draft
-contract now admits the former, with its existing required payload shape.
-No canonical event definition changed.
+RFC-011 manual facts. All three map to the pre-existing
+`finance.valuation.declared` canonical shape; cash carries the explicit
+`account_balance` valuation basis. Finance's existing draft contract admits
+that shape, with its existing required payload shape. No canonical event
+definition changed.
 
 ### Cash Balance Update product boundary
 
-Cash Balance Update is intentionally **record-only for Finance projections**.
-Its confirmed event is a canonical stated account observation; it does not
-update the Finance transaction ledger, account balance, net worth, liquidity,
-or any other downstream Finance projection.  The current RFC-011
-reconciliation lens consumes `statement_total` observations, not this
-contract's `cash_balance` observation, so Cash Balance Update is not currently
-a reconciliation input either.  Finance values accounts from their transaction
-ledger and contained positions.  Changing that rule would alter the established
-Finance model, so this contract describes the boundary explicitly rather than
-implying a projection effect it does not have.
+Cash Balance Update is a governed point-in-time **account valuation**. Its
+confirmed `finance.valuation.declared` event is consumed by Finance's account
+valuation path, which selects the latest effective valuation; it does not
+rewrite the transaction ledger. The event carries the `account_balance`
+valuation basis and the confirmed manual-observation/evidence provenance, so a
+read surface can distinguish an account statement from a ledger-derived value
+without inventing a second cash-value canon.
 
 ## Operations flow
 
