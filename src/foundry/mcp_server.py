@@ -16,6 +16,9 @@ from foundry.application.household_commitments import (
     HouseholdCommitmentService,
 )
 from foundry.application.mission_assumptions import MissionAssumptionError, MissionAssumptionService
+from foundry.application.mission_destination import (
+    MissionDestinationDenied, MissionDestinationService,
+)
 from foundry.application.mortgage_mission import (
     MortgageMissionQueryError, MortgageMissionQueryService,
 )
@@ -59,6 +62,9 @@ def create_mcp_server(query: FinancialResourceQuery | None = None,
     essential_outflow = EssentialOutflowQueryService(
         query.log, active_principal.household_id)
     mission_assumptions = MissionAssumptionService(query.log)
+    mission_destination = MissionDestinationService(
+        query.log, active_principal.email, active_principal.household_id,
+        active_principal.client, active_principal.witness_model)
     pension_mission = PensionMissionQueryService(query.log, active_principal.household_id)
     pension_timing = PensionTimingService(query.log, active_principal.household_id)
     mortgage_mission = MortgageMissionQueryService(
@@ -244,6 +250,28 @@ def create_mcp_server(query: FinancialResourceQuery | None = None,
                 principal=active_principal.email, command_id=command_id)
         except MissionAssumptionError as exc:
             raise ValueError("mission assumption execution refused") from exc
+
+    @server.tool()
+    def propose_mission_target_metric(mission_id: str, target_metric: str, reason: str) -> dict:
+        """Propose one household-authorised Mission target-metric amendment."""
+        try:
+            result = mission_destination.propose_mission_target_metric(
+                mission_id=mission_id, target_metric=target_metric, reason=reason)
+            return {"operation": "amend_mission_target_metric", "requires_execution": True,
+                    **result}
+        except MissionDestinationDenied as exc:
+            raise ValueError("mission target metric proposal refused") from exc
+
+    @server.tool()
+    def execute_mission_target_metric(mission_id: str, target_metric: str, reason: str,
+                                      proposal_id: str, command_id: str) -> dict:
+        """Execute only an exact, current Mission target-metric proposal."""
+        try:
+            return mission_destination.execute_mission_target_metric(
+                mission_id=mission_id, target_metric=target_metric, reason=reason,
+                proposal_id=proposal_id, command_id=command_id)
+        except MissionDestinationDenied as exc:
+            raise ValueError("mission target metric execution refused") from exc
 
     @server.tool()
     def list_financial_resources() -> dict:

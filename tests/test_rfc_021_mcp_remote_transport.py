@@ -235,9 +235,9 @@ def test_google_login_resumes_mcp_consent_and_loads_existing_tools(monkeypatch, 
                             "method": "tools/list", "params": {}})
     assert tools.status_code == 200
     message = next(line.removeprefix("data: ") for line in tools.text.splitlines() if line.startswith("data: "))
-    # OAuth exposes the same registry, including Burn 43's household-
-    # commitment tools and Burn 44's governed valuation read.
-    assert len(json.loads(message)["result"]["tools"]) == 37
+    # OAuth exposes the same registry, including the governed Mission
+    # target-metric proposal/execute pair.
+    assert len(json.loads(message)["result"]["tools"]) == 39
 
 
 def test_oauth_discovery_bypasses_static_bearer_guard_without_feature_flag(monkeypatch, tmp_path):
