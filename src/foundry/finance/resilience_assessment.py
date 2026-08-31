@@ -586,7 +586,7 @@ class FinancialResilienceAssessor:
         return replace(
             MissionAssessment.unavailable(
                 request, reason, CALCULATION_VERSION),
-            applicability=APPLICABILITY,
+            applicability=replace(APPLICABILITY, margin="unavailable"),
         )
 
     def _partial_assessment(

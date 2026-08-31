@@ -565,11 +565,16 @@ def test_runway_failure_remains_unavailable_not_partial(tmp_path):
         return real_dispatch(request)
 
     assessor.metrics.dispatch = unavailable_dispatch
-    result = assessor.assess(MissionAssessmentRequest(
+    registry = MissionAssessmentRegistry()
+    registry.register(assessor)
+    result = registry.dispatch(MissionAssessmentRequest(
         mission.id, POLICY_ID, scope, AS_OF))
 
     assert result.completeness == "unavailable"
     assert result.status == "unavailable"
+    assert result.applicability.margin == "unavailable"
+    assert result.limitations == ("liquidity runway is unavailable",)
+    assert "assessment provider failed safely" not in result.limitations
 
 
 def test_completion_reopens_at_sixteen_months_without_event_append(tmp_path):
