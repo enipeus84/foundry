@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from itertools import count
 from pathlib import Path
 
 import pytest
 
+from foundry.core import grammar
 from foundry.core.entities import EntityProjection, declare_mission, declare_party, join_household
 from foundry.core.mission_assessment import MissionAssessmentRegistry, MissionDefinition
 from foundry.core.mission_targets import (
@@ -19,6 +21,13 @@ class Resolver:
 
     def describe(self, metric_id: str):
         return self.descriptor if self.descriptor and self.descriptor.metric_id == metric_id else None
+
+
+class MetricTimelineResolver:
+    def describe(self, metric_id: str):
+        if metric_id in {"example.metric.m1", "example.metric.m2"}:
+            return MetricDescriptor(metric_id, "currency", "GBP", "higher_is_better")
+        return None
 
 
 def _projection(tmp_path: Path):
@@ -47,6 +56,13 @@ def _payload(log, target_id):
                 if event["kind"] == "core.mission_target.declared" and event["payload"]["entity_id"] == target_id).copy()
 
 
+def _metric_timeline_projection(log: EventLog) -> MissionTargetProjection:
+    definitions = MissionAssessmentRegistry()
+    definitions.register_definition(MissionDefinition(
+        "timeline", "Timeline", 1, "higher_is_better", assessment_policy_id="timeline.policy"))
+    return MissionTargetProjection(log, EntityProjection(log), definitions, MetricTimelineResolver())
+
+
 def test_mission_target_replay_supersession_and_as_of_are_deterministic(tmp_path):
     log, household, mission, projection = _projection(tmp_path)
     declared_at = log.get(mission.provenance[0])["ts"]
@@ -69,6 +85,83 @@ def test_withdrawal_is_generic_closure_and_stops_current_resolution(tmp_path):
     assert event["kind"] == "core.mission_target.closed"
     assert "status" not in event["payload"]
     assert projection.in_force(mission.id, event["ts"] + 1) is None
+
+
+def test_replay_preserves_target_history_across_mission_metric_changes(tmp_path, monkeypatch):
+    monkeypatch.setattr("foundry.eventlog.time.time", count(1_000.0, 10.0).__next__)
+    log = EventLog(tmp_path / "events.jsonl")
+    household = declare_party(log, "household")
+    mission = declare_mission(log, "Metric timeline", target_metric="example.metric.m1",
+                              assessment_policy_id="timeline.policy")
+    projection = _metric_timeline_projection(log)
+    mission_declaration = log.get(mission.provenance[0])
+    assert mission_declaration is not None
+
+    first = projection.declare(
+        household_id=household.id, subject_id=household.id, mission_id=mission.id,
+        metric_id="example.metric.m1", destination=TargetQuantity(100.0, "GBP", "currency"),
+        destination_direction="higher_is_better", horizon_kind="none", horizon_at=None,
+        effective_from=mission_declaration["ts"], basis="original M1 destination",
+    )
+    first_declaration = log.get(first.provenance[0])
+    assert first_declaration is not None
+    projection.withdraw(household_id=household.id, target_id=first.id, reason="metric revision")
+    withdrawal = list(log.events())[-1]
+    metric_change = grammar.update(
+        log, "core", "mission", mission.id, {"target_metric": "example.metric.m2"},
+        reason="mission metric changed",
+    )
+    projection.entities.rebuild()
+
+    with pytest.raises(MissionTargetError, match="metric does not match"):
+        projection.declare(
+            household_id=household.id, subject_id=household.id, mission_id=mission.id,
+            metric_id="example.metric.m1", destination=TargetQuantity(100.0, "GBP", "currency"),
+            destination_direction="higher_is_better", horizon_kind="none", horizon_at=None,
+            effective_from=metric_change["ts"],
+        )
+    second = projection.declare(
+        household_id=household.id, subject_id=household.id, mission_id=mission.id,
+        metric_id="example.metric.m2", destination=TargetQuantity(200.0, "GBP", "currency"),
+        destination_direction="higher_is_better", horizon_kind="none", horizon_at=None,
+        effective_from=metric_change["ts"] + 10.0, basis="replacement M2 destination",
+    )
+
+    replay = _metric_timeline_projection(log)
+    historical = replay.targets[first.id]
+    assert historical.metric_id == "example.metric.m1"
+    assert historical.destination == TargetQuantity(100.0, "GBP", "currency")
+    assert historical.provenance == (first_declaration["id"],)
+    assert f"invalid:{first.id}" not in replay.conflicts
+    assert replay.in_force(mission.id, withdrawal["ts"] - 1.0).id == first.id
+    assert replay.in_force(mission.id, withdrawal["ts"]) is None
+    assert replay.in_force(mission.id, metric_change["ts"] + 1.0) is None
+    assert replay.in_force(mission.id, metric_change["ts"] + 10.0).id == second.id
+
+
+def test_replay_rejects_target_inconsistent_with_metric_at_its_declaration(tmp_path, monkeypatch):
+    monkeypatch.setattr("foundry.eventlog.time.time", count(1_000.0, 10.0).__next__)
+    log = EventLog(tmp_path / "events.jsonl")
+    household = declare_party(log, "household")
+    mission = declare_mission(log, "Metric timeline", target_metric="example.metric.m1",
+                              assessment_policy_id="timeline.policy")
+    mission_declaration = log.get(mission.provenance[0])
+    assert mission_declaration is not None
+    target_id = "inconsistent-at-declaration"
+    log.append("core.mission_target.declared", {
+        "entity_id": target_id, "mission_id": mission.id, "household_id": household.id,
+        "subject_id": household.id, "metric_id": "example.metric.m2",
+        "destination_value": 100.0, "destination_unit": "GBP", "destination_dimension": "currency",
+        "destination_direction": "higher_is_better", "horizon_kind": "none",
+        "effective_from": mission_declaration["ts"],
+    })
+    grammar.update(log, "core", "mission", mission.id, {"target_metric": "example.metric.m2"},
+                   reason="later metric change")
+
+    replay = _metric_timeline_projection(log)
+    assert target_id not in replay.targets
+    assert replay.conflicts[f"invalid:{target_id}"] == (target_id,)
+    assert replay.in_force(mission.id, 9_999.0) is None
 
 
 def test_prohibited_updated_event_refuses_target(tmp_path):
