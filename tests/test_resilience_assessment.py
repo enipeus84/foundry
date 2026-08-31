@@ -551,7 +551,7 @@ def test_runway_failure_remains_unavailable_not_partial(tmp_path):
     real_dispatch = metrics.dispatch
 
     def unavailable_dispatch(request):
-        if request.metric_id == TARGET_METRIC:
+        if request.metric_id == "finance.liquidity_runway":
             return MetricResult(
                 request.metric_id,
                 None,

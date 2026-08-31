@@ -123,6 +123,8 @@ _METRIC_PRESENTATION: dict[str, tuple[str, str]] = {
     "finance.cash_available": ("LIQUIDITY", "currency"),
     "finance.cash_flow": ("NET CASH FLOW", "currency"),
     "finance.liquidity_runway": ("RUNWAY", "months"),
+    "finance.mortgage_payment_runway": ("MORTGAGE COVER", "months"),
+    "finance.mortgage_commitment_monthly": ("CANONICAL MONTHLY MORTGAGE PAYMENT", "currency"),
     "finance.employer_concentration": ("EMPLOYER CONCENTRATION", "percent"),
     "finance.debt_ratio": ("DEBT RATIO", "percent"),
     "finance.accessible_assets": ("ACCESSIBLE ASSETS", "currency"),

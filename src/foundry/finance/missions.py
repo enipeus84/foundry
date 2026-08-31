@@ -19,10 +19,9 @@ FINANCE_MISSION_DEFINITIONS: tuple[MissionDefinition, ...] = (
         order=1,
         destination_direction="higher_is_better",
         definition=(
-            "The household can absorb a serious, unexpected disruption "
-            "from its own liquid resources — 18 months of essential outflow "
-            "held in reserve — without being forced into a damaging "
-            "financial decision."
+            "Eligible liquid reserves cover the governed target number of "
+            "months of canonical mortgage payments. This current policy does "
+            "not measure wider household expenditure resilience."
         ),
         assessment_policy_id=RESILIENCE_POLICY_ID,
     ),

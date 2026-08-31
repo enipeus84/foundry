@@ -23,6 +23,7 @@ from foundry.core.mission_assessment import (
     RecommendationAssessment,
     TelemetryItem,
 )
+from foundry.core.mission_targets import MissionTargetProjection
 
 from .entities import AssumptionSet, FinanceEntityProjection
 from .resilience_evidence import (
@@ -33,8 +34,12 @@ from .resilience_evidence import (
 
 POLICY_ID = "finance.financial_resilience.v1"
 CALCULATION_VERSION = "resilience-v1"
-TARGET_METRIC = "finance.liquidity_runway"
+TARGET_METRIC = "finance.mortgage_payment_runway"
+# Transitional direct-provider callers retain the former RFC-008 route until
+# they inject MissionTargetProjection. Application wiring never uses this.
+_LEGACY_TARGET_METRIC = "finance.liquidity_runway"
 TARGET_MONTHS = 18.0
+MATERIAL_COVER_FRACTION = 0.5
 DAY = 86_400.0
 MONTH = 365.2425 * DAY / 12.0
 
@@ -180,18 +185,25 @@ class FinancialResilienceAssessor:
         finance: FinanceEntityProjection,
         core: EntityProjection,
         evidence: ResilienceEvidenceProjection,
+        targets: MissionTargetProjection | None = None,
         policy: FinancialResiliencePolicy | None = None,
     ):
         self.metrics = metrics
         self.finance = finance
         self.core = core
         self.evidence = evidence
+        self.targets = targets
         self.policy = policy or FinancialResiliencePolicy()
 
     def owned_policy_ids(self) -> frozenset[str]:
         return frozenset({self.policy.id})
 
     def assess(self, request: MissionAssessmentRequest) -> MissionAssessment:
+        # The composition root always injects RFC-016 targets.  Retaining the
+        # pre-target branch below only preserves historical direct-provider
+        # callers while they migrate; it is never used by the application.
+        if self.targets is not None:
+            return self._assess_mortgage_cover(request)
         mission = self.core.missions.get(request.mission_id)
         if mission is None:
             return self._unavailable(request, "mission does not exist")
@@ -239,12 +251,12 @@ class FinancialResilienceAssessor:
             return self._unavailable(request, str(exc))
 
         runway = self.metrics.dispatch(MetricRequest(
-            TARGET_METRIC,
+            _LEGACY_TARGET_METRIC,
             request.scope,
             request.as_of,
         ))
         runway_value = self._metric_value(
-            runway, TARGET_METRIC, request, "months")
+            runway, _LEGACY_TARGET_METRIC, request, "months")
         if runway_value is None:
             return self._unavailable(
                 request, "liquidity runway is unavailable")
@@ -577,6 +589,226 @@ class FinancialResilienceAssessor:
             forecast_resolution="month",
             applicability=APPLICABILITY,
         )
+
+    def _assess_mortgage_cover(
+        self, request: MissionAssessmentRequest,
+    ) -> MissionAssessment:
+        """Assess the deliberately narrow, governed mortgage-cover policy."""
+        mission = self.core.missions.get(request.mission_id)
+        if mission is None:
+            return self._unavailable(request, "mission does not exist")
+        if mission.assessment_policy_id != self.policy.id:
+            return self._unavailable(
+                request, "mission is not declared against this policy")
+        if mission.target_metric != TARGET_METRIC:
+            return self._unavailable(
+                request,
+                "Financial Resilience must target mortgage-payment runway")
+        if request.scope.kind != "party":
+            return self._unavailable(
+                request, "Financial Resilience requires a party scope")
+        household = self.core.parties.get(request.scope.id)
+        if household is None or household.party_type != "household" \
+                or household.status != "active":
+            return self._unavailable(request, "active household scope not found")
+
+        target = self.targets.in_force(mission.id, request.as_of)
+        if target is None:
+            return self._unavailable(
+                request, "in-force Mortgage Cover Mission Target not found")
+        if target.household_id != household.id or target.subject_id != request.scope.id:
+            return self._unavailable(
+                request, "Mission Target is not governed for this household scope")
+        if target.metric_id != TARGET_METRIC:
+            return self._unavailable(
+                request, "Mission Target metric must be mortgage-payment runway")
+        if target.destination.dimension != "duration_months" \
+                or target.destination.unit_or_currency != "months" \
+                or target.destination_direction != "higher_is_better" \
+                or target.horizon_kind != "none" or target.horizon_at is not None \
+                or target.destination.value <= 0:
+            return self._unavailable(
+                request,
+                "Mission Target must be a positive months destination with no horizon")
+
+        reserves = self.metrics.dispatch(MetricRequest(
+            "finance.accessible_assets", request.scope, request.as_of))
+        reserve_value = self._metric_value(
+            reserves, "finance.accessible_assets", request, None)
+        if reserve_value is None:
+            return self._unavailable_from_metric(
+                request, "eligible liquid reserves", reserves)
+        payment = self.metrics.dispatch(MetricRequest(
+            "finance.mortgage_commitment_monthly", request.scope,
+            request.as_of))
+        payment_value = self._metric_value(
+            payment, "finance.mortgage_commitment_monthly", request, None)
+        if payment_value is None or payment_value <= 0:
+            return self._unavailable_from_metric(
+                request, "canonical monthly mortgage payment", payment)
+
+        target_months = float(target.destination.value)
+        coverage_months = reserve_value / payment_value
+        required_reserve = payment_value * target_months
+        surplus_shortfall = reserve_value - required_reserve
+        refs = tuple(sorted({
+            *reserves.input_references,
+            *payment.input_references,
+        }))
+        current = MetricResult(
+            metric_id=TARGET_METRIC,
+            value=coverage_months,
+            unit_or_currency="months",
+            scope=request.scope,
+            as_of=request.as_of,
+            status="available",
+            calculation_version="mortgage-runway-v1",
+            input_references=refs,
+            limitations=tuple(dict.fromkeys((
+                *reserves.limitations,
+                *payment.limitations,
+            ))),
+            confidence_or_quality="derived",
+            generated_at=request.as_of,
+        )
+        status, trajectory, margin_state = self._mortgage_cover_state(
+            coverage_months, target_months)
+        milestones = self._mortgage_cover_milestones(
+            coverage_months, target_months)
+        current_milestone = next(item for item in milestones if item.is_current)
+        target_result = self._governed_metric(
+            "finance.mortgage_payment_runway.target", target_months, "months",
+            request, (*target.provenance, *target.history))
+        required_result = self._governed_metric(
+            "finance.mortgage_cover_required_reserve", required_reserve,
+            reserves.unit_or_currency or "GBP", request, refs)
+        surplus_result = self._governed_metric(
+            "finance.mortgage_cover_surplus_shortfall", surplus_shortfall,
+            reserves.unit_or_currency or "GBP", request, refs)
+
+        limitations = [
+            "This mission measures mortgage-payment cover only. It does not "
+            "measure groceries, childcare, transport, healthcare, education, "
+            "or tax.",
+            *reserves.limitations,
+            *payment.limitations,
+        ]
+        target_refs = tuple(sorted({*target.provenance, *target.history}))
+        input_refs = tuple(sorted({
+            *mission.provenance, *mission.history,
+            *household.provenance, *household.history,
+            *target_refs, *refs,
+        }))
+        return MissionAssessment(
+            mission_id=mission.id,
+            policy_id=request.policy_id,
+            scope=request.scope,
+            as_of=request.as_of,
+            status=status,
+            calculation_version=CALCULATION_VERSION,
+            current_value=current,
+            mission_complete=coverage_months >= target_months,
+            eta=None,
+            trajectory_state=trajectory,
+            trajectory_tone=status,
+            confidence=MissionConfidence(
+                "Supported", "CANONICAL MORTGAGE PAYMENT · ELIGIBLE LIQUID RESERVES · GOVERNED TARGET"),
+            current_milestone=current_milestone,
+            milestones=milestones,
+            mission_margin=MissionMargin(
+                pace_percent=None,
+                schedule_buffer_days=None,
+                description=margin_state,
+                state=margin_state,
+                label="MORTGAGE COVER MARGIN",
+                value=surplus_shortfall,
+                unit_or_currency=reserves.unit_or_currency,
+                format_kind="currency",
+            ),
+            delta_v=None,
+            trajectory=(),
+            forecast=(),
+            telemetry=(
+                TelemetryItem(current, "MORTGAGE COVER", "months",
+                              "ELIGIBLE RESERVES ÷ CANONICAL PAYMENT",
+                              display_region="essential"),
+                TelemetryItem(replace(reserves, generated_at=request.as_of),
+                              "ELIGIBLE LIQUID RESERVES", "currency",
+                              display_group="MORTGAGE COVER"),
+                TelemetryItem(replace(payment, generated_at=request.as_of),
+                              "CANONICAL MONTHLY MORTGAGE PAYMENT", "currency",
+                              display_group="MORTGAGE COVER"),
+                TelemetryItem(target_result, "GOVERNED TARGET COVERAGE", "months",
+                              "IN-FORCE MISSION TARGET", display_group="MORTGAGE COVER"),
+                TelemetryItem(required_result, "REQUIRED RESERVE", "currency",
+                              "CANONICAL PAYMENT × GOVERNED TARGET",
+                              display_group="MORTGAGE COVER"),
+                TelemetryItem(surplus_result, "SURPLUS / SHORTFALL", "currency",
+                              "SIGNED", display_region="essential"),
+            ),
+            recommendations=(),
+            input_references=input_refs,
+            evidence_references=tuple(sorted({
+                *reserves.evidence_references,
+                *payment.evidence_references,
+            })),
+            assumption_references=(),
+            limitations=tuple(dict.fromkeys(limitations)),
+            confidence_basis="SUPPORTED · GOVERNED MORTGAGE-COVER INPUTS",
+            forecast_resolution="month",
+            applicability=APPLICABILITY,
+        )
+
+    def _unavailable_from_metric(
+        self, request: MissionAssessmentRequest, label: str, result: MetricResult,
+    ) -> MissionAssessment:
+        reason = next(iter(result.limitations), "invalid metric result")
+        return self._unavailable(request, f"{label} unavailable: {reason}")
+
+    @staticmethod
+    def _governed_metric(
+        metric_id: str, value: float, unit: str, request: MissionAssessmentRequest,
+        refs: tuple[str, ...],
+    ) -> MetricResult:
+        return MetricResult(
+            metric_id=metric_id, value=value, unit_or_currency=unit,
+            scope=request.scope, as_of=request.as_of, status="available",
+            calculation_version=CALCULATION_VERSION,
+            input_references=tuple(refs), generated_at=request.as_of,
+            confidence_or_quality="derived")
+
+    @staticmethod
+    def _mortgage_cover_state(
+        coverage: float, target: float,
+    ) -> tuple[str, str, str]:
+        if coverage >= target:
+            return "green", "Complete", "High Margin"
+        if coverage >= target * MATERIAL_COVER_FRACTION:
+            return "amber", "Constrained", "Low Margin"
+        return "red", "Critical", "Negative Margin"
+
+    @staticmethod
+    def _mortgage_cover_milestones(
+        coverage: float, target: float,
+    ) -> tuple[MissionMilestone, ...]:
+        half = target * MATERIAL_COVER_FRACTION
+        definitions = (
+            ("below-half-cover", "Below Half Cover", 0.0, half, False),
+            ("partial-cover", "Partial Cover", half, target, False),
+            ("fully-covered", "Fully Covered", target, None, True),
+        )
+        current_index = (2 if coverage >= target else 1 if coverage >= half else 0)
+        return tuple(MissionMilestone(
+            identifier, label, lower, upper,
+            1.0 if coverage >= target and complete else (
+                max(0.0, min(1.0, (coverage - lower) / (upper - lower)))
+                if upper is not None else 0.0),
+            order=index, unit_or_currency="months", is_current=index == current_index,
+            is_complete=coverage >= (upper if upper is not None else lower),
+            completes_mission=complete, destination_direction="higher_is_better",
+            destination_value=target if complete else lower,
+        ) for index, (identifier, label, lower, upper, complete)
+            in enumerate(definitions))
 
     def _unavailable(
         self,

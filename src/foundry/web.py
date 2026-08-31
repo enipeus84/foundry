@@ -310,15 +310,16 @@ def _build_console() -> Console:
     ))
     assessments = MissionAssessmentRegistry()
     register_finance_mission_definitions(assessments)
+    mission_targets = MissionTargetProjection(
+        log, core_entities, assessments, FinanceTargetMetricResolver())
     assessments.register(FinancialResilienceAssessor(
-        registry, finance_entities, core_entities, resilience_evidence))
+        registry, finance_entities, core_entities, resilience_evidence,
+        mission_targets))
     assessments.register(FinancialIndependenceAssessor(
         finance_entities, core_entities, registry))
     assessments.register(PensionIndependenceAssessor(
         registry, finance_entities, core_entities, pension_evidence,
         provider_projections=pension_projections))
-    mission_targets = MissionTargetProjection(
-        log, core_entities, assessments, FinanceTargetMetricResolver())
     assessments.register(MortgageFreedomAssessor(
         finance_entities, core_entities, registry,
         MortgageEvidenceProjection(log), mission_targets))

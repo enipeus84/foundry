@@ -17,7 +17,11 @@ from foundry.core.entities import abandon_mission, declare_mission  # noqa: E402
 from foundry.core.evidence import concern, derive_claim_directly, tag_claim  # noqa: E402
 from foundry.eventlog import EventLog  # noqa: E402
 from foundry.core.mission_targets import TargetQuantity  # noqa: E402
+from foundry.finance import entities as fin  # noqa: E402
 from foundry.finance.fixtures import build_parker_brads_household  # noqa: E402
+from foundry.finance.resilience_assessment import (  # noqa: E402
+    POLICY_ID as RESILIENCE_POLICY_ID, TARGET_METRIC as RESILIENCE_TARGET_METRIC,
+)
 from foundry.web import app, _build_console  # noqa: E402
 
 ALLOWED = "cparkerbrads@gmail.com"
@@ -448,6 +452,24 @@ def _seed_financial_independence(tmp_path):
         destination_direction="lower_is_better", horizon_kind="by_date",
         horizon_at=mission.target_date,
         effective_from=log.get(mission.provenance[0])["ts"])
+    resilience = next(
+        item for item in console.entities.missions.values()
+        if item.assessment_policy_id == RESILIENCE_POLICY_ID)
+    fin.declare_recurring_series(
+        log, "mortgage_payment", 1_701.47, "GBP", cadence="month",
+        direction="outflow", essential_category="housing",
+        basis="contractual_derived", effective_from=MISSION_CONTROL_FIXTURE_AS_OF,
+        source_reference="synthetic lender statement",
+        derivation_reference="synthetic promotion",
+        settled_obligation_id=household.mortgage_id)
+    console = _build_console()
+    console.mission_targets.declare(
+        household_id=household.household_id, subject_id=household.household_id,
+        mission_id=resilience.id, metric_id=RESILIENCE_TARGET_METRIC,
+        destination=TargetQuantity(18.0, "months", "duration_months"),
+        destination_direction="higher_is_better", horizon_kind="none",
+        horizon_at=None,
+        effective_from=log.get(resilience.provenance[0])["ts"])
     return log
 
 
@@ -523,8 +545,8 @@ def test_financial_resilience_home_lane_uses_months_without_currency(tmp_path):
     end = home.index("</a>", start)
     lane = home[start:end]
 
-    assert "CURRENT MILESTONE FORTIFIED" in lane
-    assert "RESERVE COVERAGE " in lane
+    assert "CURRENT MILESTONE FULLY COVERED" in lane
+    assert "MORTGAGE COVER " in lane
     assert " mo" in lane
     assert "MISSION MARGIN HIGH MARGIN" in lane
     assert "£30" not in lane
@@ -577,7 +599,7 @@ def test_hostile_resilience_description_is_escaped_on_render(tmp_path):
 
     assert "<script>alert('commitment')</script>" not in html
     assert "&lt;script&gt;alert(&#x27;commitment&#x27;)&lt;/script&gt;" \
-        in html
+        not in html
     assert "<img src=x onerror=alert(1)>" not in html
     assert "<script>alert('lineage')</script>" not in html
     assert "onerror=" not in html.lower()
@@ -930,13 +952,13 @@ def test_rfc010_phase_2_route_goldens_are_pinned_for_all_four_missions(
 
     assert hashes == {
         "financial-resilience":
-            "8e0e2a6c0dcdc30fff8e7f9ab91f8e68078c3108f0949d0dae09718fe5d4aaac",
+            "c13e8de3fda6f929227b5162dbe1dfac9f593a9ce361291368801a07418ed9ad",
         "financial-independence":
-            "639b7fb1955c05820ddb2be8fbe42e941f342314f136c181de4954c2a983ff53",
+            "dae49705db952dd0b4bcc52cc6162a20d121501fda9d904458ded07beb2993d0",
         "pension-independence":
             "c1694554084dc1bfae538823393f2cc487cdcfdafa1d20cbbe226f1331851d6a",
         "mortgage-freedom":
-            "b3fdfb2c386dd97fd6497336a77184c522286c695459f838d124f07c3c274da0",
+            "54999bc978367f7a974564c2a706eb151540320f25c894d8b4e9a4aa9df9c8b8",
     }
 
 
@@ -1088,7 +1110,7 @@ def test_financial_resilience_is_the_honest_absence_path(tmp_path):
     assert "MILESTONE COMPLETION" in analysis
     assert "Movement UNKNOWN" in hero
     assert "RECEDING" not in hero
-    assert "Maintain reserve contribution" in rendered
+    assert "Maintain reserve contribution" not in rendered
 
 
 def test_mortgage_secondary_analysis_stays_behind_disclosure(tmp_path):

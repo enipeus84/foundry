@@ -745,6 +745,8 @@ def test_all_registered_metric_ids(kernel):
         "finance.asset_allocation", "finance.employer_concentration",
         "finance.debt_ratio", "finance.cash_available",
         "finance.accessible_assets",
+        "finance.mortgage_commitment_monthly",
+        "finance.mortgage_payment_runway",
     }
 
 
