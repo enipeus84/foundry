@@ -111,10 +111,12 @@ class MissionTargetProjection:
         self.conflicts: dict[str, tuple[str, ...]] = {}
         self._invalid_target_ids: set[str] = set()
         self._mission_closed_at: dict[str, float] = {}
+        self._mission_target_metric_timeline: dict[str, list[tuple[float, object]]] = {}
         self.rebuild()
 
     def rebuild(self) -> None:
         self.targets, self.conflicts, self._invalid_target_ids, self._mission_closed_at = {}, {}, set(), {}
+        self._mission_target_metric_timeline = {}
         declared_mission_ids: set[str] = set()
         for event in self.log.events():
             kind = event["kind"]
@@ -123,6 +125,11 @@ class MissionTargetProjection:
                 mission_id = payload.get("entity_id")
                 if isinstance(mission_id, str) and mission_id:
                     declared_mission_ids.add(mission_id)
+                    self._record_mission_target_metric(event, mission_id)
+            elif kind == "core.mission.updated":
+                mission_id = payload.get("entity_id")
+                if isinstance(mission_id, str) and mission_id in declared_mission_ids:
+                    self._record_mission_target_metric(event, mission_id)
             elif kind == "core.mission.closed":
                 mission_id = payload.get("entity_id")
                 if (isinstance(mission_id, str) and mission_id in declared_mission_ids
@@ -131,6 +138,20 @@ class MissionTargetProjection:
             if event["kind"].startswith(f"{PREFIX}.{TYPE}."):
                 self._apply(event)
         self._detect_conflicts()
+
+    def _record_mission_target_metric(self, event: dict, mission_id: str) -> None:
+        """Fold canonical Mission metric revisions in append order for replay."""
+        payload = event["payload"]
+        if event["kind"] == "core.mission.declared" or "target_metric" in payload:
+            self._mission_target_metric_timeline.setdefault(mission_id, []).append(
+                (event["ts"], payload.get("target_metric", "")))
+
+    def _target_metric_at_declaration(self, mission_id: str, declared_at: float) -> object | None:
+        timeline = self._mission_target_metric_timeline.get(mission_id, ())
+        for effective_at, metric_id in reversed(timeline):
+            if effective_at <= declared_at:
+                return metric_id
+        return None
 
     def _conflict(self, mission_id: str, *target_ids: str) -> None:
         known = set(self.conflicts.get(mission_id, ()))
@@ -218,7 +239,7 @@ class MissionTargetProjection:
         if target.subject_id is not None and not self._subject_is_authorised(
                 target.subject_id, target.household_id):
             raise MissionTargetError("Mission Target subject is outside the authorising household")
-        if mission.target_metric != target.metric_id:
+        if self._target_metric_at_declaration(target.mission_id, target.declared_at) != target.metric_id:
             raise MissionTargetError("Mission Target metric does not match Mission")
         declaration = self.log.get(mission.provenance[0]) if mission.provenance else None
         if declaration is None or target.effective_from < float(declaration["ts"]):
