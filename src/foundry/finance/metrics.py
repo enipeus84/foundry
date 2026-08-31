@@ -84,7 +84,7 @@ docs/rfc-002-implementation-report.md:
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import time
 from typing import Iterable
 
@@ -102,6 +102,8 @@ from .entities import Account, Asset, FinanceEntityProjection, Obligation
 # metric's version explicit at its boundary.
 CALCULATION_VERSION = "v1"
 LIQUIDITY_RUNWAY_CALCULATION_VERSION = "v2"
+MORTGAGE_COMMITMENT_CALCULATION_VERSION = "mortgage-commitment-v1"
+MORTGAGE_RUNWAY_CALCULATION_VERSION = "mortgage-runway-v1"
 
 METRIC_IDS = frozenset({
     "finance.net_worth",
@@ -112,6 +114,8 @@ METRIC_IDS = frozenset({
     "finance.debt_ratio",
     "finance.cash_available",
     "finance.accessible_assets",
+    "finance.mortgage_commitment_monthly",
+    "finance.mortgage_payment_runway",
 })
 
 # A V1 product judgement (see module docstring), not a 001 formula.
@@ -178,6 +182,8 @@ class FinanceMetricProvider:
             "finance.debt_ratio": self._debt_ratio,
             "finance.cash_available": self._cash_available,
             "finance.accessible_assets": self._accessible_assets,
+            "finance.mortgage_commitment_monthly": self._mortgage_commitment_monthly,
+            "finance.mortgage_payment_runway": self._mortgage_payment_runway,
         }.get(request.metric_id)
         if handler is None:
             return self._unsupported(request, "not owned by FinanceMetricProvider")
@@ -200,9 +206,13 @@ class FinanceMetricProvider:
 
     @staticmethod
     def _calculation_version(metric_id: str) -> str:
-        return (LIQUIDITY_RUNWAY_CALCULATION_VERSION
-                if metric_id == "finance.liquidity_runway"
-                else CALCULATION_VERSION)
+        if metric_id == "finance.liquidity_runway":
+            return LIQUIDITY_RUNWAY_CALCULATION_VERSION
+        if metric_id == "finance.mortgage_commitment_monthly":
+            return MORTGAGE_COMMITMENT_CALCULATION_VERSION
+        if metric_id == "finance.mortgage_payment_runway":
+            return MORTGAGE_RUNWAY_CALCULATION_VERSION
+        return CALCULATION_VERSION
 
     def _net_worth(self, request: MetricRequest) -> MetricResult:
         """(accounts + assets) − owed obligations, unioned by entity id
@@ -461,6 +471,77 @@ class FinanceMetricProvider:
                 extra_limitations=limitations)
         return self._available(
             request, account_total + asset_total, target, refs, limitations)
+
+    def _mortgage_commitment_monthly(
+            self, request: MetricRequest) -> MetricResult:
+        """Current contractual mortgage payments, normalised to months.
+
+        The promoted RecurringSeries is the canonical payment source.  This
+        deliberately does not inspect mortgage evidence or reconstruct a
+        payment from balance, rate, or term.
+        """
+        person_ids = self._scope_persons(request.scope)
+        if person_ids is None:
+            return self._unsupported(
+                request, "finance.mortgage_commitment_monthly requires a party scope")
+        if not person_ids:
+            return self._unavailable(request, "party resolves to no members")
+
+        target = self._target_currency(set(person_ids) | {request.scope.id})
+        owned_obligations = self._owned_entities(
+            set(person_ids), self.finance.obligations,
+            vocab.LIABILITY_RELATIONS)
+        qualifying = [
+            series for series in self.finance.recurring_series.values()
+            if series.status == "active"
+            and series.recurring_commitment_type == "mortgage_payment"
+            and series.direction == "outflow"
+            and series.cadence in _MONTHLY_MULTIPLIER
+            and series.basis in {"contractual_derived", "contractual_declared"}
+            and series.effective_from is not None
+            and series.effective_from <= request.as_of
+            and series.settled_obligation_id in owned_obligations
+        ]
+        current = self._current_contracts(qualifying)
+        limitations: list[str] = []
+        monthly, refs = self._series_monthly(
+            current, target, request.as_of, limitations)
+        if monthly <= 0:
+            return self._unavailable(
+                request,
+                "no valid positive current contractual mortgage commitment observed",
+                extra_limitations=limitations)
+        if len(current) > 1:
+            limitations.append(
+                f"{len(current)} current mortgage-payment series contribute to this commitment")
+        return self._available(request, monthly, target, refs, limitations)
+
+    def _mortgage_payment_runway(self, request: MetricRequest) -> MetricResult:
+        """Eligible liquid reserves divided by canonical mortgage payment."""
+        reserves = self._accessible_assets(replace(
+            request, metric_id="finance.accessible_assets"))
+        payment = self._mortgage_commitment_monthly(replace(
+            request, metric_id="finance.mortgage_commitment_monthly"))
+        limitations = [
+            *(f"eligible liquid reserves: {reason}" for reason in reserves.limitations),
+            *(f"canonical monthly mortgage payment: {reason}" for reason in payment.limitations),
+        ]
+        refs = [*reserves.input_references, *payment.input_references]
+        if reserves.status not in ("available", "stale") or reserves.value is None:
+            return self._unavailable(
+                request, "eligible liquid reserves are unavailable",
+                extra_limitations=limitations)
+        if payment.status not in ("available", "stale") or payment.value is None:
+            return self._unavailable(
+                request, "canonical monthly mortgage payment is unavailable",
+                extra_limitations=limitations)
+        if float(payment.value) <= 0:
+            return self._unavailable(
+                request, "canonical monthly mortgage payment must be positive",
+                extra_limitations=limitations)
+        return self._available(
+            request, float(reserves.value) / float(payment.value), "months",
+            refs, limitations)
 
     # ---------------------------------------------------------------- scope
 

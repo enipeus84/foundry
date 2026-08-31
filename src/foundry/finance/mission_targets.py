@@ -8,6 +8,7 @@ class FinanceTargetMetricResolver:
 
     _DESCRIPTORS = {
         "finance.liquidity_runway": MetricDescriptor("finance.liquidity_runway", "duration_months", "months", "higher_is_better"),
+        "finance.mortgage_payment_runway": MetricDescriptor("finance.mortgage_payment_runway", "duration_months", "months", "higher_is_better"),
         "finance.accessible_assets": MetricDescriptor("finance.accessible_assets", "currency", "GBP", "higher_is_better"),
         "finance.pension_wealth": MetricDescriptor("finance.pension_wealth", "currency", "GBP", "higher_is_better"),
         "finance.mortgage_balance": MetricDescriptor("finance.mortgage_balance", "currency", "GBP", "lower_is_better"),
@@ -15,6 +16,7 @@ class FinanceTargetMetricResolver:
 
     _HORIZON_KINDS = {
         "finance.liquidity_runway": "none",
+        "finance.mortgage_payment_runway": "none",
         "finance.accessible_assets": "by_date",
         "finance.pension_wealth": "derived",
         "finance.mortgage_balance": "by_date",
