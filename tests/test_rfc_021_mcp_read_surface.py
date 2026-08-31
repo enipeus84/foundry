@@ -17,7 +17,7 @@ from mcp.client.stdio import stdio_client  # noqa: E402
 from foundry import webauth  # noqa: E402
 from foundry.application.resources import FinancialResourceQuery, ResourceNotFound  # noqa: E402
 from foundry.core.acquisition import AssetRegistration, TelemetryStream, TelemetryStreamRegistry  # noqa: E402
-from foundry.core.entities import EntityProjection, declare_party, join_household  # noqa: E402
+from foundry.core.entities import EntityProjection, declare_mission, declare_party, join_household  # noqa: E402
 from foundry.eventlog import EventLog  # noqa: E402
 from foundry.finance import entities as finance  # noqa: E402
 from foundry.finance.pension_evidence import PensionEvidenceProjection  # noqa: E402
@@ -29,6 +29,7 @@ from foundry.core.acquisition import (  # noqa: E402
     AcquisitionError, ConfirmationGate, EnvelopeProjection, EvidenceVault, IdentityIndex, ProposalInbox,
 )
 from foundry.core.principal_authority import grant_principal_household_authority  # noqa: E402
+from foundry.finance.resilience_assessment import POLICY_ID as RESILIENCE_POLICY_ID  # noqa: E402
 from foundry.finance.acquisition import FINANCE_MANUAL_DRAFT_CONTRACT  # noqa: E402
 import foundry.mcp_server as mcp_server  # noqa: E402
 
@@ -127,6 +128,7 @@ def test_mcp_client_connects_and_cannot_cross_household(environment):
                     "close_financial_resource", "execute_close_financial_resource",
                     "get_mission_assumption_readiness", "propose_mission_assumption_set",
                     "execute_mission_assumption_set", "inspect_pension_independence",
+                    "propose_mission_target_metric", "execute_mission_target_metric",
                     "inspect_mortgage_freedom",
                     "get_mortgage_evidence_history", "get_mission_target_history",
                     "inspect_essential_outflow_basis",
@@ -216,6 +218,42 @@ def test_mcp_client_connects_and_cannot_cross_household(environment):
     gate.confirm(proposal.id, actor="human-reviewer")
     assert any(event["kind"] == "finance.valuation.declared" for event in log.events())
     assert any(event["actor"] == f"mcp:{ALLOWED}" for event in log.events())
+
+
+def test_mcp_mission_target_metric_amendment_is_proposed_then_executed(environment):
+    log, household, _, _ = _world(environment)
+    mission = declare_mission(
+        log, "Financial Resilience", target_metric="finance.liquidity_runway",
+        assessment_policy_id=RESILIENCE_POLICY_ID, household_id=household.id)
+    grant_principal_household_authority(log, ALLOWED, household.id, actor="test")
+    token = webauth.session_token(ALLOWED, webauth.load_config())
+    server = StdioServerParameters(
+        command=sys.executable, args=["-m", "foundry.mcp_server"],
+        env={**os.environ, "FOUNDRY_DATA_PATH": str(log.path),
+             "FOUNDRY_MCP_SESSION_TOKEN": token, "FOUNDRY_MCP_HOUSEHOLD_ID": household.id},
+    )
+
+    async def exercise():
+        async with stdio_client(server) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                proposed = await session.call_tool("propose_mission_target_metric", {
+                    "mission_id": mission.id,
+                    "target_metric": "finance.mortgage_payment_runway",
+                    "reason": "household approved revised runway metric",
+                })
+                assert not proposed.isError
+                receipt = json.loads(proposed.content[0].text)
+                executed = await session.call_tool("execute_mission_target_metric", {
+                    "mission_id": mission.id,
+                    "target_metric": "finance.mortgage_payment_runway",
+                    "reason": "household approved revised runway metric",
+                    "proposal_id": receipt["proposal_id"], "command_id": "metric-amendment-1",
+                })
+                assert not executed.isError
+
+    asyncio.run(exercise())
+    assert EntityProjection(log).missions[mission.id].target_metric == "finance.mortgage_payment_runway"
 
 
 def test_mcp_valuation_read_leads_with_named_resource_and_evidence(environment):
