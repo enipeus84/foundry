@@ -223,7 +223,7 @@ def test_mcp_valuation_read_leads_with_named_resource_and_evidence(environment):
     household = declare_party(log, "household")
     person = declare_party(log, "person")
     join_household(log, person.id, household.id)
-    account = finance.declare_account(log, "brokerage", "GBP", name="Vida Savings", tax_wrapper="isa")
+    account = finance.declare_account(log, "brokerage", "GBP", name="Cash ISA — Vida Savings", tax_wrapper="isa")
     finance.link_ownership(log, "account", account.id, "owner", person.id)
     finance_asset_registry(log).register(AssetRegistration(account.id, "finance", household.id))
     first = log.append("finance.valuation.declared", {
