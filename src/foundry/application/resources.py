@@ -476,7 +476,10 @@ class FinancialResourceQuery:
         labels = {"isa": "Cash ISA", "checking": "Cash account", "savings": "Savings account",
                   "pension": "Pension", "property": "Property"}
         label = labels.get(summary["resource_type"], str(summary["resource_type"]).replace("_", " ").title())
-        return f"{label} — {resource.name}" if getattr(resource, "name", None) else label
+        name = getattr(resource, "name", None)
+        if not name:
+            return label
+        return name if name.casefold().startswith(f"{label} —".casefold()) else f"{label} — {name}"
 
     def _state(self) -> tuple[AssetRegistry, FinanceEntityProjection]:
         return finance_asset_registry(self.log), FinanceEntityProjection(self.log)
