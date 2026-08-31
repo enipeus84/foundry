@@ -480,19 +480,33 @@ def create_mcp_server(query: FinancialResourceQuery | None = None,
             raise ValueError("pension projection authority declaration refused") from exc
 
     @server.tool()
-    def update_financial_resource(resource_id: str, name: str, reason: str = "metadata update") -> dict:
-        receipt = resource_writes.propose_update(resource_id=resource_id, name=name, reason=reason)
+    def update_financial_resource(resource_id: str, name: str | None = None,
+                                  liquidity_classification: str | None = None,
+                                  reason: str = "metadata update") -> dict:
+        """Propose a governed resource metadata or liquidity amendment.
+
+        ``liquidity_classification`` must be an explicit Finance controlled
+        value. It is never inferred from account type, tax wrapper, name or
+        valuation, and execution requires the resource to remain in the exact
+        canonical state reviewed at proposal time.
+        """
+        receipt = resource_writes.propose_update(
+            resource_id=resource_id, name=name,
+            liquidity_classification=liquidity_classification, reason=reason)
         return {"operation": "update_financial_resource", "state": "proposed",
                 "proposal_id": receipt.proposal_id, "resource_id": resource_id,
-                "name": name, "reason": reason, "requires_execution": True}
+                "name": name, "liquidity_classification": liquidity_classification,
+                "reason": reason, "requires_execution": True}
 
     @server.tool()
-    def execute_update_financial_resource(resource_id: str, name: str, command_id: str,
-                                          proposal_id: str,
+    def execute_update_financial_resource(resource_id: str, command_id: str,
+                                          proposal_id: str, name: str | None = None,
+                                          liquidity_classification: str | None = None,
                                   reason: str = "metadata update") -> dict:
-        """Execute a previously proposed resource rename."""
+        """Execute a previously proposed resource metadata or liquidity amendment."""
         try:
             return resource_writes.update(resource_id=resource_id, name=name,
+                                          liquidity_classification=liquidity_classification,
                                           command_id=command_id, reason=reason, proposal_id=proposal_id)
         except McpWriteDenied as exc:
             raise ValueError("financial resource update refused") from exc

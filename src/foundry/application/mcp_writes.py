@@ -12,6 +12,7 @@ from foundry.capture_contracts import CaptureValidationError
 from foundry.core.acquisition import AcquisitionError
 from foundry.application.resources import (
     FinancialResourceCommandService, FinancialResourceQuery, ResourceCommandDenied, ResourceNotFound,
+    financial_resource_update_command_digest,
 )
 from foundry.core.principal_authority import PrincipalHouseholdAuthority
 from foundry.eventlog import EventLog
@@ -356,24 +357,51 @@ class McpFinancialResourceWrites:
         except (ResourceCommandDenied, ResourceNotFound) as exc:
             raise McpWriteDenied(str(exc)) from exc
 
-    def propose_update(self, *, resource_id: str, name: str,
-                       reason: str = "metadata update") -> ResourceProposalReceipt:
-        return self._propose("update_financial_resource", {
-            "household_id": self.household_id, "resource_id": resource_id,
-            "name": name, "reason": reason,
-        })
+    def _update_request(self, *, resource_id: str, name: str | None,
+                        liquidity_classification: str | None,
+                        reason: str) -> dict[str, Any]:
+        """Read and validate the fresh resource state for both gates."""
+        return FinancialResourceCommandService(self.log).prepare_financial_resource_update(
+            household_id=self.household_id, resource_id=resource_id, name=name,
+            liquidity_classification=liquidity_classification, reason=reason,
+            principal=self.principal)
 
-    def update(self, *, resource_id: str, name: str, command_id: str,
-               reason: str = "metadata update", proposal_id: str | None = None) -> dict[str, Any]:
-        self._proposal(proposal_id or "", "update_financial_resource", {
-            "household_id": self.household_id, "resource_id": resource_id,
-            "name": name, "reason": reason,
-        })
+    def propose_update(self, *, resource_id: str, name: str | None = None,
+                       liquidity_classification: str | None = None,
+                       reason: str = "metadata update") -> ResourceProposalReceipt:
         try:
-            return FinancialResourceCommandService(self.log).update_financial_resource(
+            return self._propose("update_financial_resource", self._update_request(
+                resource_id=resource_id, name=name,
+                liquidity_classification=liquidity_classification, reason=reason))
+        except (ResourceCommandDenied, ResourceNotFound) as exc:
+            raise McpWriteDenied(str(exc)) from exc
+
+    def update(self, *, resource_id: str, command_id: str, name: str | None = None,
+               liquidity_classification: str | None = None,
+               reason: str = "metadata update", proposal_id: str | None = None) -> dict[str, Any]:
+        if not isinstance(command_id, str) or not command_id.strip():
+            raise McpWriteDenied("command_id is required for idempotent execution")
+        try:
+            service = FinancialResourceCommandService(self.log)
+            service._authorise(self.principal, self.household_id, True)
+            replay = service._audit_replay(
+                command_id,
+                financial_resource_update_command_digest(
+                    self.household_id, resource_id, name, liquidity_classification,
+                    reason, self.principal),
+                self.household_id)
+            if replay is not None:
+                return replay
+            request = self._update_request(
+                resource_id=resource_id, name=name,
+                liquidity_classification=liquidity_classification, reason=reason)
+            self._proposal(proposal_id or "", "update_financial_resource", request)
+            return service.update_financial_resource(
                 household_id=self.household_id, resource_id=resource_id, name=name,
+                liquidity_classification=liquidity_classification,
                 reason=reason, actor=f"mcp:{self.principal}", principal=self.principal,
-                command_id=command_id, client=self.client, witness_model=self.witness_model)
+                command_id=command_id, client=self.client, witness_model=self.witness_model,
+                expected_state_digest=request["state_digest"])
         except (ResourceCommandDenied, ResourceNotFound) as exc:
             raise McpWriteDenied(str(exc)) from exc
 

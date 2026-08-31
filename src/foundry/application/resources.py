@@ -18,6 +18,7 @@ from foundry.core.principal_authority import PrincipalHouseholdAuthority
 from foundry.eventlog import EventLog
 from foundry.finance.capture_targets import FinanceCaptureTargetResolver, finance_asset_registry
 from foundry.finance import entities as finance_entities
+from foundry.finance import vocab as finance_vocab
 from foundry.finance.entities import Account, Asset, Obligation, FinanceEntityProjection
 from foundry.finance.runtime_bootstrap import bootstrap_finance_capture_targets
 
@@ -46,6 +47,46 @@ _CURRENCY_SYMBOLS = {"GBP": "£", "EUR": "€", "USD": "$"}
 
 def _command_digest(values: dict[str, Any]) -> str:
     return sha256(json.dumps(values, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+
+def _resource_update_state_digest(resource: dict[str, Any]) -> str:
+    """Digest the canonical resource state relevant to a governed amendment.
+
+    Valuations deliberately do not participate: a metadata amendment must not
+    become a valuation write, and an intervening valuation does not change the
+    resource classification being reviewed. Resource history, lifecycle,
+    ownership and the mutable fields do participate, so an intervening resource
+    amendment cannot silently satisfy an earlier proposal.
+    """
+    return _command_digest({
+        "id": resource["id"],
+        "resource_kind": resource["resource_kind"],
+        "resource_type": resource["resource_type"],
+        "name": resource["name"],
+        "liquidity_classification": resource["liquidity_classification"],
+        "status": resource["status"],
+        "ownership": sorted(resource["ownership"], key=lambda value: (
+            value["relation"], value["subject_id"], value.get("share", -1))),
+        "history_event_ids": resource["provenance"]["history_event_ids"],
+    })
+
+
+def financial_resource_update_command_digest(
+        household_id: str, resource_id: str, name: str | None,
+        liquidity_classification: str | None, reason: str,
+        principal: str | None) -> str:
+    """Stable idempotency key material, deliberately excluding state.
+
+    The state digest belongs to the proposal receipt. Including it here would
+    make a successful replay appear different after the update itself changed
+    the resource history.
+    """
+    return _command_digest({
+        "operation": "update_financial_resource", "household_id": household_id,
+        "resource_id": resource_id, "name": name,
+        "liquidity_classification": liquidity_classification,
+        "reason": reason, "principal": principal,
+    })
 
 
 class FinancialResourceCommandService:
@@ -187,32 +228,83 @@ class FinancialResourceCommandService:
             }, actor=actor)
         return self.get_financial_resource(household_id, resource.id)
 
-    def update_financial_resource(self, *, household_id: str, resource_id: str,
-                                  name: str, reason: str, actor: str,
-                                  principal: str | None = None, command_id: str | None = None,
-                                  client: str | None = None, witness_model: str | None = None,
-                                  require_authority: bool = True) -> dict[str, Any]:
+    def prepare_financial_resource_update(
+            self, *, household_id: str, resource_id: str, name: str | None,
+            liquidity_classification: str | None, reason: str,
+            principal: str | None = None, require_authority: bool = True) -> dict[str, Any]:
+        """Validate an admissible resource amendment against fresh state.
+
+        This is intentionally shared by proposal and execution. The returned
+        request includes a state digest, making a proposal a receipt for one
+        particular canonical resource state rather than merely for a set of
+        caller-supplied strings.
+        """
         self._authorise(principal, household_id, require_authority)
         resource = self.get_financial_resource(household_id, resource_id)
         if resource["resource_kind"] == "obligation":
             raise ResourceCommandDenied("obligation metadata cannot be updated as a financial resource")
-        if not name.strip():
-            raise ResourceCommandDenied("display name cannot be empty")
-        digest = _command_digest({"operation": "update_financial_resource", "household_id": household_id,
-                                  "resource_id": resource_id, "name": name, "reason": reason})
-        if command_id:
-            replay = self._audit_replay(command_id, digest, household_id)
-            if replay is not None:
-                return replay
-        grammar.update(self.log, "finance", resource["resource_kind"], resource_id,
-                       {"name": name.strip()}, reason, actor=actor)
-        if command_id:
-            self.log.append("application.mcp_command.executed", {
-                "operation": "update_financial_resource", "command_id": command_id,
-                "request_digest": digest, "household_id": household_id,
-                "resource_id": resource_id, "principal": principal,
-                "client": client, "witness_model": witness_model,
-            }, actor=actor)
+        if resource["status"] != "active":
+            raise ResourceCommandDenied("an inactive resource cannot be updated")
+        if not isinstance(reason, str) or not reason.strip():
+            raise ResourceCommandDenied("a reason is required for a resource update")
+
+        changes: dict[str, str] = {}
+        if name is not None:
+            if not isinstance(name, str) or not name.strip():
+                raise ResourceCommandDenied("display name cannot be empty")
+            changes["name"] = name.strip()
+        if liquidity_classification is not None:
+            if (not isinstance(liquidity_classification, str)
+                    or liquidity_classification not in finance_vocab.LIQUIDITY_CLASSIFICATION):
+                raise ResourceCommandDenied("invalid liquidity_classification")
+            changes["liquidity_classification"] = liquidity_classification
+        if not changes:
+            raise ResourceCommandDenied("a resource update requires a supported change")
+        if all(resource[field] == value for field, value in changes.items()):
+            raise ResourceCommandDenied("resource update is already current")
+
+        return {
+            "operation": "update_financial_resource", "household_id": household_id,
+            "resource_id": resource_id, "name": changes.get("name"),
+            "liquidity_classification": changes.get("liquidity_classification"),
+            "reason": reason.strip(), "principal": principal,
+            "state_digest": _resource_update_state_digest(resource),
+        }
+
+    def update_financial_resource(self, *, household_id: str, resource_id: str,
+                                  name: str | None = None,
+                                  liquidity_classification: str | None = None,
+                                  reason: str, actor: str,
+                                  principal: str | None = None, command_id: str | None = None,
+                                  client: str | None = None, witness_model: str | None = None,
+                                  require_authority: bool = True,
+                                  expected_state_digest: str | None = None) -> dict[str, Any]:
+        if not isinstance(command_id, str) or not command_id.strip():
+            raise ResourceCommandDenied("command_id is required for idempotent execution")
+        self._authorise(principal, household_id, require_authority)
+        digest = financial_resource_update_command_digest(
+            household_id, resource_id, name, liquidity_classification, reason, principal)
+        replay = self._audit_replay(command_id, digest, household_id)
+        if replay is not None:
+            return replay
+        request = self.prepare_financial_resource_update(
+            household_id=household_id, resource_id=resource_id, name=name,
+            liquidity_classification=liquidity_classification, reason=reason,
+            principal=principal, require_authority=False)
+        if (not isinstance(expected_state_digest, str)
+                or request["state_digest"] != expected_state_digest):
+            raise ResourceCommandDenied("resource update proposal is stale against canonical state")
+        changes = {field: request[field] for field in ("name", "liquidity_classification")
+                   if request[field] is not None}
+        grammar.update(self.log, "finance", self.get_financial_resource(
+            household_id, resource_id)["resource_kind"], resource_id,
+            changes, request["reason"], actor=actor)
+        self.log.append("application.mcp_command.executed", {
+            "operation": "update_financial_resource", "command_id": command_id,
+            "request_digest": digest, "household_id": household_id,
+            "resource_id": resource_id, "principal": principal,
+            "client": client, "witness_model": witness_model,
+        }, actor=actor)
         return self.get_financial_resource(household_id, resource_id)
 
     def declare_pension_projection_authority(self, *, household_id: str, resource_id: str,
